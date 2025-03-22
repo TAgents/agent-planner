@@ -94,6 +94,26 @@ API documentation is available at http://localhost:3000/api-docs when the server
   - `POST /plans/:id/nodes/:nodeId/comments` - Add a comment to a node
   - `GET /plans/:id/nodes/:nodeId/comments` - Get comments for a node
 
+- **Artifacts**
+  - `POST /plans/:id/nodes/:nodeId/artifacts` - Add an artifact to a node
+  - `GET /plans/:id/nodes/:nodeId/artifacts` - List artifacts for a node
+  - `GET /plans/:id/nodes/:nodeId/artifacts/:artifactId` - Get a specific artifact
+  - `PUT /plans/:id/nodes/:nodeId/artifacts/:artifactId` - Update an artifact
+  - `DELETE /plans/:id/nodes/:nodeId/artifacts/:artifactId` - Delete an artifact
+  - `GET /plans/:id/artifacts` - List all artifacts across the plan
+
+- **Activity Tracking**
+  - `GET /activity/feed` - Get activity feed for the current user across all plans
+  - `GET /plans/:id/activity` - Get all activity logs for a plan with pagination and filtering
+  - `GET /plans/:id/timeline` - Get a chronological timeline of significant events for a plan
+  - `GET /plans/:id/nodes/:nodeId/activity` - Get recent activity for a specific node
+  - `POST /plans/:id/nodes/:nodeId/detailed-log` - Add a detailed activity log with metadata and tags
+
+- **Search and Filtering**
+  - `GET /search` - Global search across all accessible resources
+  - `GET /plans/:id/nodes/search` - Search for nodes in a plan with advanced filtering
+  - `GET /search/artifacts` - Search for artifacts across all accessible plans
+
 ## Related Projects
 
 The [Planning System MCP Server](https://github.com/talkingagents/agent-planner-mcp) is a separate project that provides a Model Context Protocol (MCP) interface for AI agents to interact with this API.
@@ -106,11 +126,13 @@ The [Planning System MCP Server](https://github.com/talkingagents/agent-planner-
 - Build basic CRUD operations for plans and nodes
 - Set up API documentation
 
-### Phase 2: Agent-Human Collaboration Enhancement
-- Implement rich context fields and endpoints
-- Add artifact management
-- Implement progress tracking and logging
-- Add status updates and activity feeds
+### Phase 2: Agent-Human Collaboration Enhancement (Completed)
+- ✅ Implement rich context fields and endpoints
+- ✅ Add artifact management for tracking outputs and references
+- ✅ Fix RLS policy issues for comments, logs, and API keys
+- ✅ Improve activity tracking and logging functionality
+- ✅ Add status updates and activity feeds
+- ✅ Implement advanced filtering and searching capabilities
 
 ### Phase 3: Advanced Features
 - Implement collaborative workflows

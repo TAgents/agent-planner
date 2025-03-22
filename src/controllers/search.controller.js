@@ -1,0 +1,476 @@
+const { supabase } = require('../config/supabase');
+
+/**
+ * Helper function to check if a user has access to a plan with specified roles
+ * @param {string} planId - Plan ID
+ * @param {string} userId - User ID
+ * @param {string[]} [roles] - Optional array of required roles (e.g., ['owner', 'admin', 'editor'])
+ * @returns {Promise<boolean>} - Whether the user has access
+ */
+const checkPlanAccess = async (planId, userId, roles = []) => {
+  // Check if the user is the owner
+  const { data: plan, error: planError } = await supabase
+    .from('plans')
+    .select('owner_id')
+    .eq('id', planId)
+    .single();
+
+  if (planError) {
+    // Plan not found or other error
+    return false;
+  }
+
+  // If user is the owner, they always have access
+  if (plan.owner_id === userId) {
+    return roles.length === 0 || roles.includes('owner');
+  }
+
+  // Otherwise, check if they're a collaborator with appropriate role
+  const { data: collab, error: collabError } = await supabase
+    .from('plan_collaborators')
+    .select('role')
+    .eq('plan_id', planId)
+    .eq('user_id', userId)
+    .single();
+
+  if (collabError) {
+    // Not a collaborator or other error
+    return false;
+  }
+
+  // If roles specified, check if the user's role is included
+  if (roles.length > 0) {
+    return roles.includes(collab.role);
+  }
+
+  // Otherwise, any collaborator role grants access
+  return true;
+};
+
+/**
+ * Search for nodes in a plan
+ */
+const searchNodes = async (req, res, next) => {
+  try {
+    const { id: planId } = req.params;
+    const { 
+      query, 
+      status, 
+      node_type: nodeType, 
+      date_from: dateFrom, 
+      date_to: dateTo 
+    } = req.query;
+    const userId = req.user.id;
+
+    // Check if the user has access to this plan
+    const hasAccess = await checkPlanAccess(planId, userId);
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'You do not have access to this plan' });
+    }
+
+    // Build the search query
+    let planNodesQuery = supabase
+      .from('plan_nodes')
+      .select(`
+        id, 
+        plan_id, 
+        parent_id, 
+        node_type, 
+        title, 
+        description, 
+        status, 
+        order_index, 
+        due_date, 
+        created_at, 
+        updated_at, 
+        context, 
+        agent_instructions, 
+        acceptance_criteria, 
+        metadata
+      `)
+      .eq('plan_id', planId);
+
+    // Add full-text search if query param is provided
+    if (query) {
+      planNodesQuery = planNodesQuery.or(`
+        title.ilike.%${query}%,
+        description.ilike.%${query}%,
+        context.ilike.%${query}%,
+        agent_instructions.ilike.%${query}%,
+        acceptance_criteria.ilike.%${query}%
+      `);
+    }
+
+    // Add status filter if provided
+    if (status) {
+      const statuses = status.split(',');
+      planNodesQuery = planNodesQuery.in('status', statuses);
+    }
+
+    // Add node type filter if provided
+    if (nodeType) {
+      const nodeTypes = nodeType.split(',');
+      planNodesQuery = planNodesQuery.in('node_type', nodeTypes);
+    }
+
+    // Add date range filter if provided
+    if (dateFrom) {
+      planNodesQuery = planNodesQuery.gte('created_at', dateFrom);
+    }
+    if (dateTo) {
+      planNodesQuery = planNodesQuery.lte('created_at', dateTo);
+    }
+
+    // Execute the query
+    const { data: nodes, error } = await planNodesQuery.order('created_at', { ascending: false });
+
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    // Return the results
+    res.json(nodes);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Search for artifacts across plans
+ */
+const searchArtifacts = async (req, res, next) => {
+  try {
+    const { query, content_type: contentType } = req.query;
+    const userId = req.user.id;
+
+    // Get all plans the user has access to (either as owner or collaborator)
+    const { data: ownedPlans, error: ownedPlansError } = await supabase
+      .from('plans')
+      .select('id')
+      .eq('owner_id', userId);
+
+    if (ownedPlansError) {
+      return res.status(500).json({ error: ownedPlansError.message });
+    }
+
+    const { data: collabPlans, error: collabPlansError } = await supabase
+      .from('plan_collaborators')
+      .select('plan_id')
+      .eq('user_id', userId);
+
+    if (collabPlansError) {
+      return res.status(500).json({ error: collabPlansError.message });
+    }
+
+    // Combine plan IDs into a single array
+    const planIds = [
+      ...ownedPlans.map(plan => plan.id),
+      ...collabPlans.map(collab => collab.plan_id)
+    ];
+
+    // If user has no plans, return empty results
+    if (planIds.length === 0) {
+      return res.json([]);
+    }
+
+    // Get all nodes for these plans
+    const { data: nodes, error: nodesError } = await supabase
+      .from('plan_nodes')
+      .select('id, plan_id, title, node_type')
+      .in('plan_id', planIds);
+
+    if (nodesError) {
+      return res.status(500).json({ error: nodesError.message });
+    }
+
+    const nodeIds = nodes.map(node => node.id);
+    const nodesMap = nodes.reduce((acc, node) => {
+      acc[node.id] = node;
+      return acc;
+    }, {});
+
+    // Build the artifact search query
+    let artifactsQuery = supabase
+      .from('plan_node_artifacts')
+      .select(`
+        id, 
+        plan_node_id,
+        name, 
+        content_type, 
+        url, 
+        created_at,
+        created_by,
+        user:created_by (id, name, email),
+        metadata
+      `)
+      .in('plan_node_id', nodeIds);
+
+    // Add full-text search if query param is provided
+    if (query) {
+      artifactsQuery = artifactsQuery.or(`
+        name.ilike.%${query}%,
+        url.ilike.%${query}%
+      `);
+    }
+
+    // Add content type filter if provided
+    if (contentType) {
+      const contentTypes = contentType.split(',');
+      artifactsQuery = artifactsQuery.in('content_type', contentTypes);
+    }
+
+    // Execute the query
+    const { data: artifacts, error } = await artifactsQuery.order('created_at', { ascending: false });
+
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    // Enhance artifacts with node info
+    const enhancedArtifacts = artifacts.map(artifact => ({
+      ...artifact,
+      node: nodesMap[artifact.plan_node_id]
+    }));
+
+    // Return the results
+    res.json(enhancedArtifacts);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Search across all resources (plans, nodes, comments, logs, artifacts)
+ */
+const globalSearch = async (req, res, next) => {
+  try {
+    const { query } = req.query;
+    const userId = req.user.id;
+
+    if (!query || query.trim().length < 3) {
+      return res.status(400).json({ error: 'Search query must be at least 3 characters' });
+    }
+
+    // Get all plans the user has access to (either as owner or collaborator)
+    const { data: ownedPlans, error: ownedPlansError } = await supabase
+      .from('plans')
+      .select('id, title, description, status, created_at, updated_at')
+      .eq('owner_id', userId)
+      .or(`title.ilike.%${query}%,description.ilike.%${query}%`);
+
+    if (ownedPlansError) {
+      return res.status(500).json({ error: ownedPlansError.message });
+    }
+
+    const { data: collabPlans, error: collabPlansError } = await supabase
+      .from('plan_collaborators')
+      .select('plans:plan_id (id, title, description, status, created_at, updated_at)')
+      .eq('user_id', userId);
+
+    if (collabPlansError) {
+      return res.status(500).json({ error: collabPlansError.message });
+    }
+
+    // Process collaborator plans and filter by search term
+    const collabPlanObjects = collabPlans
+      .map(collab => collab.plans)
+      .filter(plan => 
+        plan.title.toLowerCase().includes(query.toLowerCase()) ||
+        (plan.description && plan.description.toLowerCase().includes(query.toLowerCase()))
+      );
+
+    // Combine plan IDs into a single array for further queries
+    const allPlans = [...ownedPlans, ...collabPlanObjects];
+    const planIds = allPlans.map(plan => plan.id);
+
+    // If user has no matching plans, continue with empty array
+    let matchingNodes = [];
+    let matchingComments = [];
+    let matchingLogs = [];
+    let matchingArtifacts = [];
+
+    if (planIds.length > 0) {
+      // Search for nodes
+      const { data: nodes, error: nodesError } = await supabase
+        .from('plan_nodes')
+        .select(`
+          id, 
+          plan_id, 
+          node_type, 
+          title, 
+          description, 
+          status, 
+          created_at
+        `)
+        .in('plan_id', planIds)
+        .or(`
+          title.ilike.%${query}%,
+          description.ilike.%${query}%,
+          context.ilike.%${query}%,
+          agent_instructions.ilike.%${query}%,
+          acceptance_criteria.ilike.%${query}%
+        `)
+        .order('created_at', { ascending: false });
+
+      if (nodesError) {
+        return res.status(500).json({ error: nodesError.message });
+      }
+      
+      matchingNodes = nodes;
+      const nodeIds = nodes.map(node => node.id);
+
+      // Search for comments if we have matching nodes
+      if (nodeIds.length > 0) {
+        const { data: comments, error: commentsError } = await supabase
+          .from('plan_comments')
+          .select(`
+            id, 
+            plan_node_id,
+            content, 
+            comment_type, 
+            created_at,
+            user:user_id (id, name, email)
+          `)
+          .in('plan_node_id', nodeIds)
+          .ilike('content', `%${query}%`)
+          .order('created_at', { ascending: false });
+
+        if (commentsError) {
+          return res.status(500).json({ error: commentsError.message });
+        }
+        
+        matchingComments = comments;
+        
+        // Search for logs
+        const { data: logs, error: logsError } = await supabase
+          .from('plan_node_logs')
+          .select(`
+            id, 
+            plan_node_id,
+            content, 
+            log_type, 
+            created_at,
+            user:user_id (id, name, email)
+          `)
+          .in('plan_node_id', nodeIds)
+          .ilike('content', `%${query}%`)
+          .order('created_at', { ascending: false });
+
+        if (logsError) {
+          return res.status(500).json({ error: logsError.message });
+        }
+        
+        matchingLogs = logs;
+        
+        // Search for artifacts
+        const { data: artifacts, error: artifactsError } = await supabase
+          .from('plan_node_artifacts')
+          .select(`
+            id, 
+            plan_node_id,
+            name, 
+            content_type, 
+            url, 
+            created_at,
+            user:created_by (id, name, email)
+          `)
+          .in('plan_node_id', nodeIds)
+          .ilike('name', `%${query}%`)
+          .order('created_at', { ascending: false });
+
+        if (artifactsError) {
+          return res.status(500).json({ error: artifactsError.message });
+        }
+        
+        matchingArtifacts = artifacts;
+      }
+    }
+
+    // Create a map of nodes for quick reference
+    const nodesMap = matchingNodes.reduce((acc, node) => {
+      acc[node.id] = node;
+      return acc;
+    }, {});
+
+    // Map comments, logs, and artifacts to their parent nodes
+    const mappedComments = matchingComments.map(comment => ({
+      id: comment.id,
+      type: 'comment',
+      content: comment.content,
+      created_at: comment.created_at,
+      user: comment.user,
+      node: nodesMap[comment.plan_node_id]
+    }));
+
+    const mappedLogs = matchingLogs.map(log => ({
+      id: log.id,
+      type: 'log',
+      content: log.content,
+      created_at: log.created_at,
+      user: log.user,
+      node: nodesMap[log.plan_node_id]
+    }));
+
+    const mappedArtifacts = matchingArtifacts.map(artifact => ({
+      id: artifact.id,
+      type: 'artifact',
+      name: artifact.name,
+      content_type: artifact.content_type,
+      created_at: artifact.created_at,
+      user: artifact.user,
+      node: nodesMap[artifact.plan_node_id]
+    }));
+
+    // Format plans results
+    const mappedPlans = allPlans.map(plan => ({
+      id: plan.id,
+      type: 'plan',
+      title: plan.title,
+      description: plan.description,
+      status: plan.status,
+      created_at: plan.created_at,
+      updated_at: plan.updated_at
+    }));
+
+    // Format nodes results
+    const mappedNodes = matchingNodes.map(node => ({
+      id: node.id,
+      type: 'node',
+      node_type: node.node_type,
+      title: node.title,
+      description: node.description,
+      status: node.status,
+      created_at: node.created_at,
+      plan_id: node.plan_id
+    }));
+
+    // Return categorized results
+    res.json({
+      query,
+      results: {
+        plans: mappedPlans,
+        nodes: mappedNodes,
+        comments: mappedComments,
+        logs: mappedLogs,
+        artifacts: mappedArtifacts
+      },
+      counts: {
+        plans: mappedPlans.length,
+        nodes: mappedNodes.length,
+        comments: mappedComments.length,
+        logs: mappedLogs.length,
+        artifacts: mappedArtifacts.length,
+        total: mappedPlans.length + mappedNodes.length + mappedComments.length + 
+               mappedLogs.length + mappedArtifacts.length
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  searchNodes,
+  searchArtifacts,
+  globalSearch
+};

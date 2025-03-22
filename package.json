@@ -4,10 +4,12 @@
   "description": "A collaborative planning system for humans and AI agents",
   "main": "src/index.js",
   "scripts": {
+    "db:activity-updates": "node src/db/apply-activity-search-updates.js",
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "test": "jest",
     "db:init": "node -e \"require('./src/db/init').initializeDatabase()\"",
+    "db:fix-rls": "node src/db/apply-rls-fixes.js",
     "lint": "eslint src/**/*.js"
   },
   "dependencies": {

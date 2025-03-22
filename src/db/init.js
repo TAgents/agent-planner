@@ -57,6 +57,11 @@ const initializeDatabase = async () => {
     console.log('- plan_node_logs: For tracking agent activity');
     
     console.log('\nDatabase initialization completed with instructions for manual steps');
+    console.log('\nADDITIONAL STEP: After creating tables, apply RLS policy fixes for security:');
+    console.log('1. Open the file: /src/db/migrations/00002_rls_policy_fixes.sql');
+    console.log('2. Copy its contents and run it in the Supabase SQL editor');
+    console.log('\nThis fixes permission issues with comments, logs, and API keys,');
+    console.log('and adds necessary policies for the new Artifact functionality.')
   } catch (error) {
     console.error('Database initialization failed:', error);
     throw error;

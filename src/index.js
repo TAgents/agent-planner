@@ -11,6 +11,9 @@ const { initializeDatabase } = require('./db/init');
 const authRoutes = require('./routes/auth.routes');
 const planRoutes = require('./routes/plan.routes');
 const nodeRoutes = require('./routes/node.routes');
+const artifactRoutes = require('./routes/artifact.routes');
+const activityRoutes = require('./routes/activity.routes');
+const searchRoutes = require('./routes/search.routes');
 
 // Create Express app
 const app = express();
@@ -47,6 +50,9 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 app.use('/auth', authRoutes);
 app.use('/plans', planRoutes);
 app.use('/plans', nodeRoutes);
+app.use('/plans', artifactRoutes);
+app.use('/', activityRoutes);
+app.use('/search', searchRoutes);
 
 // Root route
 app.get('/', (req, res) => {
