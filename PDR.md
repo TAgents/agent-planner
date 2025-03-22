@@ -2,7 +2,7 @@
 
 ## System Overview
 
-The Planning System API facilitates collaborative planning between humans and AI agents through a unified interface. The system stores plan data in a Supabase database and provides both REST API and MCP server interfaces for accessing and manipulating plans. A key focus is enabling seamless collaboration between humans and LLM agents, without creating artificial distinctions between them in the system architecture.
+The Planning System API facilitates collaborative planning between humans and AI agents through a unified interface. The system stores plan data in a Supabase database and provides a REST API for accessing and manipulating plans. A key focus is enabling seamless collaboration between humans and LLM agents, without creating artificial distinctions between them in the system architecture.
 
 ## Core Concepts
 
@@ -23,7 +23,6 @@ The project is currently in Phase 1, with core functionality implemented. The fo
 - ✅ Node hierarchy with parent-child relationships
 - ✅ Comments and activity logging for nodes
 - ✅ API documentation with Swagger/OpenAPI
-- ✅ MCP server skeleton structure (to be fully implemented in Phase 3)
 
 ## Database Schema
 
@@ -171,62 +170,11 @@ All endpoints below have been implemented with full functionality in Phase 1.
 - `POST /plans/:id/nodes/:nodeId/log` - Add a progress log entry (for tracking agent activity)
 - `GET /plans/:id/nodes/:nodeId/logs` - Get activity logs for a node
 
-## MCP Server Implementation (Planned for Phase 3)
+### Artifact Management
 
-A skeleton structure for the MCP server is in place, and the following components will be implemented in Phase 3:
-
-### Resources
-
-1. **User Resources**
-   - `user://profile` - Current user's profile
-   - `user://plans` - List of plans accessible to the user
-
-2. **Plan Resources**
-   - `plan://{planId}` - Plan details
-   - `plan://{planId}/structure` - Hierarchical structure of the plan
-   - `plan://{planId}/node/{nodeId}` - Specific node details
-   - `plan://{planId}/context` - Full contextual information about the plan
-   - `plan://{planId}/node/{nodeId}/context` - Detailed context for a specific node
-   - `plan://{planId}/artifacts` - Plan-related artifacts
-   - `plan://{planId}/activity` - Recent activity on the plan
-
-### Tools
-
-1. **Plan Management Tools**
-   - `create_plan` - Create a new plan
-   - `update_plan` - Update plan details
-   - `delete_plan` - Delete or archive a plan
-
-2. **Node Management Tools**
-   - `create_node` - Create a new node
-   - `update_node` - Update node details
-   - `delete_node` - Delete a node
-   - `move_node` - Move a node to a different parent or position
-   - `update_node_status` - Update the status of a node
-   - `update_node_progress` - Report progress on a node (partial completion)
-
-3. **Collaboration Tools**
-   - `add_collaborator` - Add a collaborator to a plan
-   - `remove_collaborator` - Remove a collaborator from a plan
-   - `add_comment` - Add a comment to a node
-   - `add_artifact` - Add an artifact to a node
-   - `add_log_entry` - Log agent activity or thoughts
-   - `search_plan` - Search through plan content
-
-### Prompts
-
-1. **Planning Assistance**
-   - `analyze_plan` - Analyze a plan for completeness, dependencies, etc.
-   - `suggest_improvements` - Suggest improvements to a plan
-   - `generate_timeline` - Generate a timeline for a plan
-   - `get_task_instructions` - Get detailed instructions for a task
-   - `summarize_plan_context` - Get a summarized context suitable for a specific agent task
-
-2. **Status Report Generation**
-   - `generate_status_report` - Generate a status report for a plan
-   - `summarize_changes` - Summarize recent changes to a plan
-   - `generate_implementation_steps` - Break down a task into implementation steps
-   - `check_completion_criteria` - Verify if a task meets its acceptance criteria
+- `POST /plans/:id/nodes/:nodeId/artifacts` - Add an artifact to a node
+- `GET /plans/:id/nodes/:nodeId/artifacts` - List artifacts for a node
+- `GET /plans/:id/artifacts` - List all artifacts across the plan
 
 ## Design Principles for Agent-Human Integration
 
@@ -314,7 +262,6 @@ Agents can:
 - ✅ Implement plan collaboration management
 - ✅ Create node hierarchical structure
 - ✅ Add comment and activity logging functionality
-- ✅ Prepare MCP server skeleton structure
 
 ### Phase 2: Agent-Human Collaboration Enhancement (NEXT)
 - Implement rich context fields and endpoints
@@ -323,14 +270,7 @@ Agents can:
 - Add status updates and activity feeds
 - Implement advanced filtering and searching
 
-### Phase 3: MCP Server Implementation (FUTURE)
-- Complete MCP server interface based on existing skeleton
-- Implement resources API for MCP
-- Implement tools API for MCP
-- Implement prompts API for MCP
-- Build integration with the REST API
-
-### Phase 4: Advanced Features (FUTURE)
+### Phase 3: Advanced Features (FUTURE)
 - Implement collaborative workflows
 - Add more sophisticated plan analysis tools
 - Implement agent-specific prompts and tools
@@ -343,7 +283,6 @@ Agents can:
 - **Database**: Supabase (PostgreSQL)
 - **Authentication**: JWT with Supabase Auth integration
 - **Documentation**: OpenAPI/Swagger
-- **MCP Integration**: Model Context Protocol SDK
 
 ## Security Considerations
 
@@ -355,3 +294,7 @@ Agents can:
 - Clear attribution of actions (human vs agent)
 
 This implementation provides a solid foundation for a collaborative planning system that treats humans and AI agents as equal participants. The hierarchical structure of plans and rich contextual information allows for complex planning scenarios while maintaining a clear organizational structure.
+
+## Integration with MCP
+
+The Planning System API is designed to work with the separate [Planning System MCP Server](https://github.com/talkingagents/agent-planner-mcp) project, which provides a Model Context Protocol interface for AI agents to interact with the planning system.

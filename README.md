@@ -4,7 +4,7 @@ A collaborative planning system that facilitates interactions between humans and
 
 ## Overview
 
-The Planning System API stores plan data in a Supabase database and provides both REST API and MCP server interfaces for accessing and manipulating plans. The system is designed to enable seamless collaboration between humans and LLM agents, without creating artificial distinctions between them in the architecture.
+The Planning System API stores plan data in a Supabase database and provides a REST API for accessing and manipulating plans. The system is designed to enable seamless collaboration between humans and LLM agents, without creating artificial distinctions between them in the architecture.
 
 ## Core Features
 
@@ -61,7 +61,6 @@ Then follow the instructions to manually run the SQL script in the Supabase dash
 
 5. Start the server
 ```bash
-supabase start
 npm run start
 ```
 
@@ -95,9 +94,9 @@ API documentation is available at http://localhost:3000/api-docs when the server
   - `POST /plans/:id/nodes/:nodeId/comments` - Add a comment to a node
   - `GET /plans/:id/nodes/:nodeId/comments` - Get comments for a node
 
-## MCP Server Implementation
+## Related Projects
 
-The Model Context Protocol (MCP) server will be implemented in Phase 3, exposing resources, tools, and prompts for AI agents.
+The [Planning System MCP Server](https://github.com/talkingagents/agent-planner-mcp) is a separate project that provides a Model Context Protocol (MCP) interface for AI agents to interact with this API.
 
 ## Development Phases
 
@@ -113,16 +112,12 @@ The Model Context Protocol (MCP) server will be implemented in Phase 3, exposing
 - Implement progress tracking and logging
 - Add status updates and activity feeds
 
-### Phase 3: MCP Server Implementation
-- Implement MCP server interface
-- Expose resources, tools, and prompts
-- Build integration with the REST API
-
-### Phase 4: Advanced Features
+### Phase 3: Advanced Features
 - Implement collaborative workflows
 - Add commenting and activity tracking
 - Build more sophisticated plan analysis tools
 - Implement agent-specific prompts and tools
+- Add real-time updates via WebSockets
 
 ## Contributing
 
