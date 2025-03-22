@@ -1,0 +1,28 @@
+{
+  "name": "agent-planner",
+  "version": "0.1.0",
+  "description": "A collaborative planning system for humans and AI agents",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest",
+    "db:init": "node -e \"require('./src/db/init').initializeDatabase()\"",
+    "lint": "eslint src/**/*.js",
+    "mcp:start": "node -e \"require('./src/mcp/index').initMcpServer()\""
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.1"
+  }
+}
