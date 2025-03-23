@@ -195,15 +195,16 @@ const createNode = async (req, res, next) => {
 
     // Don't allow creating root nodes (only one per plan should exist)
     if (nodeType === 'root') {
-      return res.status(400).json({ error: 'Cannot create additional root nodes' });
+      return res.status(400).json({ error: 'Cannot create additional root nodes (only one allowed)' });
     }
 
     // If parentId provided, verify it exists in this plan
-    if (parentId) {
+    let parentIdToUse = parentId;
+    if (parentIdToUse) {
       const { data: parentNode, error: parentError } = await supabase
         .from('plan_nodes')
         .select('id')
-        .eq('id', parentId)
+        .eq('id', parentIdToUse)
         .eq('plan_id', planId)
         .single();
 
@@ -224,7 +225,7 @@ const createNode = async (req, res, next) => {
       }
       
       // Use the root node as parent
-      parentId = rootNode.id;
+      parentIdToUse = rootNode.id; // Update parent ID to root node
     }
 
     // Determine order index if not provided
@@ -235,7 +236,7 @@ const createNode = async (req, res, next) => {
         .from('plan_nodes')
         .select('order_index')
         .eq('plan_id', planId)
-        .eq('parent_id', parentId)
+        .eq('parent_id', parentIdToUse)
         .order('order_index', { ascending: false })
         .limit(1);
 
@@ -256,7 +257,7 @@ const createNode = async (req, res, next) => {
         {
           id: nodeId,
           plan_id: planId,
-          parent_id: parentId,
+          parent_id: parentIdToUse,
           node_type: nodeType,
           title,
           description: description || '',
