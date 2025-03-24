@@ -108,7 +108,7 @@ router.get('/feed', authenticate, activityController.getUserActivityFeed);
 
 /**
  * @swagger
- * /plans/{id}/activity:
+ * /activity/plan/{id}/activity:
  *   get:
  *     summary: Get all activity logs for a plan
  *     tags: [Activity]
@@ -149,11 +149,11 @@ router.get('/feed', authenticate, activityController.getUserActivityFeed);
  *       404:
  *         description: Plan not found
  */
-router.get('/plans/:id/activity', authenticate, activityController.getPlanActivity);
+router.get('/plan/:id/activity', authenticate, activityController.getPlanActivity);
 
 /**
  * @swagger
- * /plans/{id}/timeline:
+ * /activity/plan/{id}/timeline:
  *   get:
  *     summary: Get a chronological timeline of significant events for a plan
  *     tags: [Activity]
@@ -176,11 +176,11 @@ router.get('/plans/:id/activity', authenticate, activityController.getPlanActivi
  *       404:
  *         description: Plan not found
  */
-router.get('/plans/:id/timeline', authenticate, activityController.getPlanTimeline);
+router.get('/plan/:id/timeline', authenticate, activityController.getPlanTimeline);
 
 /**
  * @swagger
- * /plans/{id}/nodes/{nodeId}/activity:
+ * /activity/plan/{id}/nodes/{nodeId}/activity:
  *   get:
  *     summary: Get recent activity for a specific node
  *     tags: [Activity]
@@ -215,11 +215,11 @@ router.get('/plans/:id/timeline', authenticate, activityController.getPlanTimeli
  *       404:
  *         description: Node not found
  */
-router.get('/plans/:id/nodes/:nodeId/activity', authenticate, activityController.getNodeActivity);
+router.get('/plan/:id/nodes/:nodeId/activity', authenticate, activityController.getNodeActivity);
 
 /**
  * @swagger
- * /plans/{id}/nodes/{nodeId}/detailed-log:
+ * /activity/plan/{id}/nodes/{nodeId}/detailed-log:
  *   post:
  *     summary: Add a detailed activity log entry with metadata and tags
  *     tags: [Activity]
@@ -271,6 +271,6 @@ router.get('/plans/:id/nodes/:nodeId/activity', authenticate, activityController
  *       404:
  *         description: Node not found
  */
-router.post('/plans/:id/nodes/:nodeId/detailed-log', authenticate, activityController.addDetailedLog);
+router.post('/plan/:id/nodes/:nodeId/detailed-log', authenticate, activityController.addDetailedLog);
 
 module.exports = router;

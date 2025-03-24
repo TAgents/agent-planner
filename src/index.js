@@ -80,7 +80,7 @@ app.use('/auth', authRoutes);
 app.use('/plans', planRoutes);
 app.use('/plans', nodeRoutes);
 app.use('/plans', artifactRoutes);
-app.use('/', activityRoutes);
+app.use('/activity', activityRoutes);
 app.use('/search', searchRoutes);
 
 // Root route

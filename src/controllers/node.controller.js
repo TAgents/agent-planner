@@ -937,7 +937,7 @@ const moveNode = async (req, res, next) => {
     }
 
     // If no parent ID provided, we're just reordering within the same parent
-    const parentId = newParentId || node.parent_id;
+    let parentId = newParentId || node.parent_id;
 
     // If changing parents, verify the new parent exists and is in the same plan
     if (newParentId && newParentId !== node.parent_id) {
