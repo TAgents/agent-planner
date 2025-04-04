@@ -16,6 +16,7 @@ const nodeRoutes = require('./routes/node.routes');
 const artifactRoutes = require('./routes/artifact.routes');
 const activityRoutes = require('./routes/activity.routes');
 const searchRoutes = require('./routes/search.routes');
+const tokenRoutes = require('./routes/token.routes');
 
 // Import middlewares
 const { debugRequest } = require('./middleware/debug.middleware');
@@ -82,6 +83,7 @@ app.use('/plans', nodeRoutes);
 app.use('/plans', artifactRoutes);
 app.use('/activity', activityRoutes);
 app.use('/search', searchRoutes);
+app.use('/tokens', tokenRoutes);
 
 // Root route
 app.get('/', (req, res) => {

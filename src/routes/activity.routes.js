@@ -150,6 +150,7 @@ router.get('/feed', authenticate, activityController.getUserActivityFeed);
  *         description: Plan not found
  */
 router.get('/plan/:id/activity', authenticate, activityController.getPlanActivity);
+router.get('/plans/:id/activity', authenticate, activityController.getPlanActivity);
 
 /**
  * @swagger
@@ -177,6 +178,7 @@ router.get('/plan/:id/activity', authenticate, activityController.getPlanActivit
  *         description: Plan not found
  */
 router.get('/plan/:id/timeline', authenticate, activityController.getPlanTimeline);
+router.get('/plans/:id/timeline', authenticate, activityController.getPlanTimeline);
 
 /**
  * @swagger
@@ -216,6 +218,7 @@ router.get('/plan/:id/timeline', authenticate, activityController.getPlanTimelin
  *         description: Node not found
  */
 router.get('/plan/:id/nodes/:nodeId/activity', authenticate, activityController.getNodeActivity);
+router.get('/plans/:id/nodes/:nodeId/activity', authenticate, activityController.getNodeActivity);
 
 /**
  * @swagger
