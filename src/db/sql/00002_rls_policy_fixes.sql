@@ -74,15 +74,7 @@ CREATE POLICY plan_node_logs_select_policy ON plan_node_logs
     )
   );
 
--- Fix missing RLS policies for api_keys table
-CREATE POLICY api_keys_insert_policy ON api_keys
-  FOR INSERT WITH CHECK (user_id = auth.uid());
 
-CREATE POLICY api_keys_select_policy ON api_keys
-  FOR SELECT USING (user_id = auth.uid());
-
-CREATE POLICY api_keys_delete_policy ON api_keys
-  FOR DELETE USING (user_id = auth.uid());
 
 -- Add RLS policies for plan_node_artifacts table (new functionality)
 CREATE POLICY plan_node_artifacts_select_policy ON plan_node_artifacts

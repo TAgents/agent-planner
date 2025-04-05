@@ -1,6 +1,177 @@
 const { supabase, supabaseAdmin } = require('../config/supabase');
 
 /**
+ * Ensures that user records exist in our custom users table for all Supabase Auth users
+ */
+const syncAuthUsersWithCustomTable = async () => {
+  try {
+    console.log('Checking for users that need to be synced...');
+    
+    // Get all users from Supabase Auth
+    const { data: authUsers, error: authError } = await supabaseAdmin.auth.admin.listUsers();
+    
+    if (authError) {
+      console.error('Error fetching auth users:', authError);
+      return false;
+    }
+    
+    if (!authUsers || !authUsers.users || authUsers.users.length === 0) {
+      console.log('No auth users found to sync');
+      return true;
+    }
+    
+    console.log(`Found ${authUsers.users.length} users in Auth system`);
+    
+    // Get existing users from our custom table
+    const { data: customUsers, error: customError } = await supabaseAdmin
+      .from('users')
+      .select('id');
+    
+    if (customError) {
+      console.error('Error fetching custom users:', customError);
+      return false;
+    }
+    
+    // Find users that exist in Auth but not in our custom table
+    const customUserIds = customUsers.map(u => u.id);
+    const missingUsers = authUsers.users.filter(user => !customUserIds.includes(user.id));
+    
+    if (missingUsers.length === 0) {
+      console.log('All auth users have corresponding records in the users table');
+      return true;
+    }
+    
+    console.log(`Found ${missingUsers.length} auth users that need to be created in custom table`);
+    
+    // Create missing users in our custom table
+    for (const user of missingUsers) {
+      const { error: insertError } = await supabaseAdmin
+        .from('users')
+        .insert([
+          {
+            id: user.id,
+            email: user.email,
+            name: user.user_metadata?.name || user.email.split('@')[0],
+            created_at: new Date(),
+            updated_at: new Date()
+          }
+        ]);
+      
+      if (insertError) {
+        console.error(`Error creating record for user ${user.email}:`, insertError);
+      } else {
+        console.log(`Created record for user ${user.email} in users table`);
+      }
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error syncing users:', error);
+    return false;
+  }
+};
+
+/**
+ * Create admin user in both Auth and users table
+ */
+const createAdminUser = async () => {
+  try {
+    const adminEmail = 'admin@example.com';
+    
+    // First check if the admin user already exists in Auth
+    console.log(`Checking if admin user (${adminEmail}) exists in Auth...`);
+    
+    // Try to find the user by email in Auth
+    const { data: existingUsers, error: listError } = await supabaseAdmin.auth.admin.listUsers();
+    
+    let authUser = null;
+    
+    if (listError) {
+      console.error('Error listing Auth users:', listError);
+    } else if (existingUsers && existingUsers.users) {
+      // Find the admin user in the list
+      const adminUser = existingUsers.users.find(user => user.email === adminEmail);
+      
+      if (adminUser) {
+        console.log(`Found existing admin user in Auth with ID: ${adminUser.id}`);
+        authUser = adminUser;
+      }
+    }
+    
+    // If admin user doesn't exist in Auth, create them
+    if (!authUser) {
+      console.log('Creating admin user in Auth system...');
+      
+      const { data, error: createUsersError } = await supabaseAdmin.auth.admin.createUser({
+        email: adminEmail,
+        password: 'password123',
+        email_confirm: true,
+        user_metadata: { name: 'Admin User' }
+      });
+      
+      if (createUsersError) {
+        console.error('Error creating admin user in Auth:', createUsersError);
+        
+        // If the error is because the user already exists but we couldn't find them earlier,
+        // try a different approach to get their ID
+        if (createUsersError.code === 'email_exists' || createUsersError.status === 422) {
+          console.log('Attempting to sign in to get user ID...');
+          
+          // Create a temporary auth client to try signing in
+          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+            email: adminEmail,
+            password: 'password123' // This may fail if we don't know the password
+          });
+          
+          if (signInError) {
+            console.error('Cannot retrieve existing user ID:', signInError);
+            return null;
+          }
+          
+          authUser = signInData.user;
+          console.log(`Retrieved existing admin user ID: ${authUser.id}`);
+        } else {
+          return null;
+        }
+      } else {
+        console.log('Admin user created successfully in Auth');
+        authUser = data.user;
+      }
+    }
+    
+    // Now create the record in the users table
+    if (authUser) {
+      console.log(`Creating user record in custom table for ID: ${authUser.id}`);
+      
+      const { error: insertError } = await supabaseAdmin
+        .from('users')
+        .insert([
+          {
+            id: authUser.id,
+            email: adminEmail,
+            name: 'Admin User',
+            created_at: new Date(),
+            updated_at: new Date()
+          }
+        ]);
+      
+      if (insertError) {
+        console.error('Error creating admin record in users table:', insertError);
+        return null;
+      }
+      
+      console.log('Admin user record created successfully in users table');
+      return authUser;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error creating admin user:', error);
+    return null;
+  }
+};
+
+/**
  * Initialize the database by creating tables directly through Supabase API
  * instead of relying on executing raw SQL
  */
@@ -8,64 +179,34 @@ const initializeDatabase = async () => {
   try {
     console.log('Initializing database...');
     
-    // Create users table (if it doesn't already exist)
-    console.log('Creating users table...');
-    const { error: usersError } = await supabaseAdmin
+    // Check if users table exists and has records
+    console.log('Checking for existing users...');
+    const { data: existingUsers, error: usersError } = await supabaseAdmin
       .from('users')
-      .select('id')
+      .select('id, email')
       .limit(1);
-      
-    if (usersError && usersError.code === '42P01') { // Table doesn't exist
-      console.log('Users table not found, creating...');
-      
-      const { error: createUsersError } = await supabaseAdmin.auth.admin.createUser({
-        email: 'admin@example.com',
-        password: 'password123',
-        email_confirm: true,
-        user_metadata: { name: 'Admin User' }
-      });
-      
-      if (createUsersError) {
-        console.error('Error creating admin user:', createUsersError);
+    
+    // If we can't query users or there are no users, create an admin user
+    if (usersError || !existingUsers || existingUsers.length === 0) {
+      console.log('No users found, creating admin user...');
+      const adminUser = await createAdminUser();
+      if (adminUser) {
+        console.log(`Admin user created with ID: ${adminUser.id}`);
       } else {
-        console.log('Admin user created successfully');
+        console.error('Failed to create admin user');
       }
-    } else if (usersError) {
-      console.error('Error checking users table:', usersError);
     } else {
-      console.log('Users table already exists');
+      console.log(`Found existing users in the database: ${existingUsers.map(u => u.email).join(', ')}`);
+      
+      // Sync any users that might exist in Auth but not in the users table
+      await syncAuthUsersWithCustomTable();
     }
     
-    // For other tables, we'll use the Supabase UI to create them manually
-    // as the service_role key doesn't have permission to run raw SQL queries
-    // through the API in most configurations.
-    
-    console.log('\nIMPORTANT: Please complete the database setup by running the SQL script manually');
-    console.log('1. Go to your Supabase dashboard: https://app.supabase.com/project/_/sql');
-    console.log('2. Open the file: /src/db/migrations/00001_initial_schema.sql');
-    console.log('3. Copy its contents and run it in the Supabase SQL editor');
-    console.log('\nThis step is necessary as the Supabase client cannot run schema-changing SQL in most configurations.');
-    
-    console.log('\nAlternatively, you can use the Supabase UI to create the required tables:');
-    console.log('- plans: For storing plan information');
-    console.log('- plan_nodes: For hierarchical structure of plans');
-    console.log('- plan_collaborators: For managing who has access to plans');
-    console.log('- plan_comments: For storing comments on plan nodes');
-    console.log('- api_keys: For API token storage');
-    console.log('- plan_node_labels: For categorizing nodes');
-    console.log('- plan_node_artifacts: For storing outputs and references');
-    console.log('- plan_node_logs: For tracking agent activity');
-    
-    console.log('\nDatabase initialization completed with instructions for manual steps');
-    console.log('\nADDITIONAL STEP: After creating tables, apply RLS policy fixes for security:');
-    console.log('1. Open the file: /src/db/migrations/00002_rls_policy_fixes.sql');
-    console.log('2. Copy its contents and run it in the Supabase SQL editor');
-    console.log('\nThis fixes permission issues with comments, logs, and API keys,');
-    console.log('and adds necessary policies for the new Artifact functionality.')
+    console.log('Database initialization completed');
   } catch (error) {
     console.error('Database initialization failed:', error);
     throw error;
   }
 };
 
-module.exports = { initializeDatabase };
+module.exports = { initializeDatabase, syncAuthUsersWithCustomTable, createAdminUser };

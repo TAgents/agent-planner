@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const { supabase, supabaseAdmin } = require('../config/supabase');
 const logger = require('../utils/logger');
 require('dotenv').config();
@@ -163,45 +164,61 @@ const login = async (req, res, next) => {
  */
 const createApiToken = async (req, res, next) => {
   try {
-    const { name, scopes } = req.body;
+    const { name, permissions = ['read'] } = req.body;
     const userId = req.user.id;
 
     if (!name) {
       return res.status(400).json({ error: 'Token name is required' });
     }
 
-    // Generate a unique API key
-    const apiKey = uuidv4();
+    // Validate permissions
+    const validPermissions = ['read', 'write', 'admin'];
     
-    // Hash the key for storage
-    const keyHash = jwt.sign({ key: apiKey }, process.env.JWT_SECRET);
+    for (const perm of permissions) {
+      if (!validPermissions.includes(perm)) {
+        return res.status(400).json({ 
+          error: `Invalid permission: ${perm}. Valid values are: ${validPermissions.join(', ')}` 
+        });
+      }
+    }
 
-    // Store the API key in the database
+    // Generate a random token
+    const tokenValue = crypto.randomBytes(32).toString('hex');
+    
+    // Hash token for storage
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(tokenValue)
+      .digest('hex');
+
+    const tokenId = uuidv4();
+    const now = new Date();
+
+    // Store the token in the database
     const { data, error } = await supabase
-      .from('api_keys')
+      .from('api_tokens')
       .insert([
         {
-          id: uuidv4(),
+          id: tokenId,
           user_id: userId,
           name,
-          key_hash: keyHash,
-          created_at: new Date(),
-          scopes: scopes || ['read'], // Default to read-only
+          token_hash: tokenHash,
+          permissions,
+          created_at: now,
+          revoked: false
         },
       ])
-      .select();
+      .select('id, name, created_at, permissions');
 
     if (error) {
+      await logger.error('Error creating token', error);
       return res.status(400).json({ error: error.message });
     }
 
-    // Return the API key (this is the only time the full key will be visible)
+    // Return the token data with the token value (will only be shown once)
     res.status(201).json({
-      id: data[0].id,
-      name: data[0].name,
-      key: apiKey, // This is shown only once
-      created_at: data[0].created_at,
-      scopes: data[0].scopes,
+      ...data[0],
+      token: tokenValue
     });
   } catch (error) {
     next(error);
@@ -216,15 +233,30 @@ const revokeApiToken = async (req, res, next) => {
     const { id } = req.params;
     const userId = req.user.id;
 
-    // Delete the API key
-    const { error } = await supabase
-      .from('api_keys')
-      .delete()
+    // Verify the token belongs to the user
+    const { data: token, error: findError } = await supabase
+      .from('api_tokens')
+      .select('id')
       .eq('id', id)
-      .eq('user_id', userId); // Ensure the key belongs to the user
+      .eq('user_id', userId)
+      .single();
 
-    if (error) {
-      return res.status(400).json({ error: error.message });
+    if (findError) {
+      if (findError.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Token not found' });
+      }
+      return res.status(500).json({ error: findError.message });
+    }
+
+    // Mark the token as revoked instead of deleting it
+    const { error: updateError } = await supabase
+      .from('api_tokens')
+      .update({ revoked: true })
+      .eq('id', id);
+
+    if (updateError) {
+      await logger.error('Error revoking token', updateError);
+      return res.status(500).json({ error: updateError.message });
     }
 
     res.status(204).send();

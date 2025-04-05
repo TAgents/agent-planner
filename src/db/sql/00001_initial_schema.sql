@@ -68,18 +68,6 @@ CREATE TABLE IF NOT EXISTS plan_comments (
 );
 CREATE INDEX plan_comments_plan_node_id_idx ON plan_comments (plan_node_id);
 
--- API keys table
-CREATE TABLE IF NOT EXISTS api_keys (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  key_hash TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  expires_at TIMESTAMP WITH TIME ZONE,
-  scopes TEXT[] DEFAULT ARRAY['read']::TEXT[]
-);
-CREATE INDEX api_keys_user_id_idx ON api_keys (user_id);
-
 -- Plan node labels table
 CREATE TABLE IF NOT EXISTS plan_node_labels (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

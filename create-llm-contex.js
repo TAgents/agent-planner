@@ -15,6 +15,11 @@ const config = {
     'supabase',
     'coverage'
   ],
+  // New option to filter out specific files by name
+  excludedFiles: [
+    'package-lock.json', // file names or parts of file names to exclude
+    '.env'
+  ],
   includedExtensions: [
     '.js',
     '.jsx',
@@ -27,7 +32,7 @@ const config = {
     '.prisma',
     '.env.example'
   ],
-  outputFile: 'codebase_context.json'
+  outputFile: 'codebase_analysis.json'
 };
 
 // Map file extensions to human-friendly language names
@@ -78,8 +83,13 @@ async function scanDirectory(dir, ig) {
     const fullPath = path.join(dir, file);
     const stat = await fs.stat(fullPath);
     
-    // Skip if file/directory is ignored
+    // Skip if file/directory is ignored by our ignore patterns
     if (ig.ignores(fullPath)) continue;
+    
+    // If file name contains any excludedFiles pattern, skip this file
+    if (!stat.isDirectory() && config.excludedFiles.some(pattern => file.includes(pattern))) {
+      continue;
+    }
 
     if (stat.isDirectory()) {
       if (!config.excludedDirs.includes(file)) {
@@ -155,4 +165,3 @@ async function generateAnalysisFile() {
 
 // Execute the analysis
 generateAnalysisFile();
-

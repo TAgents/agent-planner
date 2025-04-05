@@ -123,12 +123,12 @@ router.post('/login', authController.login);
  *               name:
  *                 type: string
  *                 description: A name for the token
- *               scopes:
+ *               permissions:
  *                 type: array
  *                 items:
  *                   type: string
  *                   enum: [read, write, admin]
- *                 description: Permission scopes for the token
+ *                 description: Permission levels for the token
  *     responses:
  *       201:
  *         description: Token created successfully
@@ -141,13 +141,13 @@ router.post('/login', authController.login);
  *                   type: string
  *                 name:
  *                   type: string
- *                 key:
+ *                 token:
  *                   type: string
- *                   description: The API key (shown only once)
+ *                   description: The API token (shown only once)
  *                 created_at:
  *                   type: string
  *                   format: date-time
- *                 scopes:
+ *                 permissions:
  *                   type: array
  *                   items:
  *                     type: string
