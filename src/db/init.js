@@ -1,4 +1,47 @@
 const { supabase, supabaseAdmin } = require('../config/supabase');
+const fs = require('fs');
+const path = require('path');
+const logger = require('../utils/logger');
+
+/**
+ * Execute SQL migration files
+ */
+const executeMigrations = async () => {
+  try {
+    await logger.api('Executing SQL migrations...');
+    
+    // Get all migration files
+    const migrationsDir = path.resolve(__dirname, 'sql');
+    const migrationFiles = fs.readdirSync(migrationsDir)
+      .filter(file => file.endsWith('.sql'))
+      .sort(); // Ensure they run in order
+    
+    for (const file of migrationFiles) {
+      await logger.api(`Executing migration: ${file}`);
+      
+      // Read the SQL file
+      const filePath = path.join(migrationsDir, file);
+      const sql = fs.readFileSync(filePath, 'utf-8');
+      
+      // Execute the SQL
+      const { error } = await supabaseAdmin.rpc('exec_sql', { sql_query: sql });
+      
+      if (error) {
+        await logger.error(`Error executing migration ${file}:`, error);
+        console.error(`Error executing migration ${file}:`, error);
+      } else {
+        await logger.api(`Successfully executed migration: ${file}`);
+      }
+    }
+    
+    await logger.api('All migrations executed successfully');
+    return true;
+  } catch (error) {
+    await logger.error('Error executing migrations:', error);
+    console.error('Error executing migrations:', error);
+    return false;
+  }
+};
 
 /**
  * Ensures that user records exist in our custom users table for all Supabase Auth users
@@ -179,6 +222,9 @@ const initializeDatabase = async () => {
   try {
     console.log('Initializing database...');
     
+    // Run all SQL migrations
+    await executeMigrations();
+    
     // Check if users table exists and has records
     console.log('Checking for existing users...');
     const { data: existingUsers, error: usersError } = await supabaseAdmin
@@ -209,4 +255,4 @@ const initializeDatabase = async () => {
   }
 };
 
-module.exports = { initializeDatabase, syncAuthUsersWithCustomTable, createAdminUser };
+module.exports = { initializeDatabase, syncAuthUsersWithCustomTable, createAdminUser, executeMigrations };
