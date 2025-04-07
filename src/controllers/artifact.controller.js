@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const { supabase } = require('../config/supabase');
+const { supabaseAdmin: supabase } = require('../config/supabase');
 
 /**
  * Helper function to check if a user has access to a plan with specified roles
@@ -414,6 +414,109 @@ const getPlanArtifacts = async (req, res, next) => {
   }
 };
 
+/**
+ * Download an artifact file
+ */
+const downloadArtifact = async (req, res, next) => {
+  try {
+    const { path: filePath, filename } = req.query;
+    const userId = req.user?.id;
+    
+    // Log the request with more details
+    console.log(`Download request: path=${filePath}, filename=${filename}, user=${userId}`);
+    console.log(`Download path exists check: ${require('fs').existsSync(filePath) ? 'File exists' : 'File NOT found'}`);
+    
+    // Validate path parameter
+    if (!filePath) {
+      return res.status(400).json({ error: 'Path parameter is required' });
+    }
+    
+    // Basic security check to prevent path traversal
+    if (filePath.includes('../') || filePath.includes('..\\')) {
+      return res.status(400).json({ error: 'Invalid path: path traversal not allowed' });
+    }
+
+    // Check if file exists
+    const fs = require('fs');
+    const { promisify } = require('util');
+    const pathModule = require('path');
+    const access = promisify(fs.access);
+    const stat = promisify(fs.stat);
+
+    try {
+      // Attempt to access the file
+      await access(filePath, fs.constants.F_OK);
+      const fileStat = await stat(filePath);
+      
+      // If it's a directory, return an error
+      if (fileStat.isDirectory()) {
+        return res.status(400).json({ error: 'Path is a directory, not a file' });
+      }
+      
+      // Determine content type based on file extension
+      const fileExtension = pathModule.extname(filePath).toLowerCase();
+      const mimeTypes = {
+        '.txt': 'text/plain',
+        '.pdf': 'application/pdf',
+        '.doc': 'application/msword',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.xls': 'application/vnd.ms-excel',
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '.md': 'text/markdown',
+        '.json': 'application/json',
+        '.csv': 'text/csv',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.svg': 'image/svg+xml',
+        '.js': 'application/javascript',
+        '.html': 'text/html',
+        '.css': 'text/css',
+      };
+      
+      const contentType = mimeTypes[fileExtension] || 'application/octet-stream';
+      const finalFilename = filename || pathModule.basename(filePath);
+      
+      console.log(`Serving file download: ${filePath} as ${finalFilename} (${contentType}), size: ${fileStat.size} bytes`);
+
+      // Set appropriate headers for download
+      res.set({
+        'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename="${finalFilename}"`,
+        'Content-Length': fileStat.size,
+        'Cache-Control': 'no-cache',
+        'X-Content-Type-Options': 'nosniff'
+      });
+
+      // Stream the file to the response
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+      
+      // Handle errors in the stream
+      fileStream.on('error', (err) => {
+        console.error(`Error streaming file (${filePath}): ${err.message}`);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Error reading file' });
+        } else {
+          res.end();
+        }
+      });
+      
+      // Handle completion
+      fileStream.on('end', () => {
+        console.log(`File download completed: ${filePath}`);
+      });
+    } catch (err) {
+      console.error(`File access error (${filePath}): ${err.message}`);
+      return res.status(404).json({ error: `File not found or inaccessible: ${err.message}` });
+    }
+  } catch (error) {
+    console.error(`Error in downloadArtifact controller: ${error.message}`);
+    next(error);
+  }
+};
+
 module.exports = {
   addArtifact,
   getNodeArtifacts,
@@ -421,4 +524,5 @@ module.exports = {
   updateArtifact,
   deleteArtifact,
   getPlanArtifacts,
+  downloadArtifact
 };

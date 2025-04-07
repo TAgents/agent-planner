@@ -319,4 +319,43 @@ router.delete('/:id/nodes/:nodeId/artifacts/:artifactId', authenticate, artifact
  */
 router.get('/:id/artifacts', authenticate, artifactController.getPlanArtifacts);
 
+/**
+ * @swagger
+ * /api/artifacts/download:
+ *   get:
+ *     summary: Download an artifact file
+ *     tags: [Artifacts]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The file path to download
+ *       - in: query
+ *         name: filename
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: The filename to use for the download
+ *     responses:
+ *       200:
+ *         description: File stream for download
+ *         content:
+ *           application/octet-stream:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       400:
+ *         description: Invalid path or not a file
+ *       401:
+ *         description: Authentication required
+ *       404:
+ *         description: File not found
+ */
+// Note: This route is not used directly. The endpoint is registered using a separate router in src/index.js
+// router.get('/download', authenticate, artifactController.downloadArtifact);
+
 module.exports = router;

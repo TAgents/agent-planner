@@ -1,5 +1,28 @@
 # Planning System API: Technical Design Document
 
+## Known Issues and Solutions
+
+### UI and API Integration
+
+1. **Plan Creation and Listing Issue**
+   - **Problem**: When creating plans or listing plans in the UI, users may encounter a "Request failed with status code 400" error with the message "new row violates row-level security policy for table plans."
+   - **Root Cause**: Supabase Row Level Security (RLS) policies require auth.uid() to be properly set for the database operations.
+   - **Solution**:
+     - The system now uses Supabase's built-in authentication system instead of custom JWTs
+     - Authentication tokens come directly from Supabase Auth
+     - The frontend stores a Supabase session instead of a custom token
+     - The backend properly passes the user's session token to Supabase to ensure auth.uid() is set correctly
+   - **Best Practice**: Ensure the Supabase session token is properly stored after login and included in all API requests.
+
+2. **API Response Format Inconsistency**
+   - **Problem**: The API endpoints return inconsistent response formats - some return direct arrays/objects, while the UI expects paginated responses with `data`, `total`, etc. properties.
+   - **Root Cause**: The backend API was developed without standardized response formats.
+   - **Solution**: 
+     - The UI has been updated to handle both formats (direct arrays/objects and paginated responses)
+     - For a more maintainable solution, consider standardizing all API responses to follow the same structure
+   - **Best Practice**: When extending the API, follow a consistent response format for all endpoints.
+
+
 ## System Overview
 
 The Planning System API facilitates collaborative planning between humans and AI agents through a unified interface. The system stores plan data in a Supabase database and provides a REST API for accessing and manipulating plans. A key focus is enabling seamless collaboration between humans and LLM agents, without creating artificial distinctions between them in the system architecture.
@@ -287,8 +310,11 @@ Agents can:
 ## Security Considerations
 
 - All data transmitted via HTTPS
-- API keys with scoped permissions
+- Supabase Auth for secure authentication
+- API tokens with scoped permissions
 - Row-level security in Supabase
+  - Supabase Auth ensures auth.uid() is properly set for RLS policies
+  - Access to plans and nodes is restricted to owners and collaborators only
 - Audit logging for sensitive operations
 - Rate limiting to prevent abuse
 - Clear attribution of actions (human vs agent)

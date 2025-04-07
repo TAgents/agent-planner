@@ -1,70 +1,351 @@
-# Project Tasks
+# Agent Planner API Refactoring Tasks
 
-This document outlines identified issues and planned improvements for the agent-planner backend codebase. Items are organized into bugs/inconsistencies that should be addressed for correctness and stability, and improvements/refactoring efforts to enhance maintainability, performance, and features.
+This document outlines the necessary API enhancements to address the gaps identified in the agent-planner API. These improvements will enable better planning functionality and support the enhanced MCP tools.
 
-## Bugs / Inconsistencies (Priority: High)
+## New API Endpoints
 
-These items address potential errors, security vulnerabilities, or inconsistent behavior.
+### 1. Plan Structure Endpoint
 
--   [x] **Resolve API Key Hashing Inconsistency:**
-    -   [x] Remove JWT-based hashing (`jwt.sign`) for API keys in `src/controllers/auth.controller.js`.
-    -   [x] Standardize on `crypto.createHash('sha256')` for hashing API tokens/keys in all relevant controllers and database schemas.
-    -   [x] Ensure alignment between `token.controller.js` and the `api_tokens` table schema.
--   [x] **Clarify and Consolidate Database Migrations:**
-    -   [x] Resolve the naming conflict and potential overlap between `00003_activity_and_search_updates.sql` and `00003_api_tokens.sql`. Ensure migrations are linear.
-    -   [x] Determine if `api_tokens` replaces `api_keys`. Update migrations and controllers accordingly (likely deprecate/remove `api_keys` table and related logic in `auth.controller.js`).
-    -   [x] Remove any duplicated schema alterations within migrations (e.g., `metadata`/`tags` on `plan_node_logs`).
--   [ ] **Implement Database Transactions for Atomic Operations:**
-    -   [ ] Refactor `plan.controller.js -> createPlan` to use a transaction (e.g., via Supabase RPC) ensuring plan and root node are created atomically.
-    -   [ ] Refactor `node.controller.js -> deleteNode` to use a transaction ensuring the node and all its related data (comments, logs, artifacts, children) are deleted atomically.
-    -   [ ] Refactor `plan.controller.js -> deletePlan` to use a transaction ensuring the plan and all its associated data are deleted atomically.
--   [ ] **Review and Secure `checkPlanAccess` Logic:**
-    -   [ ] Audit all call sites of the `checkPlanAccess` helper function.
-    -   [ ] Ensure explicit, appropriate roles (`['owner', 'admin', 'editor']` etc.) are *always* passed when checking access for mutating operations.
-    -   [ ] Modify `checkPlanAccess` to have a safer default behavior if `roles` array is empty or consider making the `roles` parameter mandatory for mutating checks.
--   [ ] **Remove Redundant API Routes:**
-    -   [ ] Choose a canonical route structure for accessing plan-related resources (e.g., consistently use `/plans/:id/...`).
-    -   [ ] Remove duplicate routes identified in `activity.routes.js` (e.g., `/activity/plan/:id/activity`).
--   [ ] **Graceful Handling of Configuration Errors:**
-    -   [ ] Modify `src/config/supabase.js` to `throw new Error(...)` instead of `process.exit(1)` if required environment variables are missing.
-    -   [ ] Ensure the main application startup logic in `src/index.js` catches and handles these configuration errors gracefully (e.g., log error and exit cleanly).
+```
+GET /plans/{planId}/structure
+```
 
+**Description:** Retrieve the complete hierarchical structure of a plan with preserved parent-child relationships.
 
-## Improvements / Refactoring (Priority: Medium/Low)
+**Tasks:**
+- [ ] Create a new controller method in `src/controllers/plan.controller.js`
+- [ ] Implement efficient querying of the hierarchical structure (consider recursive CTEs in SQL)
+- [ ] Add support for query parameters:
+  - [ ] `include_details`: Boolean to include full node details or basic info
+  - [ ] `max_depth`: Integer to limit hierarchy depth for large plans
+- [ ] Create a response mapper to transform flat database results into a nested structure
+- [ ] Add appropriate route in `src/routes/plan.routes.js`
+- [ ] Create unit and integration tests
 
-These items focus on improving code quality, performance, maintainability, and developer experience.
+**Expected Response:**
+```json
+{
+  "plan_id": "123",
+  "title": "Plan Title",
+  "nodes": [
+    {
+      "id": "node1",
+      "title": "Root Node",
+      "node_type": "root",
+      "status": "in_progress",
+      "children": [
+        {
+          "id": "node2",
+          "title": "Child Node",
+          "node_type": "phase",
+          "status": "not_started",
+          "children": [...]
+        }
+      ]
+    }
+  ]
+}
+```
 
--   [ ] **Implement Robust Input Validation:**
-    -   [ ] Introduce a validation library (e.g., `zod`, `joi`, `express-validator`).
-    -   [ ] Apply validation rules to request bodies, query parameters, and path parameters in all route handlers (`*.routes.js` or controllers).
--   [ ] **Enhance Centralized Error Handling:**
-    -   [ ] Refine the global error handling middleware (`src/index.js`) to provide consistent JSON error responses.
-    -   [ ] Differentiate error responses based on error types (e.g., validation errors (400), auth errors (401/403), not found (404), server errors (500)).
--   [ ] **Introduce a Service Layer:**
-    -   [ ] Create a `src/services/` directory.
-    -   [ ] Refactor controllers to delegate business logic and direct database interactions (Supabase calls) to service modules (e.g., `PlanService`, `NodeService`, `AuthService`).
--   [ ] **Database Performance Optimization:**
-    -   [ ] Analyze performance of complex queries (e.g., `globalSearch`, `getUserActivityFeed`, `getPlanTimeline`).
-    -   [ ] Consider creating Supabase RPC functions (PL/pgSQL) to perform heavy lifting (joins, aggregations, searches) within the database for these complex queries.
-    -   [ ] Review existing database indexes and add/modify indexes as needed based on query performance analysis (`EXPLAIN ANALYZE`).
--   [ ] **Implement Comprehensive Testing:**
-    -   [ ] Write unit tests for utility functions (`src/utils/`) and service layer functions (mocking database interactions).
-    -   [ ] Write integration tests for key API endpoints, setting up and tearing down test data in a dedicated test Supabase project or schema.
--   [ ] **Centralize Configuration and Constants:**
-    -   [ ] Create a dedicated configuration module/file (e.g., `src/config/constants.js`).
-    -   [ ] Move hardcoded values like pagination defaults, allowed roles, statuses, node types, log types, etc., to this central location.
--   [ ] **Improve Logging:**
-    -   [ ] Update `src/utils/logger.js` to support structured logging (output JSON format).
-    -   [ ] Implement distinct log levels (e.g., `debug`, `info`, `warn`, `error`) and allow configuration via environment variables.
-    -   [ ] Investigate log rotation strategies if log files are expected to grow significantly.
--   [ ] **Security Hardening:**
-    -   [ ] Implement rate limiting on sensitive endpoints, particularly `/auth/login` and `/auth/register`.
-    -   [ ] Conduct a thorough review of all Row Level Security (RLS) policies in the SQL migration files for correctness and completeness.
-    -   [ ] Verify that all potentially sensitive information is correctly redacted in debug logs (`debug.middleware.js`).
--   [ ] **Dependency Management Strategy:**
-    -   [ ] Establish a regular process (e.g., quarterly) for reviewing outdated dependencies (`npm outdated`).
-    -   [ ] Plan and execute updates for dependencies, especially those with security vulnerabilities.
--   [ ] **Code Style and Documentation:**
-    -   [ ] Ensure consistent code style (consider using Prettier and ESLint).
-    -   [ ] Improve inline code comments (JSDoc) for complex functions and modules.
-    -   [ ] Update Swagger documentation (`*.routes.js`) to accurately reflect any API changes made.
+### 2. Advanced Node Search
+
+```
+GET /plans/{planId}/nodes/search
+```
+
+**Description:** Advanced search with multiple filters for finding nodes within a plan.
+
+**Tasks:**
+- [ ] Create a new controller method in `src/controllers/node.controller.js`
+- [ ] Implement a flexible search query builder supporting:
+  - [ ] Text search across titles and descriptions
+  - [ ] Filtering by node type, status, parent_id
+  - [ ] Date range filtering for creation/updates
+- [ ] Add support for pagination
+- [ ] Support response format customization
+- [ ] Add route in `src/routes/node.routes.js`
+- [ ] Create unit and integration tests
+
+**Expected Query Parameters:**
+```
+query=planning
+node_type=task
+status=in_progress
+parent_id=abc123
+created_after=2024-01-01
+created_before=2024-12-31
+page=1
+limit=20
+```
+
+### 3. Plan Statistics Endpoint
+
+```
+GET /plans/{planId}/stats
+```
+
+**Description:** Aggregate statistics about plan progress and composition.
+
+**Tasks:**
+- [ ] Create a new controller method in `src/controllers/plan.controller.js`
+- [ ] Implement aggregation queries for:
+  - [ ] Counts by status (not_started, in_progress, completed, blocked)
+  - [ ] Counts by node type (root, phase, task, milestone)
+  - [ ] Completion percentage calculation
+  - [ ] Due date statistics (overdue, due soon, etc.)
+- [ ] Add route in `src/routes/plan.routes.js`
+- [ ] Create unit and integration tests
+
+**Expected Response:**
+```json
+{
+  "by_status": {
+    "not_started": 10,
+    "in_progress": 5,
+    "completed": 3,
+    "blocked": 1
+  },
+  "by_type": {
+    "root": 1,
+    "phase": 4,
+    "task": 12,
+    "milestone": 2
+  },
+  "completion_percentage": 15.8,
+  "due_date_summary": {
+    "overdue": 2,
+    "due_this_week": 3,
+    "due_next_week": 5
+  }
+}
+```
+
+### 4. Node Children Endpoint
+
+```
+GET /plans/{planId}/nodes/{nodeId}/children
+```
+
+**Description:** Get direct or all descendant children of a specific node.
+
+**Tasks:**
+- [ ] Create a new controller method in `src/controllers/node.controller.js`
+- [ ] Implement query logic supporting:
+  - [ ] Direct children retrieval
+  - [ ] Recursive descendant retrieval
+  - [ ] Filtering by node type and status
+- [ ] Add pagination support
+- [ ] Add route in `src/routes/node.routes.js`
+- [ ] Create unit and integration tests
+
+**Expected Query Parameters:**
+```
+recursive=true
+node_type=task
+status=blocked
+page=1
+limit=20
+```
+
+### 5. Bulk Node Creation
+
+```
+POST /plans/{planId}/nodes/bulk
+```
+
+**Description:** Create multiple nodes in a single request.
+
+**Tasks:**
+- [ ] Create a new controller method in `src/controllers/node.controller.js`
+- [ ] Implement transaction support to ensure atomic operation
+- [ ] Add validation for the array of node objects
+- [ ] Implement efficient bulk insertion
+- [ ] Add route in `src/routes/node.routes.js`
+- [ ] Create unit and integration tests
+
+**Expected Request:**
+```json
+{
+  "nodes": [
+    {
+      "title": "Phase 1",
+      "node_type": "phase",
+      "parent_id": "root_node_id"
+    },
+    {
+      "title": "Task 1",
+      "node_type": "task",
+      "parent_id": "{reference_to_phase_1}",
+      "description": "First task description"
+    }
+  ]
+}
+```
+
+## API Enhancements
+
+### 1. Enhanced Node Update
+
+```
+PATCH /plans/{planId}/nodes/{nodeId}
+```
+
+**Description:** Enhance the existing node update endpoint to support moving nodes and reordering.
+
+**Tasks:**
+- [ ] Modify the existing controller method in `src/controllers/node.controller.js`
+- [ ] Add support for:
+  - [ ] Changing parent (moving node to a different parent)
+  - [ ] Updating order_index (position among siblings)
+  - [ ] Preserving or moving children with the parent node
+- [ ] Implement transaction support for safe hierarchy modifications
+- [ ] Add appropriate validations
+- [ ] Update unit and integration tests
+
+**Expected Request Additions:**
+```json
+{
+  "parent_id": "new_parent_id",
+  "order_index": 2,
+  "preserve_children": true
+}
+```
+
+### 2. Node Reordering Endpoint
+
+```
+PUT /plans/{planId}/nodes/reorder
+```
+
+**Description:** Reorder multiple nodes in a single operation.
+
+**Tasks:**
+- [ ] Create a new controller method in `src/controllers/node.controller.js`
+- [ ] Implement transaction support
+- [ ] Add validation for node IDs and order indices
+- [ ] Add route in `src/routes/node.routes.js`
+- [ ] Create unit and integration tests
+
+**Expected Request:**
+```json
+{
+  "node_orders": [
+    { "node_id": "node1", "order_index": 0 },
+    { "node_id": "node2", "order_index": 1 },
+    { "node_id": "node3", "order_index": 2 }
+  ]
+}
+```
+
+### 3. Find Nodes by Name
+
+```
+GET /plans/{planId}/nodes/by-name/{name}
+```
+
+**Description:** Find nodes by exact or partial name match.
+
+**Tasks:**
+- [ ] Create a new controller method in `src/controllers/node.controller.js`
+- [ ] Implement search logic supporting:
+  - [ ] Exact or partial name matching
+  - [ ] Filtering by node type
+- [ ] Add route in `src/routes/node.routes.js`
+- [ ] Create unit and integration tests
+
+**Expected Query Parameters:**
+```
+exact=false
+node_type=task
+```
+
+### 4. Enhanced Global Search
+
+```
+GET /plans/search
+```
+
+**Description:** Improve the existing search to support more advanced features.
+
+**Tasks:**
+- [ ] Enhance the existing search functionality in `src/controllers/search.controller.js`
+- [ ] Implement more sophisticated text matching
+- [ ] Add support for faceted search with multiple filters
+- [ ] Implement relevance scoring
+- [ ] Add ability to search within specific plan sections
+- [ ] Update unit and integration tests
+
+**Expected Query Parameters:**
+```
+q=project planning
+plan_id=optional_plan_id
+node_types=task,milestone
+statuses=not_started,in_progress
+date_range=2024-01-01,2024-12-31
+sort_by=relevance
+```
+
+## Database and Infrastructure Changes
+
+### 1. Optimized Database Structure
+
+**Tasks:**
+- [ ] Review and update database indexes for efficient hierarchical queries
+- [ ] Consider adding materialized paths or closure tables for faster tree traversal
+- [ ] Add indexes to support text search operations
+- [ ] Implement/review row-level security policies
+
+### 2. API Versioning
+
+**Tasks:**
+- [ ] Implement API versioning strategy (URL, header, or content negotiation)
+- [ ] Update routing and controller structure to support versioned endpoints
+- [ ] Create documentation for version differences
+
+### 3. Performance Optimizations
+
+**Tasks:**
+- [ ] Implement query optimizations for large plans
+- [ ] Add result caching where appropriate
+- [ ] Add pagination to all list endpoints that might return large result sets
+- [ ] Implement query timeouts to prevent long-running operations
+
+## Documentation and Testing
+
+### 1. API Documentation
+
+**Tasks:**
+- [ ] Update OpenAPI/Swagger documentation
+- [ ] Add examples for all new endpoints
+- [ ] Create usage guides for complex operations
+- [ ] Document potential performance considerations
+
+### 2. Comprehensive Testing
+
+**Tasks:**
+- [ ] Create unit tests for all new controller methods
+- [ ] Implement integration tests for new endpoints
+- [ ] Add performance tests for tree operations on large plans
+- [ ] Create test fixtures for hierarchical data
+
+## Implementation Timeline
+
+**Phase 1: Core Hierarchy Functions**
+- Plan Structure Endpoint
+- Node Children Endpoint
+- Enhanced Node Update
+
+**Phase 2: Search and Discovery**
+- Advanced Node Search
+- Find Nodes by Name
+- Enhanced Global Search
+
+**Phase 3: Bulk Operations and Statistics**
+- Bulk Node Creation
+- Node Reordering Endpoint
+- Plan Statistics Endpoint
+
+**Phase 4: Optimization and Documentation**
+- Database Optimizations
+- API Versioning
+- Documentation and Testing

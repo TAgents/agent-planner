@@ -6,6 +6,17 @@ A collaborative planning system that facilitates interactions between humans and
 
 The Planning System API stores plan data in a Supabase database and provides a REST API for accessing and manipulating plans. The system is designed to enable seamless collaboration between humans and LLM agents, without creating artificial distinctions between them in the architecture.
 
+## Authentication System (April 2025 Update)
+
+The system now uses Supabase's built-in authentication system instead of custom JWTs. This means:
+
+- Authentication tokens come directly from Supabase Auth
+- Row Level Security (RLS) policies work correctly with auth.uid()
+- The frontend now stores a Supabase session instead of a custom token
+- Login and registration flows send back Supabase sessions
+
+This change fixes issues where RLS policies would fail to identify the authenticated user correctly.
+
 ## Core Features
 
 - Hierarchical plan structures with phases, tasks, and milestones

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/auth.controller');
+const tokenController = require('../controllers/token.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 
 /**
@@ -51,8 +52,15 @@ const { authenticate } = require('../middleware/auth.middleware');
  *                       type: string
  *                     name:
  *                       type: string
- *                 token:
- *                   type: string
+ *                 session:
+ *                   type: object
+ *                   properties:
+ *                     access_token:
+ *                       type: string
+ *                     refresh_token:
+ *                       type: string
+ *                     expires_at:
+ *                       type: number
  *       400:
  *         description: Invalid input
  */
@@ -96,12 +104,38 @@ router.post('/register', authController.register);
  *                       type: string
  *                     name:
  *                       type: string
- *                 token:
- *                   type: string
+ *                 session:
+ *                   type: object
+ *                   properties:
+ *                     access_token:
+ *                       type: string
+ *                     refresh_token:
+ *                       type: string
+ *                     expires_at:
+ *                       type: number
  *       401:
  *         description: Authentication failed
  */
 router.post('/login', authController.login);
+
+/**
+ * @swagger
+ * /auth/logout:
+ *   post:
+ *     summary: Logout user
+ *     tags: [Authentication]
+ *     responses:
+ *       200:
+ *         description: Logout successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+router.post('/logout', authController.logout);
 
 /**
  * @swagger
@@ -154,7 +188,7 @@ router.post('/login', authController.login);
  *       401:
  *         description: Authentication required
  */
-router.post('/token', authenticate, authController.createApiToken);
+router.post('/token', authenticate, tokenController.createToken);
 
 /**
  * @swagger
@@ -179,6 +213,6 @@ router.post('/token', authenticate, authController.createApiToken);
  *       404:
  *         description: Token not found
  */
-router.delete('/token/:id', authenticate, authController.revokeApiToken);
+router.delete('/token/:id', authenticate, tokenController.revokeToken);
 
 module.exports = router;

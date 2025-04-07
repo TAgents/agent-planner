@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const { supabase } = require('../config/supabase');
+const { supabaseAdmin: supabase } = require('../config/supabase');
 
 /**
  * List all plans accessible to the user

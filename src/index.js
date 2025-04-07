@@ -69,6 +69,16 @@ const swaggerOptions = {
         description: 'Development server',
       },
     ],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'Enter your Supabase access token',
+        },
+      },
+    },
   },
   apis: ['./src/routes/*.js'], // Path to the API docs
 };
