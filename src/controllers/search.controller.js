@@ -92,13 +92,7 @@ const searchNodes = async (req, res, next) => {
 
     // Add full-text search if query param is provided
     if (query) {
-      planNodesQuery = planNodesQuery.or(`
-        title.ilike.%${query}%,
-        description.ilike.%${query}%,
-        context.ilike.%${query}%,
-        agent_instructions.ilike.%${query}%,
-        acceptance_criteria.ilike.%${query}%
-      `);
+      planNodesQuery = planNodesQuery.or(`title.ilike.%${query}%,description.ilike.%${query}%,context.ilike.%${query}%,agent_instructions.ilike.%${query}%,acceptance_criteria.ilike.%${query}%`);
     }
 
     // Add status filter if provided
@@ -207,10 +201,7 @@ const searchArtifacts = async (req, res, next) => {
 
     // Add full-text search if query param is provided
     if (query) {
-      artifactsQuery = artifactsQuery.or(`
-        name.ilike.%${query}%,
-        url.ilike.%${query}%
-      `);
+      artifactsQuery = artifactsQuery.or(`name.ilike.%${query}%,url.ilike.%${query}%`);
     }
 
     // Add content type filter if provided
@@ -303,13 +294,7 @@ const globalSearch = async (req, res, next) => {
           created_at
         `)
         .in('plan_id', planIds)
-        .or(`
-          title.ilike.%${query}%,
-          description.ilike.%${query}%,
-          context.ilike.%${query}%,
-          agent_instructions.ilike.%${query}%,
-          acceptance_criteria.ilike.%${query}%
-        `)
+        .or(`title.ilike.%${query}%,description.ilike.%${query}%,context.ilike.%${query}%,agent_instructions.ilike.%${query}%,acceptance_criteria.ilike.%${query}%`)
         .order('created_at', { ascending: false });
 
       if (nodesError) {
@@ -331,7 +316,7 @@ const globalSearch = async (req, res, next) => {
             created_at,
             user:user_id (id, name, email)
           `)
-          .in('plan_node_id', nodeIds)
+          .in('plan_node_id', planNodeIds)
           .ilike('content', `%${query}%`)
           .order('created_at', { ascending: false });
 
@@ -469,8 +454,56 @@ const globalSearch = async (req, res, next) => {
   }
 };
 
+/**
+ * Search within a plan using the database function
+ */
+const searchPlan = async (req, res, next) => {
+  try {
+    const { plan_id: planId } = req.params;
+    const { query } = req.query;
+    const userId = req.user.id;
+
+    if (!query || query.trim().length < 2) {
+      return res.status(400).json({ error: 'Search query must be at least 2 characters' });
+    }
+
+    // Check if the user has access to this plan
+    const hasAccess = await checkPlanAccess(planId, userId);
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'You do not have access to this plan' });
+    }
+
+    // Call the database function to search across all resources in the plan
+    // Using the correct parameter names as defined in the database function
+    const { data: searchResults, error: rpcError } = await supabase.rpc('search_plan', {
+      input_plan_id: planId, // Use the correct parameter name from the function definition
+      search_query: query
+    });
+
+    if (rpcError) {
+      console.error('Error calling search_plan RPC:', rpcError);
+      return res.status(500).json({ error: rpcError.message });
+    }
+
+    // Sort results by created_at (most recent first)
+    const sortedResults = searchResults || [];
+    sortedResults.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    // Return the search results
+    res.json({
+      query,
+      results: sortedResults,
+      count: sortedResults.length
+    });
+  } catch (error) {
+    console.error('Error in searchPlan:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   searchNodes,
   searchArtifacts,
-  globalSearch
+  globalSearch,
+  searchPlan
 };

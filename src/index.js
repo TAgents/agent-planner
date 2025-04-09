@@ -18,6 +18,7 @@ const activityRoutes = require('./routes/activity.routes');
 const searchRoutes = require('./routes/search.routes');
 const tokenRoutes = require('./routes/token.routes');
 const debugRoutes = require('./routes/debug.routes');
+const artifactController = require('./controllers/artifact.controller');
 
 // Import middlewares
 const { debugRequest } = require('./middleware/debug.middleware');
@@ -96,6 +97,29 @@ app.use('/activity', activityRoutes);
 app.use('/search', searchRoutes);
 app.use('/tokens', tokenRoutes);
 app.use('/debug', debugRoutes);
+
+// File download endpoint
+const { authenticate } = require('./middleware/auth.middleware');
+app.get('/download', authenticate, artifactController.downloadArtifact);
+
+// Direct file access endpoint for development
+if (process.env.NODE_ENV === 'development') {
+  app.get('/files/*', (req, res) => {
+    const fs = require('fs');
+    const path = require('path');
+    const filePath = req.params[0];
+    const projectRoot = process.cwd();
+    const fullPath = path.join(projectRoot, '..', 'docs', filePath);
+    
+    console.log(`Direct file access: ${fullPath}`);
+    
+    if (fs.existsSync(fullPath)) {
+      res.sendFile(fullPath);
+    } else {
+      res.status(404).send(`File not found: ${filePath}`);
+    }
+  });
+}
 
 // Root route
 app.get('/', (req, res) => {

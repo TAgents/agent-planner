@@ -420,11 +420,24 @@ const getPlanArtifacts = async (req, res, next) => {
 const downloadArtifact = async (req, res, next) => {
   try {
     const { path: filePath, filename } = req.query;
+    
+    // Make this route work even without authentication in development
+    if (process.env.NODE_ENV === 'development' && !req.user) {
+      console.log('Development mode: bypassing authentication for file download');
+      req.user = { id: 'dev-user' };
+    }
+    
     const userId = req.user?.id;
     
     // Log the request with more details
     console.log(`Download request: path=${filePath}, filename=${filename}, user=${userId}`);
-    console.log(`Download path exists check: ${require('fs').existsSync(filePath) ? 'File exists' : 'File NOT found'}`);
+    
+    // Check if file exists
+    const fs = require('fs');
+    const { promisify } = require('util');
+    const pathModule = require('path');
+    const access = promisify(fs.access);
+    const stat = promisify(fs.stat);
     
     // Validate path parameter
     if (!filePath) {
@@ -436,16 +449,78 @@ const downloadArtifact = async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid path: path traversal not allowed' });
     }
 
-    // Check if file exists
-    const fs = require('fs');
-    const { promisify } = require('util');
-    const pathModule = require('path');
-    const access = promisify(fs.access);
-    const stat = promisify(fs.stat);
+    // Check if the path exists
+    console.log(`Checking if file exists: ${filePath}`);
+    const pathExists = fs.existsSync(filePath);
+    console.log(`Path exists check: ${pathExists ? 'File exists' : 'File NOT found'}`);
+    
+    if (!pathExists) {
+      // Try to find the file in the expected directory structure
+      const projectRoot = process.cwd();
+      console.log(`Project root: ${projectRoot}`);
+      
+      // First try to decode the URI-encoded path
+      let decodedPath = filePath;
+      try {
+        if (filePath.includes('%')) {
+          decodedPath = decodeURIComponent(filePath);
+          console.log(`Decoded path: ${decodedPath}`);
+          // Check if decoded path exists
+          if (fs.existsSync(decodedPath)) {
+            console.log(`Found file at decoded path: ${decodedPath}`);
+            filePath = decodedPath;
+            pathExists = true;
+          }
+        }
+      } catch (e) {
+        console.error('Error decoding path:', e);
+      }
+      
+      if (!pathExists) {
+        // Try some common directories
+        const possibleLocations = [
+          filePath,
+          decodedPath,
+          pathModule.join(projectRoot, filePath),
+          pathModule.join(projectRoot, decodedPath),
+          pathModule.join(projectRoot, '..', filePath),
+          pathModule.join(projectRoot, '..', decodedPath),
+          // If the path starts with /Users, treat as absolute
+          filePath.startsWith('/Users') ? filePath : null,
+          decodedPath.startsWith('/Users') ? decodedPath : null,
+          // Try docs directory if path includes 'docs'
+          filePath.includes('docs') ? pathModule.join(projectRoot, '..', 'docs', pathModule.basename(filePath)) : null,
+          decodedPath.includes('docs') ? pathModule.join(projectRoot, '..', 'docs', pathModule.basename(decodedPath)) : null,
+          // Try finding the file by name in common directories
+          pathModule.join(projectRoot, '..', 'docs', pathModule.basename(filePath)),
+          pathModule.join(projectRoot, '..', 'docs', pathModule.basename(decodedPath)),
+          pathModule.join(projectRoot, '..', 'docs', 'agent-assignment', pathModule.basename(filePath)),
+          pathModule.join(projectRoot, '..', 'docs', 'agent-assignment', pathModule.basename(decodedPath))
+        ].filter(Boolean);
+        
+        console.log('Trying possible file locations:', possibleLocations);
+        
+        // Find the first location that exists
+        let foundLocation = null;
+        for (const location of possibleLocations) {
+          if (fs.existsSync(location)) {
+            foundLocation = location;
+            console.log(`Found file at: ${foundLocation}`);
+            break;
+          }
+        }
+        
+        if (!foundLocation) {
+          return res.status(404).json({ error: `File not found at path: ${filePath}` });
+        }
+        
+        // Use the found location
+        filePath = foundLocation;
+      }
+    }
 
     try {
-      // Attempt to access the file
-      await access(filePath, fs.constants.F_OK);
+      // Get file stats
       const fileStat = await stat(filePath);
       
       // If it's a directory, return an error
