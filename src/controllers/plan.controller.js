@@ -2,6 +2,29 @@ const { v4: uuidv4 } = require('uuid');
 const { supabaseAdmin: supabase } = require('../config/supabase');
 
 /**
+ * Calculate progress percentage for a plan based on node completion
+ * @param {string} planId - The ID of the plan
+ * @returns {Promise<number>} - The calculated progress percentage (0-100)
+ */
+const calculatePlanProgress = async (planId) => {
+  // Fetch all nodes for the plan
+  const { data: nodes, error } = await supabase
+    .from('plan_nodes')
+    .select('id, status')
+    .eq('plan_id', planId);
+  
+  if (error || !nodes || nodes.length === 0) {
+    return 0; // Return 0 progress if there's an error or no nodes
+  }
+  
+  // Calculate the percentage of completed nodes
+  const totalNodes = nodes.length;
+  const completedNodes = nodes.filter(node => node.status === 'completed').length;
+  
+  return Math.round((completedNodes / totalNodes) * 100);
+};
+
+/**
  * List all plans accessible to the user
  */
 const listPlans = async (req, res, next) => {
@@ -61,7 +84,18 @@ const listPlans = async (req, res, next) => {
     // Combine owned and shared plans
     const allPlans = [...ownedWithRole, ...sharedPlans];
 
-    res.json(allPlans);
+    // Calculate progress for each plan
+    const plansWithProgress = await Promise.all(
+      allPlans.map(async (plan) => {
+        const progress = await calculatePlanProgress(plan.id);
+        return {
+          ...plan,
+          progress
+        };
+      })
+    );
+
+    res.json(plansWithProgress);
   } catch (error) {
     next(error);
   }
@@ -136,6 +170,9 @@ const createPlan = async (req, res, next) => {
       return res.status(500).json({ error: fetchError.message });
     }
 
+    // Add progress (will be 0 for a new plan)
+    newPlan.progress = 0;
+
     res.status(201).json(newPlan);
   } catch (error) {
     next(error);
@@ -182,11 +219,15 @@ const getPlan = async (req, res, next) => {
       return res.status(500).json({ error: nodeError.message });
     }
 
-    // Add node information to the plan
+    // Calculate progress for this plan
+    const progress = await calculatePlanProgress(id);
+
+    // Add node information and progress to the plan
     const result = {
       ...plan,
       root_node: rootNode,
       is_owner: plan.owner_id === userId,
+      progress
     };
 
     res.json(result);
@@ -245,6 +286,10 @@ const updatePlan = async (req, res, next) => {
         .eq('plan_id', id)
         .eq('node_type', 'root');
     }
+
+    // Calculate progress
+    const progress = await calculatePlanProgress(id);
+    data[0].progress = progress;
 
     res.json(data[0]);
   } catch (error) {
@@ -593,6 +638,9 @@ const getPlanContext = async (req, res, next) => {
       }
     });
 
+    // Calculate progress
+    const progress = await calculatePlanProgress(id);
+
     // Compile context
     const context = {
       plan: {
@@ -603,6 +651,7 @@ const getPlanContext = async (req, res, next) => {
         created_at: plan.created_at,
         updated_at: plan.updated_at,
         metadata: plan.metadata,
+        progress: progress
       },
       structure: nodeMap[rootNode.id],
     };
