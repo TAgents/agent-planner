@@ -31,11 +31,40 @@ const authenticate = async (req, res, next) => {
       await logger.middleware('auth', `Verifying Supabase JWT for path: ${path}`);
       
       try {
-        // Use Supabase to verify the token and get the user
-        const { data, error } = await supabase.auth.getUser(token);
+        // First, set the session with the token
+        await logger.middleware('auth', `Setting session with token`);
+        const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+          access_token: token,
+          refresh_token: '' // We don't have the refresh token here
+        });
+        
+        if (sessionError) {
+          await logger.middleware('auth', `Failed to set session: ${sessionError.message}`);
+          // Try alternative approach - use admin client to verify the JWT
+          const { data: userData, error: adminError } = await supabaseAdmin.auth.getUser(token);
+          
+          if (adminError || !userData.user) {
+            await logger.middleware('auth', `Admin verification also failed: ${adminError?.message || 'No user'}`);
+            return res.status(401).json({ error: 'Invalid session token' });
+          }
+          
+          // Admin verification succeeded
+          req.user = {
+            id: userData.user.id,
+            email: userData.user.email,
+            name: userData.user.user_metadata?.name,
+            authMethod: 'supabase_jwt'
+          };
+          
+          await logger.middleware('auth', `Admin JWT auth successful for user: ${userData.user.email}`);
+          return next();
+        }
+        
+        // Session set successfully, now get the user
+        const { data, error } = await supabase.auth.getUser();
         
         if (error || !data.user) {
-          await logger.middleware('auth', `Supabase JWT verification failed: ${error?.message || 'No user'}`);
+          await logger.middleware('auth', `Failed to get user after setting session: ${error?.message || 'No user'}`);
           return res.status(401).json({ error: 'Invalid session token' });
         }
 
@@ -44,14 +73,8 @@ const authenticate = async (req, res, next) => {
           id: data.user.id,
           email: data.user.email,
           name: data.user.user_metadata?.name,
-          authMethod: 'supabase_jwt' // Add type for potential checks later
+          authMethod: 'supabase_jwt'
         };
-
-        // Set the auth token for future Supabase requests in this context
-        await supabase.auth.setSession({
-          access_token: token,
-          refresh_token: ''
-        });
 
         await logger.middleware('auth', `Supabase JWT auth successful for user: ${data.user.email}`);
         return next();

@@ -663,6 +663,49 @@ const getPlanContext = async (req, res, next) => {
 };
 
 /**
+ * Get plan progress
+ */
+const getPlanProgress = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    // Check if the user has access to this plan
+    const hasAccess = await checkPlanAccess(id, userId);
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'You do not have access to this plan' });
+    }
+
+    // Get all nodes for the plan
+    const { data: nodes, error } = await supabase
+      .from('plan_nodes')
+      .select('status')
+      .eq('plan_id', id);
+    
+    if (error) {
+      return res.status(500).json({ error: 'Failed to fetch nodes' });
+    }
+    
+    // Calculate progress
+    const totalNodes = nodes.length;
+    const completedNodes = nodes.filter(n => n.status === 'completed').length;
+    const progress = totalNodes > 0 ? Math.round((completedNodes / totalNodes) * 100) : 0;
+    
+    res.json({ 
+      progress, 
+      totalNodes, 
+      completedNodes,
+      inProgress: nodes.filter(n => n.status === 'in_progress').length,
+      notStarted: nodes.filter(n => n.status === 'not_started').length,
+      blocked: nodes.filter(n => n.status === 'blocked').length
+    });
+  } catch (error) {
+    console.error('Error calculating plan progress:', error);
+    res.status(500).json({ error: 'Failed to calculate progress' });
+  }
+};
+
+/**
  * Helper function to check if a user has access to a plan
  * @param {string} planId - Plan ID
  * @param {string} userId - User ID
@@ -719,4 +762,5 @@ module.exports = {
   addCollaborator,
   removeCollaborator,
   getPlanContext,
+  getPlanProgress,
 };

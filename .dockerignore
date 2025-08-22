@@ -1,0 +1,17 @@
+node_modules
+npm-debug.log
+.env
+.env.local
+.git
+.gitignore
+README.md
+.vscode
+coverage
+.nyc_output
+logs/*.log
+*.log
+.DS_Store
+tests
+postman
+api-tests
+supabase

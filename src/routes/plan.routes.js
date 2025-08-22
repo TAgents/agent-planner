@@ -410,4 +410,56 @@ router.delete('/:id/collaborators/:userId', authenticate, planController.removeC
  */
 router.get('/:id/context', authenticate, planController.getPlanContext);
 
+/**
+ * @swagger
+ * /plans/{id}/progress:
+ *   get:
+ *     summary: Get progress statistics for a plan
+ *     tags: [Plans]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The plan ID
+ *     responses:
+ *       200:
+ *         description: Plan progress statistics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 progress:
+ *                   type: integer
+ *                   description: Progress percentage (0-100)
+ *                 totalNodes:
+ *                   type: integer
+ *                   description: Total number of nodes in the plan
+ *                 completedNodes:
+ *                   type: integer
+ *                   description: Number of completed nodes
+ *                 inProgress:
+ *                   type: integer
+ *                   description: Number of nodes in progress
+ *                 notStarted:
+ *                   type: integer
+ *                   description: Number of nodes not started
+ *                 blocked:
+ *                   type: integer
+ *                   description: Number of blocked nodes
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Plan not found
+ *       500:
+ *         description: Failed to calculate progress
+ */
+router.get('/:id/progress', authenticate, planController.getPlanProgress);
+
 module.exports = router;

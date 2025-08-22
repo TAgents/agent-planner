@@ -1,0 +1,29 @@
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy dependencies
+COPY --from=builder /app/node_modules ./node_modules
+COPY . .
+
+# Create non-root user
+RUN addgroup -g 1001 -S appuser && \
+    adduser -u 1001 -S appuser -G appuser && \
+    mkdir -p /app/logs && \
+    chown -R appuser:appuser /app
+
+USER appuser
+
+# Cloud Run uses port 8080 by default
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD wget -qO- http://localhost:8080/health || exit 1
+
+CMD ["node", "src/index.js"]

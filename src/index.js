@@ -129,6 +129,15 @@ app.get('/', (req, res) => {
   });
 });
 
+// Health check endpoint for Cloud Run
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    service: 'agent-planner-api'
+  });
+});
+
 // Error handling middleware
 app.use(async (err, req, res, next) => {
   const status = err.statusCode || 500;
