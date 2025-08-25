@@ -35,6 +35,8 @@ const { authenticate } = require('../middleware/auth.middleware');
  *                 minLength: 6
  *               name:
  *                 type: string
+ *               organization:
+ *                 type: string
  *     responses:
  *       201:
  *         description: User created successfully
@@ -52,6 +54,10 @@ const { authenticate } = require('../middleware/auth.middleware');
  *                       type: string
  *                     name:
  *                       type: string
+ *                     organization:
+ *                       type: string
+ *                     email_verified:
+ *                       type: boolean
  *                 session:
  *                   type: object
  *                   properties:
@@ -104,6 +110,10 @@ router.post('/register', authController.register);
  *                       type: string
  *                     name:
  *                       type: string
+ *                     organization:
+ *                       type: string
+ *                     email_verified:
+ *                       type: boolean
  *                 session:
  *                   type: object
  *                   properties:
@@ -136,6 +146,279 @@ router.post('/login', authController.login);
  *                   type: string
  */
 router.post('/logout', authController.logout);
+
+/**
+ * @swagger
+ * /auth/forgot-password:
+ *   post:
+ *     summary: Request password reset email
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       200:
+ *         description: Password reset email sent if account exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+router.post('/forgot-password', authController.forgotPassword);
+
+/**
+ * @swagger
+ * /auth/reset-password:
+ *   post:
+ *     summary: Reset password with token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *               - password
+ *             properties:
+ *               token:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *                 minLength: 8
+ *     responses:
+ *       200:
+ *         description: Password successfully reset
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Invalid or expired token
+ */
+router.post('/reset-password', authController.resetPassword);
+
+/**
+ * @swagger
+ * /auth/verify-email:
+ *   post:
+ *     summary: Verify email with token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *             properties:
+ *               token:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Email successfully verified
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 user:
+ *                   type: object
+ *       400:
+ *         description: Invalid or expired token
+ */
+router.post('/verify-email', authController.verifyEmail);
+
+/**
+ * @swagger
+ * /auth/resend-verification:
+ *   post:
+ *     summary: Resend verification email
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       200:
+ *         description: Verification email sent if account exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+router.post('/resend-verification', authController.resendVerificationEmail);
+
+/**
+ * @swagger
+ * /auth/profile:
+ *   get:
+ *     summary: Get current user profile
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User profile retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                 email:
+ *                   type: string
+ *                 name:
+ *                   type: string
+ *                 organization:
+ *                   type: string
+ *                 avatar_url:
+ *                   type: string
+ *                 email_verified:
+ *                   type: boolean
+ *                 created_at:
+ *                   type: string
+ *                   format: date-time
+ *                 updated_at:
+ *                   type: string
+ *                   format: date-time
+ *       401:
+ *         description: Authentication required
+ *       404:
+ *         description: User not found
+ */
+router.get('/profile', authenticate, authController.getUserProfile);
+
+/**
+ * @swagger
+ * /auth/profile:
+ *   put:
+ *     summary: Update user profile
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               organization:
+ *                 type: string
+ *               avatar_url:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Profile updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                 email:
+ *                   type: string
+ *                 name:
+ *                   type: string
+ *                 organization:
+ *                   type: string
+ *                 avatar_url:
+ *                   type: string
+ *                 email_verified:
+ *                   type: boolean
+ *                 created_at:
+ *                   type: string
+ *                   format: date-time
+ *                 updated_at:
+ *                   type: string
+ *                   format: date-time
+ *       401:
+ *         description: Authentication required
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Failed to update profile
+ */
+router.put('/profile', authenticate, authController.updateUserProfile);
+
+/**
+ * @swagger
+ * /auth/change-password:
+ *   post:
+ *     summary: Change user password
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - currentPassword
+ *               - newPassword
+ *             properties:
+ *               currentPassword:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
+ *                 minLength: 8
+ *     responses:
+ *       200:
+ *         description: Password changed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Invalid input
+ *       401:
+ *         description: Current password incorrect or authentication required
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Failed to update password
+ */
+router.post('/change-password', authenticate, authController.changePassword);
 
 /**
  * @swagger

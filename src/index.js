@@ -18,6 +18,8 @@ const activityRoutes = require('./routes/activity.routes');
 const searchRoutes = require('./routes/search.routes');
 const tokenRoutes = require('./routes/token.routes');
 const debugRoutes = require('./routes/debug.routes');
+const uploadRoutes = require('./routes/upload.routes');
+const userRoutes = require('./routes/user.routes');
 const artifactController = require('./controllers/artifact.controller');
 
 // Import middlewares
@@ -97,6 +99,8 @@ app.use('/activity', activityRoutes);
 app.use('/search', searchRoutes);
 app.use('/tokens', tokenRoutes);
 app.use('/debug', debugRoutes);
+app.use('/upload', uploadRoutes);
+app.use('/users', userRoutes);
 
 // File download endpoint
 const { authenticate } = require('./middleware/auth.middleware');
