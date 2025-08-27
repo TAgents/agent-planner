@@ -23,7 +23,12 @@ const tokenRoutes = require('./routes/token.routes');
 const debugRoutes = require('./routes/debug.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const userRoutes = require('./routes/user.routes');
+const collaborationRoutes = require('./routes/collaboration.routes');
 const artifactController = require('./controllers/artifact.controller');
+
+// Import WebSocket collaboration server
+const CollaborationServer = require('./websocket/collaboration');
+const { setCollaborationServer } = require('./controllers/collaboration.controller');
 
 // Import middlewares
 const { debugRequest } = require('./middleware/debug.middleware');
@@ -76,6 +81,7 @@ app.use('/tokens', tokenRoutes);
 app.use('/debug', debugRoutes);
 app.use('/upload', uploadRoutes);
 app.use('/users', userRoutes);
+app.use('/plans', collaborationRoutes);
 
 // File download endpoint
 const { authenticate } = require('./middleware/auth.middleware');
@@ -141,7 +147,7 @@ const startServer = async () => {
     }
     
     // Start the server
-    app.listen(port, async () => {
+    const server = app.listen(port, async () => {
       await logger.api(`Server running on port ${port}`);
       await logger.api(`API Documentation available at http://localhost:${port}/api-docs`);
       await logger.api(`JWT_SECRET is ${process.env.JWT_SECRET ? 'configured' : 'MISSING'}`);
@@ -170,6 +176,11 @@ const startServer = async () => {
       } else {
         await logger.error('Database connection check: FAILED', { message: dbStatus.error });
       }
+      
+      // Initialize WebSocket collaboration server
+      const collaborationServer = new CollaborationServer(server);
+      setCollaborationServer(collaborationServer);
+      await logger.api('WebSocket collaboration server initialized at /ws/collaborate');
     });
   } catch (error) {
     await logger.error(`Failed to start server`, error);

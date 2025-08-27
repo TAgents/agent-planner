@@ -189,8 +189,110 @@ const changePassword = async (req, res, next) => {
   }
 };
 
+/**
+ * List all users (for admin purposes or user search)
+ */
+const listUsers = async (req, res, next) => {
+  try {
+    const { limit = 50, page = 1 } = req.query;
+    const userId = req.user.id;
+    
+    await logger.auth(`Listing users requested by ${userId}`);
+
+    // Calculate offset for pagination
+    const offset = (page - 1) * limit;
+
+    // Get all users from auth
+    const { data: users, error } = await supabaseAdmin.auth.admin.listUsers({
+      page: page,
+      perPage: limit
+    });
+
+    if (error) {
+      await logger.error(`Failed to list users`, error);
+      return res.status(500).json({ error: 'Failed to retrieve users' });
+    }
+
+    // Format the response
+    const formattedUsers = users.users.map(user => ({
+      id: user.id,
+      email: user.email,
+      name: user.user_metadata?.name || user.email.split('@')[0],
+      organization: user.user_metadata?.organization,
+      avatar_url: user.user_metadata?.avatar_url,
+      created_at: user.created_at
+    }));
+
+    res.json({
+      users: formattedUsers,
+      total: users.total,
+      page: page,
+      limit: limit,
+      total_pages: Math.ceil(users.total / limit)
+    });
+  } catch (error) {
+    await logger.error(`Unexpected error in listUsers endpoint`, error);
+    next(error);
+  }
+};
+
+/**
+ * Search users by name or email
+ */
+const searchUsers = async (req, res, next) => {
+  try {
+    const { query, limit = 10 } = req.query;
+    const userId = req.user.id;
+    
+    if (!query || query.length < 2) {
+      return res.status(400).json({ error: 'Search query must be at least 2 characters' });
+    }
+
+    await logger.auth(`User search for "${query}" by ${userId}`);
+
+    // Search in both auth users and our users table
+    // First, get all users (limited approach for now, can be optimized with proper search)
+    const { data: authUsers, error: authError } = await supabaseAdmin.auth.admin.listUsers();
+
+    if (authError) {
+      await logger.error(`Failed to search users`, authError);
+      return res.status(500).json({ error: 'Failed to search users' });
+    }
+
+    // Filter users based on query
+    const searchLower = query.toLowerCase();
+    const matchedUsers = authUsers.users
+      .filter(user => {
+        const email = user.email?.toLowerCase() || '';
+        const name = (user.user_metadata?.name || '').toLowerCase();
+        return email.includes(searchLower) || name.includes(searchLower);
+      })
+      .slice(0, limit)
+      .map(user => ({
+        id: user.id,
+        email: user.email,
+        name: user.user_metadata?.name || user.email.split('@')[0],
+        organization: user.user_metadata?.organization,
+        avatar_url: user.user_metadata?.avatar_url
+      }));
+
+    await logger.auth(`Found ${matchedUsers.length} users matching "${query}"`);
+    
+    res.json({
+      query: query,
+      results: matchedUsers,
+      count: matchedUsers.length
+    });
+  } catch (error) {
+    await logger.error(`Unexpected error in searchUsers endpoint`, error);
+    next(error);
+  }
+};
+
 module.exports = {
   getUserProfile,
   updateUserProfile,
-  changePassword
+  changePassword,
+  listUsers,
+  searchUsers
 };

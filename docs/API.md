@@ -103,6 +103,18 @@ Create an API token with specific scopes
 Revoke an API token
 
 
+### Collaboration
+
+#### GET /plans/{id}/active-users
+Get currently active users in a plan
+
+#### POST /plans/{id}/presence
+Update user presence in a plan
+
+#### GET /plans/{id}/nodes/{nodeId}/active-users
+Get active and typing users for a specific node
+
+
 ### Debug
 
 #### GET /debug/tokens
@@ -150,8 +162,23 @@ Add a progress log entry (for tracking agent activity)
 #### GET /plans/{id}/nodes/{nodeId}/logs
 Get activity logs for a node
 
+#### GET /plans/{id}/nodes/{nodeId}/assignments
+Get all user assignments for a node
+
+#### POST /plans/{id}/nodes/{nodeId}/assign
+Assign a user to a node
+
+#### DELETE /plans/{id}/nodes/{nodeId}/unassign
+Unassign a user from a node
+
+#### GET /plans/{id}/nodes/{nodeId}/activities
+Get all activities for a node (logs, status changes, assignments, files)
+
 
 ### Plans
+
+#### GET /plans/{id}/available-users
+Get all users available for assignment (plan collaborators)
 
 #### GET /plans
 List all plans accessible to the user
@@ -230,6 +257,15 @@ Update user profile
 
 #### POST /users/change-password
 Change user password
+
+
+### Users
+
+#### GET /users
+List all users
+
+#### GET /users/search
+Search users by name or email
 
 
 ### System

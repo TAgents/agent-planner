@@ -407,6 +407,8 @@ tags:
     description: User management
   - name: Health
     description: System health and status
+  - name: Collaboration
+    description: Real-time collaboration and presence endpoints
   - name: Debug
     description: Debug endpoints (not for production use)
   - name: API Tokens
@@ -1348,6 +1350,160 @@ paths:
           description: Authentication required
         '404':
           description: Token not found
+  /plans/{id}/active-users:
+    get:
+      summary: Get currently active users in a plan
+      tags:
+        - Collaboration
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: The plan ID
+      responses:
+        '200':
+          description: List of active users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  planId:
+                    type: string
+                  activeUsers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        email:
+                          type: string
+                        name:
+                          type: string
+                        avatar_url:
+                          type: string
+                  count:
+                    type: integer
+        '401':
+          description: Authentication required
+        '403':
+          description: Access denied
+        '404':
+          description: Plan not found
+  /plans/{id}/presence:
+    post:
+      summary: Update user presence in a plan
+      tags:
+        - Collaboration
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: The plan ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum:
+                    - active
+                    - idle
+                    - away
+                  default: active
+                nodeId:
+                  type: string
+                  description: Current node being viewed (optional)
+      responses:
+        '200':
+          description: Presence updated successfully
+        '401':
+          description: Authentication required
+        '403':
+          description: Access denied
+        '404':
+          description: Plan not found
+  /plans/{id}/nodes/{nodeId}/active-users:
+    get:
+      summary: Get active and typing users for a specific node
+      tags:
+        - Collaboration
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: The plan ID
+        - in: path
+          name: nodeId
+          required: true
+          schema:
+            type: string
+          description: The node ID
+      responses:
+        '200':
+          description: List of active and typing users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodeId:
+                    type: string
+                  activeUsers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        email:
+                          type: string
+                        name:
+                          type: string
+                        avatar_url:
+                          type: string
+                  typingUsers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        email:
+                          type: string
+                        name:
+                          type: string
+                        avatar_url:
+                          type: string
+                  counts:
+                    type: object
+                    properties:
+                      active:
+                        type: integer
+                      typing:
+                        type: integer
+        '401':
+          description: Authentication required
+        '403':
+          description: Access denied
+        '404':
+          description: Node not found
   /debug/tokens:
     get:
       summary: >-
@@ -1897,6 +2053,235 @@ paths:
       responses:
         '200':
           description: List of activity logs
+        '401':
+          description: Authentication required
+        '403':
+          description: Access denied
+        '404':
+          description: Node not found
+  /plans/{id}/nodes/{nodeId}/assignments:
+    get:
+      summary: Get all user assignments for a node
+      tags:
+        - Nodes
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: The plan ID
+        - in: path
+          name: nodeId
+          required: true
+          schema:
+            type: string
+          description: The node ID
+      responses:
+        '200':
+          description: List of user assignments
+        '401':
+          description: Authentication required
+        '403':
+          description: Access denied
+        '404':
+          description: Node not found
+  /plans/{id}/nodes/{nodeId}/assign:
+    post:
+      summary: Assign a user to a node
+      tags:
+        - Nodes
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: The plan ID
+        - in: path
+          name: nodeId
+          required: true
+          schema:
+            type: string
+          description: The node ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+              properties:
+                user_id:
+                  type: string
+                  description: ID of the user to assign
+      responses:
+        '201':
+          description: User assigned successfully
+        '400':
+          description: Invalid input or user not a collaborator
+        '401':
+          description: Authentication required
+        '403':
+          description: Insufficient permissions
+        '404':
+          description: Node or user not found
+  /plans/{id}/nodes/{nodeId}/unassign:
+    delete:
+      summary: Unassign a user from a node
+      tags:
+        - Nodes
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: The plan ID
+        - in: path
+          name: nodeId
+          required: true
+          schema:
+            type: string
+          description: The node ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+              properties:
+                user_id:
+                  type: string
+                  description: ID of the user to unassign
+      responses:
+        '204':
+          description: User unassigned successfully
+        '400':
+          description: Invalid input
+        '401':
+          description: Authentication required
+        '403':
+          description: Insufficient permissions
+        '404':
+          description: Node or assignment not found
+  /plans/{id}/available-users:
+    get:
+      summary: Get all users available for assignment (plan collaborators)
+      tags:
+        - Plans
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: The plan ID
+      responses:
+        '200':
+          description: List of available users
+        '401':
+          description: Authentication required
+        '403':
+          description: Access denied
+        '404':
+          description: Plan not found
+  /plans/{id}/nodes/{nodeId}/activities:
+    get:
+      summary: Get all activities for a node (logs, status changes, assignments, files)
+      tags:
+        - Nodes
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: The plan ID
+        - in: path
+          name: nodeId
+          required: true
+          schema:
+            type: string
+          description: The node ID
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+          description: Maximum number of activities to return
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+          description: Offset for pagination
+      responses:
+        '200':
+          description: Aggregated activities for the node
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodeId:
+                    type: string
+                  nodeTitle:
+                    type: string
+                  activities:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        type:
+                          type: string
+                          enum:
+                            - log
+                            - comment
+                            - artifact
+                            - assignment
+                            - status_change
+                        subtype:
+                          type: string
+                        content:
+                          type: string
+                        timestamp:
+                          type: string
+                          format: date-time
+                        user:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            email:
+                              type: string
+                            name:
+                              type: string
+                            avatar_url:
+                              type: string
+                        metadata:
+                          type: object
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
         '401':
           description: Authentication required
         '403':
@@ -2776,6 +3161,63 @@ paths:
           description: User not found
         '500':
           description: Failed to update password
+  /users:
+    get:
+      summary: List all users
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+          description: Page number
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+          description: Items per page
+      responses:
+        '200':
+          description: List of users with pagination
+        '401':
+          description: Authentication required
+        '500':
+          description: Internal server error
+  /users/search:
+    get:
+      summary: Search users by name or email
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+          description: Search query (min 2 characters)
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+          description: Maximum results to return
+      responses:
+        '200':
+          description: Search results
+        '400':
+          description: Invalid query
+        '401':
+          description: Authentication required
+        '500':
+          description: Internal server error
   /:
     get:
       summary: API root endpoint

@@ -635,4 +635,258 @@ router.post('/:id/nodes/:nodeId/log', authenticate, nodeController.addLogEntry);
  */
 router.get('/:id/nodes/:nodeId/logs', authenticate, nodeController.getNodeLogs);
 
+/**
+ * Assignment Management Endpoints
+ */
+const assignmentController = require('../controllers/assignment.controller');
+
+/**
+ * @swagger
+ * /plans/{id}/nodes/{nodeId}/assignments:
+ *   get:
+ *     summary: Get all user assignments for a node
+ *     tags: [Nodes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The plan ID
+ *       - in: path
+ *         name: nodeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The node ID
+ *     responses:
+ *       200:
+ *         description: List of user assignments
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Node not found
+ */
+router.get('/:id/nodes/:nodeId/assignments', authenticate, assignmentController.getNodeAssignments);
+
+/**
+ * @swagger
+ * /plans/{id}/nodes/{nodeId}/assign:
+ *   post:
+ *     summary: Assign a user to a node
+ *     tags: [Nodes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The plan ID
+ *       - in: path
+ *         name: nodeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The node ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - user_id
+ *             properties:
+ *               user_id:
+ *                 type: string
+ *                 description: ID of the user to assign
+ *     responses:
+ *       201:
+ *         description: User assigned successfully
+ *       400:
+ *         description: Invalid input or user not a collaborator
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: Node or user not found
+ */
+router.post('/:id/nodes/:nodeId/assign', authenticate, assignmentController.assignUserToNode);
+
+/**
+ * @swagger
+ * /plans/{id}/nodes/{nodeId}/unassign:
+ *   delete:
+ *     summary: Unassign a user from a node
+ *     tags: [Nodes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The plan ID
+ *       - in: path
+ *         name: nodeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The node ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - user_id
+ *             properties:
+ *               user_id:
+ *                 type: string
+ *                 description: ID of the user to unassign
+ *     responses:
+ *       204:
+ *         description: User unassigned successfully
+ *       400:
+ *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: Node or assignment not found
+ */
+router.delete('/:id/nodes/:nodeId/unassign', authenticate, assignmentController.unassignUserFromNode);
+
+/**
+ * @swagger
+ * /plans/{id}/available-users:
+ *   get:
+ *     summary: Get all users available for assignment (plan collaborators)
+ *     tags: [Plans]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The plan ID
+ *     responses:
+ *       200:
+ *         description: List of available users
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Plan not found
+ */
+router.get('/:id/available-users', authenticate, assignmentController.getAvailableUsers);
+
+/**
+ * Activities Aggregation Endpoint
+ */
+const activitiesController = require('../controllers/activities.controller');
+
+/**
+ * @swagger
+ * /plans/{id}/nodes/{nodeId}/activities:
+ *   get:
+ *     summary: Get all activities for a node (logs, status changes, assignments, files)
+ *     tags: [Nodes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The plan ID
+ *       - in: path
+ *         name: nodeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The node ID
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *         description: Maximum number of activities to return
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *         description: Offset for pagination
+ *     responses:
+ *       200:
+ *         description: Aggregated activities for the node
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 nodeId:
+ *                   type: string
+ *                 nodeTitle:
+ *                   type: string
+ *                 activities:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       type:
+ *                         type: string
+ *                         enum: [log, comment, artifact, assignment, status_change]
+ *                       subtype:
+ *                         type: string
+ *                       content:
+ *                         type: string
+ *                       timestamp:
+ *                         type: string
+ *                         format: date-time
+ *                       user:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                           email:
+ *                             type: string
+ *                           name:
+ *                             type: string
+ *                           avatar_url:
+ *                             type: string
+ *                       metadata:
+ *                         type: object
+ *                 total:
+ *                   type: integer
+ *                 limit:
+ *                   type: integer
+ *                 offset:
+ *                   type: integer
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Node not found
+ */
+router.get('/:id/nodes/:nodeId}/activities', authenticate, activitiesController.getNodeActivities);
+
 module.exports = router;
