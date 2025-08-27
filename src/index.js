@@ -1,9 +1,12 @@
 const express = require('express');
 const cors = require('cors');
-const swaggerOptions = require('./config/swagger');
+const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const logger = require('./utils/logger');
 require('dotenv').config();
+
+// Import swagger configuration
+const swaggerOptions = require('./config/swagger');
 
 // Import database initialization
 const { initializeDatabase } = require('./db/init');
@@ -59,34 +62,6 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 // Setup Swagger documentation
-const swaggerOptions = {
-  definition: {
-    openapi: '3.0.0',
-    info: {
-      title: 'Planning System API',
-      version: '1.0.0',
-      description: 'A collaborative planning system for humans and AI agents',
-    },
-    servers: [
-      {
-        url: `http://localhost:${port}`,
-        description: 'Development server',
-      },
-    ],
-    components: {
-      securitySchemes: {
-        bearerAuth: {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT',
-          description: 'Enter your Supabase access token',
-        },
-      },
-    },
-  },
-  apis: ['./src/routes/*.js'], // Path to the API docs
-};
-
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 

@@ -60,6 +60,9 @@ List all artifacts across the plan
 #### GET /api/artifacts/download
 Download an artifact file
 
+#### GET /download
+Download an artifact file
+
 
 ### Authentication
 
@@ -227,4 +230,23 @@ Update user profile
 
 #### POST /users/change-password
 Change user password
+
+
+### System
+
+#### GET /
+API root endpoint
+
+#### GET /health
+Health check endpoint
+
+Used by monitoring services and orchestration platforms (e.g., Cloud Run) to verify the service is running
+
+#### GET /api-docs
+Interactive API documentation
+
+Swagger UI interface for exploring and testing the API
+
+#### GET /api-docs-json
+OpenAPI specification in JSON format
 
