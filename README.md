@@ -6,156 +6,245 @@ A collaborative planning system that facilitates interactions between humans and
 
 The Planning System API stores plan data in a Supabase database and provides a REST API for accessing and manipulating plans. The system is designed to enable seamless collaboration between humans and LLM agents, without creating artificial distinctions between them in the architecture.
 
-## Authentication System (April 2025 Update)
-
-The system now uses Supabase's built-in authentication system instead of custom JWTs. This means:
-
-- Authentication tokens come directly from Supabase Auth
-- Row Level Security (RLS) policies work correctly with auth.uid()
-- The frontend now stores a Supabase session instead of a custom token
-- Login and registration flows send back Supabase sessions
-
-This change fixes issues where RLS policies would fail to identify the authenticated user correctly.
-
 ## Core Features
 
-- Hierarchical plan structures with phases, tasks, and milestones
-- Rich context for AI agent collaboration
-- Equal status for human and AI collaborators
-- Detailed progress tracking and logging
-- Artifact management
-- Real-time collaboration
+- 🏗️ **Hierarchical plan structures** with phases, tasks, and milestones
+- 🤖 **Rich context for AI agent collaboration** with detailed instructions and acceptance criteria
+- 👥 **Equal status for human and AI collaborators** in the system architecture
+- 📊 **Detailed progress tracking and logging** with activity feeds
+- 📁 **Artifact management** for tracking outputs and references
+- 🔍 **Advanced search capabilities** across plans, nodes, and artifacts
+- 🔐 **Secure authentication** using Supabase Auth with API token support
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 16+
+- Node.js 16+ 
 - npm or yarn
 - Supabase account
 
 ### Installation
 
-1. Clone the repository
+1. **Clone the repository**
 ```bash
 git clone https://github.com/talkingagents/agent-planner.git
 cd agent-planner
 ```
 
-2. Install dependencies
+2. **Install dependencies**
 ```bash
 npm install
 ```
 
-3. Configure environment variables
+3. **Configure environment variables**
 ```bash
 cp .env.example .env
 ```
-Edit the `.env` file with your Supabase credentials and other configuration options.
+Edit the `.env` file with your Supabase credentials:
+- `SUPABASE_URL` - Your Supabase project URL
+- `SUPABASE_ANON_KEY` - Your Supabase anonymous key
+- `SUPABASE_SERVICE_KEY` - Your Supabase service role key
+- `JWT_SECRET` - Secret for JWT token generation
 
-4. Set up the database
+4. **Set up the database**
 
-The database needs to be initialized with the correct schema. You have two options:
+Initialize the database schema in your Supabase project:
 
-**Option A: Using the Supabase UI (Recommended)**
 ```bash
-# Run the initialization script to get instructions
+# Run the initialization script
 npm run db:init
 ```
-Then follow the instructions to manually run the SQL script in the Supabase dashboard.
 
-**Option B: Direct Schema Creation**
-1. Go to your Supabase dashboard (https://app.supabase.com/project/_/editor)
-2. Navigate to the SQL Editor
-3. Copy the contents of `src/db/migrations/00001_initial_schema.sql`
-4. Execute the SQL to create all required tables and relations
+Then go to your [Supabase SQL Editor](https://app.supabase.com/project/_/editor) and execute the generated SQL scripts.
 
-5. Start the server
+5. **Start the server**
 ```bash
-npm run start
+# Development mode with hot reload
+npm run dev
+
+# Production mode
+npm start
 ```
 
-The API server will be running at http://localhost:3000 by default.
+The API server will be running at http://localhost:3000
 
-## API Documentation
+## 📚 API Documentation
 
-API documentation is available at http://localhost:3000/api-docs when the server is running.
+### Interactive Documentation
+When the server is running, comprehensive API documentation is available at:
+- **Swagger UI**: http://localhost:3000/api-docs - Interactive API explorer with try-it-out functionality
+- **OpenAPI Spec**: http://localhost:3000/api-docs-json - Raw OpenAPI specification
 
-### Key API Endpoints
+### Generating Documentation
 
-- **Authentication**
-  - `POST /auth/register` - Register a new user
-  - `POST /auth/login` - Login and get authentication token
-  - `POST /auth/token` - Create an API token with specific scopes
-  - `DELETE /auth/token/:id` - Revoke an API token
+The API documentation is automatically generated from code annotations:
 
-- **Plans**
-  - `GET /plans` - List all plans accessible to the user
-  - `POST /plans` - Create a new plan
-  - `GET /plans/:id` - Get a specific plan with its root node
-  - `PUT /plans/:id` - Update a plan's properties
-  - `DELETE /plans/:id` - Delete a plan (or archive it)
+```bash
+# Generate documentation in multiple formats (JSON, YAML, Markdown)
+npm run docs:generate
 
-- **Plan Nodes**
-  - `GET /plans/:id/nodes` - Get all nodes for a plan (tree structure)
-  - `GET /plans/:id/nodes/:nodeId` - Get a specific node
-  - `POST /plans/:id/nodes` - Create a new node in a plan
-  - `PUT /plans/:id/nodes/:nodeId` - Update a node
-  - `DELETE /plans/:id/nodes/:nodeId` - Delete a node
-  - `POST /plans/:id/nodes/:nodeId/comments` - Add a comment to a node
-  - `GET /plans/:id/nodes/:nodeId/comments` - Get comments for a node
+# Validate that all endpoints are properly documented
+npm run docs:validate
 
-- **Artifacts**
-  - `POST /plans/:id/nodes/:nodeId/artifacts` - Add an artifact to a node
-  - `GET /plans/:id/nodes/:nodeId/artifacts` - List artifacts for a node
-  - `GET /plans/:id/nodes/:nodeId/artifacts/:artifactId` - Get a specific artifact
-  - `PUT /plans/:id/nodes/:nodeId/artifacts/:artifactId` - Update an artifact
-  - `DELETE /plans/:id/nodes/:nodeId/artifacts/:artifactId` - Delete an artifact
-  - `GET /plans/:id/artifacts` - List all artifacts across the plan
+# Generate and validate in one command
+npm run docs:all
+```
 
-- **Activity Tracking**
-  - `GET /activity/feed` - Get activity feed for the current user across all plans
-  - `GET /plans/:id/activity` - Get all activity logs for a plan with pagination and filtering
-  - `GET /plans/:id/timeline` - Get a chronological timeline of significant events for a plan
-  - `GET /plans/:id/nodes/:nodeId/activity` - Get recent activity for a specific node
-  - `POST /plans/:id/nodes/:nodeId/detailed-log` - Add a detailed activity log with metadata and tags
+Generated documentation files are saved in the `docs/` directory:
+- `docs/openapi.json` - OpenAPI 3.0 specification
+- `docs/openapi.yaml` - YAML version of the specification  
+- `docs/API.md` - Markdown documentation
 
-- **Search and Filtering**
-  - `GET /search` - Global search across all accessible resources
-  - `GET /plans/:id/nodes/search` - Search for nodes in a plan with advanced filtering
-  - `GET /search/artifacts` - Search for artifacts across all accessible plans
+### Authentication
+
+The API supports two authentication methods:
+
+1. **Bearer Token (Supabase JWT)**
+```bash
+Authorization: Bearer <supabase_jwt_token>
+```
+
+2. **API Key**
+```bash
+Authorization: ApiKey <api_token>
+```
+
+## Development
+
+### Available Scripts
+
+```bash
+npm run dev              # Start development server with nodemon
+npm run start            # Start production server
+npm run test             # Run test suite
+npm run lint             # Run ESLint
+npm run db:init          # Initialize database schema
+npm run docs:generate    # Generate API documentation
+npm run docs:validate    # Validate API documentation
+npm run docs:all         # Generate and validate documentation
+```
+
+### Project Structure
+
+```
+agent-planner/
+├── src/
+│   ├── index.js           # Main application entry point
+│   ├── config/            # Configuration files
+│   │   └── swagger.js     # Swagger/OpenAPI configuration
+│   ├── controllers/       # Route controllers
+│   ├── routes/           # API route definitions with swagger annotations
+│   ├── middleware/       # Express middleware
+│   ├── schemas/          # Shared OpenAPI schema definitions
+│   └── db/              # Database initialization and migrations
+├── docs/                # Generated documentation
+├── scripts/             # Utility scripts
+└── tests/              # Test files
+```
+
+### Adding New Endpoints
+
+When adding new API endpoints:
+
+1. Create the route with full Swagger annotations:
+```javascript
+/**
+ * @swagger
+ * /your-endpoint:
+ *   get:
+ *     summary: Brief description
+ *     tags: [Category]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Success response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/YourSchema'
+ */
+router.get('/your-endpoint', authenticate, controller.method);
+```
+
+2. Regenerate documentation:
+```bash
+npm run docs:all
+```
+
+## Database Schema
+
+The system uses PostgreSQL (via Supabase) with the following main tables:
+- `users` - User accounts
+- `plans` - Plan definitions
+- `plan_nodes` - Hierarchical plan structure
+- `plan_collaborators` - User access to plans
+- `plan_comments` - Comments on nodes
+- `plan_node_logs` - Activity tracking
+- `plan_node_artifacts` - File/resource attachments
+- `api_tokens` - API authentication tokens
+
+Row Level Security (RLS) policies ensure users can only access their own data and plans they collaborate on.
+
+## Authentication System
+
+The system uses Supabase's built-in authentication:
+- Authentication tokens come directly from Supabase Auth
+- Row Level Security (RLS) policies work with auth.uid()
+- The frontend stores a Supabase session
+- Login/registration return Supabase sessions
+- API tokens provide programmatic access with scoped permissions
 
 ## Related Projects
 
-The [Planning System MCP Server](https://github.com/talkingagents/agent-planner-mcp) is a separate project that provides a Model Context Protocol (MCP) interface for AI agents to interact with this API.
+- **[Planning System MCP Server](https://github.com/talkingagents/agent-planner-mcp)** - Model Context Protocol interface for AI agents
+- **[Agent Planner UI](https://github.com/talkingagents/agent-planner-ui)** - Web interface for the planning system
 
-## Development Phases
+## Deployment
 
-### Phase 1: Core Implementation (Current)
-- Set up Supabase database with schema
-- Implement user authentication
-- Build basic CRUD operations for plans and nodes
-- Set up API documentation
+### Google Cloud Run
 
-### Phase 2: Agent-Human Collaboration Enhancement (Completed)
-- ✅ Implement rich context fields and endpoints
-- ✅ Add artifact management for tracking outputs and references
-- ✅ Fix RLS policy issues for comments, logs, and API keys
-- ✅ Improve activity tracking and logging functionality
-- ✅ Add status updates and activity feeds
-- ✅ Implement advanced filtering and searching capabilities
+The API is configured for deployment on Google Cloud Run:
 
-### Phase 3: Advanced Features
-- Implement collaborative workflows
-- Add commenting and activity tracking
-- Build more sophisticated plan analysis tools
-- Implement agent-specific prompts and tools
-- Add real-time updates via WebSockets
+```bash
+# Deploy to Cloud Run
+./deploy.sh
+
+# The service includes:
+# - Automatic scaling
+# - HTTPS endpoints
+# - Environment variable configuration
+# - Supabase integration
+```
 
 ## Contributing
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
 
+## Troubleshooting
+
+### Common Issues
+
+1. **"Row violates RLS policy" error**
+   - Ensure you're using a valid Supabase JWT token
+   - Check that the user has access to the resource
+
+2. **Database connection issues**
+   - Verify your Supabase credentials in `.env`
+   - Check that your Supabase project is active
+
+3. **Missing documentation**
+   - Run `npm run docs:validate` to identify undocumented endpoints
+   - Add swagger annotations to all routes
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+For questions and support:
+- Open an issue on GitHub
+- Check the [API documentation](http://localhost:3000/api-docs)
+- Review the [technical design document](docs/archive/PDR.md) for architecture details
