@@ -1,18 +1,30 @@
-const { supabase } = require('../config/supabase');
+const { supabaseAdmin: supabase } = require('../config/supabase');
 
 /**
- * Activities Controller
- * Handles aggregated activity endpoints
+ * Activities Controller - Fixed version with debugging
+ * Handles aggregated activity endpoints with proper database table names
  */
 const activitiesController = {
   /**
-   * Get all activities for a node (logs, status changes, assignments, files)
+   * Get all activities for a node (logs, comments, artifacts, assignments)
    */
   async getNodeActivities(req, res) {
+    console.log('=== Activities endpoint hit ===');
+    console.log('Request params:', req.params);
+    console.log('Request query:', req.query);
+    console.log('User:', req.user?.id);
+    
     try {
       const { id: planId, nodeId } = req.params;
       const { limit = 50, offset = 0 } = req.query;
-      const userId = req.user.id;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        console.error('No user ID in request');
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      console.log(`Getting activities for node ${nodeId} in plan ${planId}`);
 
       // Verify the node belongs to the plan and user has access
       const { data: node, error: nodeError } = await supabase
@@ -22,8 +34,16 @@ const activitiesController = {
         .eq('plan_id', planId)
         .single();
 
-      if (nodeError || !node) {
-        return res.status(404).json({ error: 'Node not found in this plan' });
+      if (nodeError) {
+        console.error('Error fetching node:', nodeError);
+        return res.status(404).json({ 
+          error: 'Node not found in this plan',
+          details: nodeError.message 
+        });
+      }
+
+      if (!node) {
+        return res.status(404).json({ error: 'Node not found' });
       }
 
       // Verify access to the plan
@@ -34,7 +54,11 @@ const activitiesController = {
         .single();
 
       if (planError || !plan) {
-        return res.status(404).json({ error: 'Plan not found' });
+        console.error('Error fetching plan:', planError);
+        return res.status(404).json({ 
+          error: 'Plan not found',
+          details: planError?.message 
+        });
       }
 
       // Check if user has access
@@ -48,170 +72,100 @@ const activitiesController = {
           .single();
 
         if (!collaborator) {
+          console.log('User is not a collaborator');
           return res.status(403).json({ error: 'Access denied' });
         }
       }
 
-      // Fetch all activity types in parallel
-      const [
-        logsResult,
-        commentsResult,
-        artifactsResult,
-        assignmentsResult,
-        statusChangesResult
-      ] = await Promise.all([
-        // Get logs
-        supabase
-          .from('logs')
-          .select(`
-            id,
-            content,
-            log_type,
-            created_at,
-            user_id,
-            metadata,
-            tags,
-            user:auth.users!user_id (
-              id,
-              email,
-              raw_user_meta_data
-            )
-          `)
-          .eq('plan_node_id', nodeId)
-          .order('created_at', { ascending: false })
-          .limit(limit),
+      console.log('Access verified, fetching activities...');
 
-        // Get comments
-        supabase
-          .from('comments')
-          .select(`
-            id,
-            content,
-            comment_type,
-            created_at,
-            user_id,
-            user:auth.users!user_id (
-              id,
-              email,
-              raw_user_meta_data
-            )
-          `)
-          .eq('node_id', nodeId)
-          .order('created_at', { ascending: false })
-          .limit(limit),
-
-        // Get artifacts
-        supabase
-          .from('artifacts')
-          .select(`
-            id,
-            name,
-            content_type,
-            url,
-            created_at,
-            created_by,
-            metadata,
-            user:auth.users!created_by (
-              id,
-              email,
-              raw_user_meta_data
-            )
-          `)
-          .eq('plan_node_id', nodeId)
-          .order('created_at', { ascending: false })
-          .limit(limit),
-
-        // Get assignments
-        supabase
-          .from('node_assignments_with_users')
-          .select('*')
-          .eq('node_id', nodeId)
-          .order('assigned_at', { ascending: false })
-          .limit(limit),
-
-        // Get status changes from audit log
-        supabase
-          .from('audit_logs')
-          .select(`
-            id,
-            action,
-            details,
-            created_at,
-            user_id,
-            user:auth.users!user_id (
-              id,
-              email,
-              raw_user_meta_data
-            )
-          `)
-          .eq('resource_type', 'node')
-          .eq('resource_id', nodeId)
-          .eq('action', 'status_change')
-          .order('created_at', { ascending: false })
-          .limit(limit)
-      ]);
-
-      // Process and combine all activities
+      // Initialize activities array
       const activities = [];
 
-      // Process logs
-      if (logsResult.data) {
-        logsResult.data.forEach(log => {
+      // Get logs (using correct table name)
+      console.log('Fetching logs...');
+      const { data: logs, error: logsError } = await supabase
+        .from('plan_node_logs')
+        .select('*')
+        .eq('plan_node_id', nodeId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (logsError) {
+        console.error('Error fetching logs:', logsError);
+      } else if (logs && logs.length > 0) {
+        console.log(`Found ${logs.length} logs`);
+        logs.forEach(log => {
           activities.push({
             id: `log_${log.id}`,
             type: 'log',
             subtype: log.log_type,
             content: log.content,
             timestamp: log.created_at,
-            user: log.user ? {
-              id: log.user.id,
-              email: log.user.email,
-              name: log.user.raw_user_meta_data?.name || log.user.email.split('@')[0],
-              avatar_url: log.user.raw_user_meta_data?.avatar_url
-            } : null,
-            metadata: {
-              ...log.metadata,
-              tags: log.tags
-            }
+            user: {
+              id: log.user_id,
+              email: null,
+              name: 'User',
+              avatar_url: null
+            },
+            metadata: log.metadata || {}
           });
         });
       }
 
-      // Process comments
-      if (commentsResult.data) {
-        commentsResult.data.forEach(comment => {
+      // Get comments (skipping if deprecated)
+      console.log('Fetching comments...');
+      const { data: comments, error: commentsError } = await supabase
+        .from('plan_comments')
+        .select('*')
+        .eq('plan_node_id', nodeId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (!commentsError && comments && comments.length > 0) {
+        console.log(`Found ${comments.length} comments`);
+        comments.forEach(comment => {
           activities.push({
             id: `comment_${comment.id}`,
             type: 'comment',
-            subtype: comment.comment_type,
+            subtype: comment.comment_type || 'user',
             content: comment.content,
             timestamp: comment.created_at,
-            user: comment.user ? {
-              id: comment.user.id,
-              email: comment.user.email,
-              name: comment.user.raw_user_meta_data?.name || comment.user.email.split('@')[0],
-              avatar_url: comment.user.raw_user_meta_data?.avatar_url
-            } : null,
+            user: {
+              id: comment.user_id,
+              email: null,
+              name: 'User',
+              avatar_url: null
+            },
             metadata: {}
           });
         });
       }
 
-      // Process artifacts
-      if (artifactsResult.data) {
-        artifactsResult.data.forEach(artifact => {
+      // Get artifacts
+      console.log('Fetching artifacts...');
+      const { data: artifacts, error: artifactsError } = await supabase
+        .from('plan_node_artifacts')
+        .select('*')
+        .eq('plan_node_id', nodeId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (!artifactsError && artifacts && artifacts.length > 0) {
+        console.log(`Found ${artifacts.length} artifacts`);
+        artifacts.forEach(artifact => {
           activities.push({
             id: `artifact_${artifact.id}`,
             type: 'artifact',
             subtype: 'upload',
             content: `Uploaded ${artifact.name}`,
             timestamp: artifact.created_at,
-            user: artifact.user ? {
-              id: artifact.user.id,
-              email: artifact.user.email,
-              name: artifact.user.raw_user_meta_data?.name || artifact.user.email.split('@')[0],
-              avatar_url: artifact.user.raw_user_meta_data?.avatar_url
-            } : null,
+            user: {
+              id: artifact.created_by,
+              email: null,
+              name: 'User',
+              avatar_url: null
+            },
             metadata: {
               name: artifact.name,
               content_type: artifact.content_type,
@@ -222,52 +176,70 @@ const activitiesController = {
         });
       }
 
-      // Process assignments
-      if (assignmentsResult.data) {
-        assignmentsResult.data.forEach(assignment => {
+      // Get assignments
+      console.log('Fetching assignments...');
+      const { data: assignments, error: assignmentsError } = await supabase
+        .from('node_assignments')
+        .select('*')
+        .eq('node_id', nodeId)
+        .order('assigned_at', { ascending: false })
+        .limit(limit);
+
+      if (!assignmentsError && assignments && assignments.length > 0) {
+        console.log(`Found ${assignments.length} assignments`);
+        assignments.forEach(assignment => {
           activities.push({
             id: `assignment_${assignment.id}`,
             type: 'assignment',
             subtype: 'assigned',
-            content: `${assignment.assigned_by_name || 'Someone'} assigned ${assignment.user_name || 'a user'} to this task`,
+            content: `User assigned to this task`,
             timestamp: assignment.assigned_at,
             user: {
-              id: assignment.assigned_by,
-              email: assignment.assigned_by_email,
-              name: assignment.assigned_by_name || assignment.assigned_by_email?.split('@')[0],
+              id: assignment.assigned_by || assignment.user_id,
+              email: null,
+              name: 'User',
               avatar_url: null
             },
             metadata: {
-              assignee: {
-                id: assignment.user_id,
-                email: assignment.user_email,
-                name: assignment.user_name || assignment.user_email?.split('@')[0]
-              }
+              assignee_id: assignment.user_id
             }
           });
         });
       }
 
-      // Process status changes
-      if (statusChangesResult.data) {
-        statusChangesResult.data.forEach(change => {
-          activities.push({
-            id: `status_${change.id}`,
-            type: 'status_change',
-            subtype: 'status',
-            content: `Status changed from ${change.details?.from_status || 'unknown'} to ${change.details?.to_status || 'unknown'}`,
-            timestamp: change.created_at,
-            user: change.user ? {
-              id: change.user.id,
-              email: change.user.email,
-              name: change.user.raw_user_meta_data?.name || change.user.email.split('@')[0],
-              avatar_url: change.user.raw_user_meta_data?.avatar_url
-            } : null,
-            metadata: {
-              from_status: change.details?.from_status,
-              to_status: change.details?.to_status
-            }
-          });
+      // Try to get status changes from logs
+      console.log('Fetching status changes...');
+      const { data: statusLogs } = await supabase
+        .from('plan_node_logs')
+        .select('*')
+        .eq('plan_node_id', nodeId)
+        .eq('log_type', 'progress')
+        .like('content', 'Updated status%')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (statusLogs && statusLogs.length > 0) {
+        console.log(`Found ${statusLogs.length} status changes`);
+        statusLogs.forEach(log => {
+          const match = log.content.match(/Updated status to (\w+)/);
+          if (match) {
+            activities.push({
+              id: `status_${log.id}`,
+              type: 'status_change',
+              subtype: 'status',
+              content: log.content,
+              timestamp: log.created_at,
+              user: {
+                id: log.user_id,
+                email: null,
+                name: 'User',
+                avatar_url: null
+              },
+              metadata: {
+                to_status: match[1]
+              }
+            });
+          }
         });
       }
 
@@ -277,17 +249,26 @@ const activitiesController = {
       // Apply pagination
       const paginatedActivities = activities.slice(Number(offset), Number(offset) + Number(limit));
 
-      res.json({
+      console.log(`Returning ${paginatedActivities.length} activities out of ${activities.length} total`);
+
+      const response = {
         nodeId: nodeId,
         nodeTitle: node.title,
         activities: paginatedActivities,
         total: activities.length,
         limit: Number(limit),
         offset: Number(offset)
-      });
+      };
+
+      console.log('=== Activities endpoint success ===');
+      res.json(response);
     } catch (error) {
       console.error('Error in getNodeActivities:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ 
+        error: 'Internal server error',
+        message: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
     }
   }
 };

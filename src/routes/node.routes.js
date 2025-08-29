@@ -887,6 +887,6 @@ const activitiesController = require('../controllers/activities.controller');
  *       404:
  *         description: Node not found
  */
-router.get('/:id/nodes/:nodeId}/activities', authenticate, activitiesController.getNodeActivities);
+router.get('/:id/nodes/:nodeId/activities', authenticate, activitiesController.getNodeActivities);
 
 module.exports = router;

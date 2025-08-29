@@ -26,9 +26,62 @@ const authenticate = async (req, res, next) => {
     
     const [scheme, token] = parts;
     
-    // --- Handle Supabase JWT (Bearer scheme) ---
+    // --- Handle Supabase JWT or API Token (Bearer scheme) ---
     if (scheme === 'Bearer') {
-      await logger.middleware('auth', `Verifying Supabase JWT for path: ${path}`);
+      // First, check if this might be an API token (64 char hex string)
+      if (token.length === 64 && /^[a-f0-9]{64}$/.test(token)) {
+        await logger.middleware('auth', `Token looks like an API token, trying API token verification`);
+        
+        // Try to verify as API token first
+        const tokenHash = crypto
+          .createHash('sha256')
+          .update(token)
+          .digest('hex');
+
+        const { data: tokenData, error: dbError } = await supabaseAdmin
+          .from('api_tokens')
+          .select('user_id, permissions, revoked, id, last_used')
+          .eq('token_hash', tokenHash)
+          .single();
+
+        if (!dbError && tokenData && !tokenData.revoked) {
+          // Valid API token found
+          const { data: userData, error: userError } = await supabaseAdmin
+            .from('users')
+            .select('id, email, name')
+            .eq('id', tokenData.user_id)
+            .single();
+            
+          if (!userError && userData) {
+            req.user = {
+              id: userData.id,
+              email: userData.email,
+              name: userData.name,
+              permissions: tokenData.permissions || [],
+              authMethod: 'api_key',
+              tokenId: tokenData.id
+            };
+            
+            await logger.middleware('auth', `API Token auth successful for user: ${userData.email}`);
+
+            // Update last_used timestamp
+            supabaseAdmin
+              .from('api_tokens')
+              .update({ last_used: new Date().toISOString() })
+              .eq('id', tokenData.id)
+              .then(({ error: updateError }) => {
+                if (updateError) {
+                  logger.error(`Failed to update last_used for token ${tokenData.id}`, updateError);
+                }
+              });
+
+            return next();
+          }
+        }
+      }
+      
+      // Not an API token or API token verification failed, try as Supabase JWT
+      await logger.middleware('auth', `Verifying as Supabase JWT for path: ${path}`);
       
       try {
         // First, set the session with the token

@@ -34,7 +34,7 @@ const listPlans = async (req, res, next) => {
     // Query plans that the user owns or is a collaborator on
     const { data: ownedPlans, error: ownedError } = await supabase
       .from('plans')
-      .select('id, title, description, status, created_at, updated_at')
+      .select('id, title, description, status, created_at, updated_at, owner_id')
       .eq('owner_id', userId);
 
     if (ownedError) {
@@ -58,7 +58,7 @@ const listPlans = async (req, res, next) => {
       
       const { data: sharedData, error: sharedError } = await supabase
         .from('plans')
-        .select('id, title, description, status, created_at, updated_at')
+        .select('id, title, description, status, created_at, updated_at, owner_id')
         .in('id', sharedPlanIds);
 
       if (sharedError) {
@@ -162,7 +162,7 @@ const createPlan = async (req, res, next) => {
     // Return the newly created plan
     const { data: newPlan, error: fetchError } = await supabase
       .from('plans')
-      .select('id, title, description, status, created_at, updated_at')
+      .select('id, title, description, status, created_at, updated_at, owner_id')
       .eq('id', planId)
       .single();
 
@@ -468,11 +468,16 @@ const listCollaborators = async (req, res, next) => {
 const addCollaborator = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { email, role } = req.body;
+    const { user_id, email, role } = req.body;
     const userId = req.user.id;
 
-    if (!email || !role) {
-      return res.status(400).json({ error: 'Email and role are required' });
+    // Either user_id or email must be provided
+    if (!user_id && !email) {
+      return res.status(400).json({ error: 'Either user_id or email is required' });
+    }
+
+    if (!role) {
+      return res.status(400).json({ error: 'Role is required' });
     }
 
     // Check if the user is the owner or admin of this plan
@@ -481,18 +486,23 @@ const addCollaborator = async (req, res, next) => {
       return res.status(403).json({ error: 'You do not have permission to add collaborators' });
     }
 
-    // Find the user by email
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', email)
-      .single();
+    let targetUserId = user_id;
 
-    if (userError) {
-      if (userError.code === 'PGRST116') {
-        return res.status(404).json({ error: 'User not found with this email' });
+    // If email provided instead of user_id, look up the user
+    if (!targetUserId && email) {
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', email)
+        .single();
+
+      if (userError) {
+        if (userError.code === 'PGRST116') {
+          return res.status(404).json({ error: 'User not found with this email' });
+        }
+        return res.status(500).json({ error: userError.message });
       }
-      return res.status(500).json({ error: userError.message });
+      targetUserId = user.id;
     }
 
     // Check if the user is already a collaborator
@@ -500,7 +510,7 @@ const addCollaborator = async (req, res, next) => {
       .from('plan_collaborators')
       .select('id')
       .eq('plan_id', id)
-      .eq('user_id', user.id);
+      .eq('user_id', targetUserId);
 
     if (collabError) {
       return res.status(500).json({ error: collabError.message });
@@ -528,7 +538,7 @@ const addCollaborator = async (req, res, next) => {
         {
           id: uuidv4(),
           plan_id: id,
-          user_id: user.id,
+          user_id: targetUserId,
           role,
           created_at: new Date(),
         },
@@ -693,6 +703,13 @@ const getPlanProgress = async (req, res, next) => {
     
     res.json({ 
       progress, 
+      total_nodes: totalNodes, 
+      completed_nodes: completedNodes,
+      in_progress_nodes: nodes.filter(n => n.status === 'in_progress').length,
+      not_started_nodes: nodes.filter(n => n.status === 'not_started').length,
+      blocked_nodes: nodes.filter(n => n.status === 'blocked').length,
+      completion_percentage: progress,
+      // Also include camelCase for backwards compatibility
       totalNodes, 
       completedNodes,
       inProgress: nodes.filter(n => n.status === 'in_progress').length,

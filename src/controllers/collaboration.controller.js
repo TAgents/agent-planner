@@ -1,4 +1,4 @@
-const { supabase } = require('../config/supabase');
+const { supabaseAdmin } = require('../config/supabase');
 const logger = require('../utils/logger');
 
 // This will be set by the main server file
@@ -25,7 +25,7 @@ const collaborationController = {
       const userId = req.user.id;
 
       // Verify access to the plan
-      const { data: plan, error: planError } = await supabase
+      const { data: plan, error: planError } = await supabaseAdmin
         .from('plans')
         .select('id, owner_id')
         .eq('id', planId)
@@ -38,7 +38,7 @@ const collaborationController = {
       // Check if user has access
       const isOwner = plan.owner_id === userId;
       if (!isOwner) {
-        const { data: collaborator } = await supabase
+        const { data: collaborator } = await supabaseAdmin
           .from('plan_collaborators')
           .select('role')
           .eq('plan_id', planId)
@@ -58,16 +58,16 @@ const collaborationController = {
 
       // Get user details for active users
       if (activeUserIds.length > 0) {
-        const { data: users } = await supabase
-          .from('auth.users')
-          .select('id, email, raw_user_meta_data')
+        const { data: users } = await supabaseAdmin
+          .from('users')
+          .select('id, email, name, avatar_url')
           .in('id', activeUserIds);
 
         const activeUsers = (users || []).map(user => ({
           id: user.id,
           email: user.email,
-          name: user.raw_user_meta_data?.name || user.email.split('@')[0],
-          avatar_url: user.raw_user_meta_data?.avatar_url
+          name: user.name || user.email.split('@')[0],
+          avatar_url: user.avatar_url
         }));
 
         res.json({
@@ -98,7 +98,7 @@ const collaborationController = {
       const userId = req.user.id;
 
       // Verify access to the plan
-      const { data: plan, error: planError } = await supabase
+      const { data: plan, error: planError } = await supabaseAdmin
         .from('plans')
         .select('id, owner_id')
         .eq('id', planId)
@@ -111,7 +111,7 @@ const collaborationController = {
       // Check if user has access
       const isOwner = plan.owner_id === userId;
       if (!isOwner) {
-        const { data: collaborator } = await supabase
+        const { data: collaborator } = await supabaseAdmin
           .from('plan_collaborators')
           .select('role')
           .eq('plan_id', planId)
@@ -124,7 +124,7 @@ const collaborationController = {
       }
 
       // Store presence in database (for persistence)
-      const { data: presence, error } = await supabase
+      const { data: presence, error } = await supabaseAdmin
         .from('user_presence')
         .upsert({
           user_id: userId,
@@ -162,7 +162,7 @@ const collaborationController = {
       const userId = req.user.id;
 
       // Verify the node belongs to the plan
-      const { data: node, error: nodeError } = await supabase
+      const { data: node, error: nodeError } = await supabaseAdmin
         .from('plan_nodes')
         .select('id, plan_id')
         .eq('id', nodeId)
@@ -174,7 +174,7 @@ const collaborationController = {
       }
 
       // Verify access to the plan
-      const { data: plan, error: planError } = await supabase
+      const { data: plan, error: planError } = await supabaseAdmin
         .from('plans')
         .select('id, owner_id')
         .eq('id', planId)
@@ -187,7 +187,7 @@ const collaborationController = {
       // Check if user has access
       const isOwner = plan.owner_id === userId;
       if (!isOwner) {
-        const { data: collaborator } = await supabase
+        const { data: collaborator } = await supabaseAdmin
           .from('plan_collaborators')
           .select('role')
           .eq('plan_id', planId)
@@ -212,9 +212,9 @@ const collaborationController = {
       const allUserIds = [...new Set([...activeUserIds, ...typingUserIds])];
       
       if (allUserIds.length > 0) {
-        const { data: users } = await supabase
-          .from('auth.users')
-          .select('id, email, raw_user_meta_data')
+        const { data: users } = await supabaseAdmin
+          .from('users')
+          .select('id, email, name, avatar_url')
           .in('id', allUserIds);
 
         const userMap = new Map((users || []).map(u => [u.id, u]));
@@ -224,8 +224,8 @@ const collaborationController = {
           return user ? {
             id: user.id,
             email: user.email,
-            name: user.raw_user_meta_data?.name || user.email.split('@')[0],
-            avatar_url: user.raw_user_meta_data?.avatar_url
+            name: user.name || user.email.split('@')[0],
+            avatar_url: user.avatar_url
           } : null;
         }).filter(Boolean);
 
@@ -234,8 +234,8 @@ const collaborationController = {
           return user ? {
             id: user.id,
             email: user.email,
-            name: user.raw_user_meta_data?.name || user.email.split('@')[0],
-            avatar_url: user.raw_user_meta_data?.avatar_url
+            name: user.name || user.email.split('@')[0],
+            avatar_url: user.avatar_url
           } : null;
         }).filter(Boolean);
 

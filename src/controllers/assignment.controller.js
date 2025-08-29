@@ -1,4 +1,4 @@
-const { supabase } = require('../config/supabase');
+const { supabaseAdmin: supabase } = require('../config/supabase');
 
 /**
  * Assignment Controller
@@ -39,9 +39,9 @@ const assignmentController = {
         }
       }
 
-      // Get assignments with user details
+      // Get assignments
       const { data: assignments, error } = await supabase
-        .from('node_assignments_with_users')
+        .from('node_assignments')
         .select('*')
         .eq('node_id', nodeId);
 
@@ -156,14 +156,7 @@ const assignmentController = {
         return res.status(500).json({ error: 'Failed to create assignment' });
       }
 
-      // Get the assignment with user details
-      const { data: fullAssignment } = await supabase
-        .from('node_assignments_with_users')
-        .select('*')
-        .eq('id', assignment.id)
-        .single();
-
-      res.status(201).json(fullAssignment || assignment);
+      res.status(201).json(assignment);
     } catch (error) {
       console.error('Error in assignUserToNode:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -277,10 +270,10 @@ const assignmentController = {
         }
       }
 
-      // Get owner details
+      // Get owner details from users table
       const { data: owner } = await supabase
-        .from('auth.users')
-        .select('id, email, raw_user_meta_data')
+        .from('users')
+        .select('id, email, name')
         .eq('id', plan.owner_id)
         .single();
 
@@ -289,14 +282,20 @@ const assignmentController = {
         .from('plan_collaborators')
         .select(`
           user_id,
-          role,
-          user:auth.users!user_id (
-            id,
-            email,
-            raw_user_meta_data
-          )
+          role
         `)
         .eq('plan_id', planId);
+
+      // Get user details for collaborators
+      const collaboratorIds = collaborators ? collaborators.map(c => c.user_id) : [];
+      let collaboratorUsers = [];
+      if (collaboratorIds.length > 0) {
+        const { data: users } = await supabase
+          .from('users')
+          .select('id, email, name')
+          .in('id', collaboratorIds);
+        collaboratorUsers = users || [];
+      }
 
       // Combine owner and collaborators
       const users = [];
@@ -305,18 +304,19 @@ const assignmentController = {
         users.push({
           id: owner.id,
           email: owner.email,
-          name: owner.raw_user_meta_data?.name || owner.email,
+          name: owner.name || owner.email,
           role: 'owner'
         });
       }
 
       if (collaborators) {
         collaborators.forEach(collab => {
-          if (collab.user) {
+          const user = collaboratorUsers.find(u => u.id === collab.user_id);
+          if (user) {
             users.push({
-              id: collab.user.id,
-              email: collab.user.email,
-              name: collab.user.raw_user_meta_data?.name || collab.user.email,
+              id: user.id,
+              email: user.email,
+              name: user.name || user.email,
               role: collab.role
             });
           }

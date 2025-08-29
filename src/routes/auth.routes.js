@@ -423,6 +423,44 @@ router.post('/change-password', authenticate, authController.changePassword);
 /**
  * @swagger
  * /auth/token:
+ *   get:
+ *     summary: List all API tokens for the current user
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of tokens
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: string
+ *                   name:
+ *                     type: string
+ *                   created_at:
+ *                     type: string
+ *                     format: date-time
+ *                   last_used:
+ *                     type: string
+ *                     format: date-time
+ *                     nullable: true
+ *                   permissions:
+ *                     type: array
+ *                     items:
+ *                       type: string
+ *       401:
+ *         description: Authentication required
+ */
+router.get('/token', authenticate, tokenController.getTokens);
+
+/**
+ * @swagger
+ * /auth/token:
  *   post:
  *     summary: Create an API token with specific scopes
  *     tags: [Authentication]

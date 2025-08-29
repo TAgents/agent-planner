@@ -24,16 +24,16 @@ This API supports two authentication methods:
 #### GET /activity/feed
 Get activity feed for the current user across all accessible plans
 
-#### GET /activity/plan/{id}/activity
+#### GET /activity/plans/{id}/activity
 Get all activity logs for a plan
 
-#### GET /activity/plan/{id}/timeline
+#### GET /activity/plans/{id}/timeline
 Get a chronological timeline of significant events for a plan
 
-#### GET /activity/plan/{id}/nodes/{nodeId}/activity
+#### GET /activity/plans/{id}/nodes/{nodeId}/activity
 Get recent activity for a specific node
 
-#### POST /activity/plan/{id}/nodes/{nodeId}/detailed-log
+#### POST /activity/plans/{id}/nodes/{nodeId}/detailed-log
 Add a detailed activity log entry with metadata and tags
 
 
@@ -95,6 +95,9 @@ Update user profile
 
 #### POST /auth/change-password
 Change user password
+
+#### GET /auth/token
+List all API tokens for the current user
 
 #### POST /auth/token
 Create an API token with specific scopes
@@ -226,18 +229,6 @@ Search for artifacts across all accessible plans
 Search within a plan using the database search function
 
 
-### API Tokens
-
-#### GET /tokens
-List all API tokens for the current user
-
-#### POST /tokens
-Create a new API token
-
-#### DELETE /tokens/{id}
-Revoke an API token
-
-
 ### Upload
 
 #### POST /upload/avatar
@@ -245,18 +236,6 @@ Upload user avatar
 
 #### DELETE /upload/avatar
 Delete user avatar
-
-
-### User
-
-#### GET /users/profile
-Get current user profile
-
-#### PUT /users/profile
-Update user profile
-
-#### POST /users/change-password
-Change user password
 
 
 ### Users

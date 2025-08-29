@@ -487,124 +487,23 @@ const deleteNode = async (req, res, next) => {
 };
 
 /**
- * Add a comment to a node
+ * Add a comment to a node - DEPRECATED: Use addLogEntry instead
  */
 const addComment = async (req, res, next) => {
-  try {
-    const { id: planId, nodeId } = req.params;
-    const { content, comment_type } = req.body;
-    const userId = req.user.id;
-
-    // Check if the user has access to this plan
-    const hasAccess = await checkPlanAccess(planId, userId);
-    if (!hasAccess) {
-      return res.status(403).json({ error: 'You do not have access to this plan' });
-    }
-
-    // Check if node exists and belongs to this plan
-    const { data: node, error: nodeError } = await supabase
-      .from('plan_nodes')
-      .select('id')
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (nodeError) {
-      if (nodeError.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Node not found in this plan' });
-      }
-      return res.status(500).json({ error: nodeError.message });
-    }
-
-    // Validate content
-    if (!content) {
-      return res.status(400).json({ error: 'Comment content is required' });
-    }
-
-    // Create the comment
-    const { data, error } = await supabase
-      .from('plan_comments')
-      .insert([
-        {
-          id: uuidv4(),
-          plan_node_id: nodeId,
-          user_id: userId,
-          content,
-          created_at: new Date(),
-          updated_at: new Date(),
-          comment_type: comment_type || 'human',
-        },
-      ])
-      .select(`
-        id, 
-        content, 
-        created_at, 
-        updated_at, 
-        comment_type,
-        user:user_id (id, name, email)
-      `);
-
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
-
-    res.status(201).json(data[0]);
-  } catch (error) {
-    next(error);
-  }
+  // Comments functionality has been removed - use logs instead
+  return res.status(410).json({ 
+    error: 'Comments functionality has been removed. Please use logs endpoint instead.' 
+  });
 };
 
 /**
- * Get comments for a node
+ * Get comments for a node - DEPRECATED: Use getNodeLogs instead
  */
 const getComments = async (req, res, next) => {
-  try {
-    const { id: planId, nodeId } = req.params;
-    const userId = req.user.id;
-
-    // Check if the user has access to this plan
-    const hasAccess = await checkPlanAccess(planId, userId);
-    if (!hasAccess) {
-      return res.status(403).json({ error: 'You do not have access to this plan' });
-    }
-
-    // Check if node exists and belongs to this plan
-    const { data: node, error: nodeError } = await supabase
-      .from('plan_nodes')
-      .select('id')
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (nodeError) {
-      if (nodeError.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Node not found in this plan' });
-      }
-      return res.status(500).json({ error: nodeError.message });
-    }
-
-    // Get comments for this node
-    const { data, error } = await supabase
-      .from('plan_comments')
-      .select(`
-        id, 
-        content, 
-        created_at, 
-        updated_at, 
-        comment_type,
-        user:user_id (id, name, email)
-      `)
-      .eq('plan_node_id', nodeId)
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      return res.status(500).json({ error: error.message });
-    }
-
-    res.json(data);
-  } catch (error) {
-    next(error);
-  }
+  // Comments functionality has been removed - use logs instead
+  return res.status(410).json({ 
+    error: 'Comments functionality has been removed. Please use logs endpoint instead.' 
+  });
 };
 
 /**
@@ -652,24 +551,8 @@ const getNodeContext = async (req, res, next) => {
       return res.status(500).json({ error: nodeError.message });
     }
 
-    // Get recent comments
-    const { data: comments, error: commentsError } = await supabase
-      .from('plan_comments')
-      .select(`
-        id, 
-        content, 
-        created_at, 
-        updated_at, 
-        comment_type,
-        user:user_id (id, name, email)
-      `)
-      .eq('plan_node_id', nodeId)
-      .order('created_at', { ascending: false })
-      .limit(10);
-
-    if (commentsError) {
-      return res.status(500).json({ error: commentsError.message });
-    }
+    // Comments have been removed - use logs instead
+    const comments = [];
 
     // Get recent logs
     const { data: logs, error: logsError } = await supabase
@@ -747,7 +630,7 @@ const getNodeContext = async (req, res, next) => {
       },
       node,
       children,
-      comments,
+      // comments, // Removed - use logs instead
       logs,
       artifacts,
     };
@@ -1118,24 +1001,44 @@ const getNodeLogs = async (req, res, next) => {
       return res.status(500).json({ error: nodeError.message });
     }
 
-    // Get logs for this node
-    const { data, error } = await supabase
+    // Check for query parameters
+    const { log_type } = req.query;
+
+    // Build query
+    let query = supabase
       .from('plan_node_logs')
       .select(`
         id, 
         content, 
         log_type, 
         created_at,
-        user:user_id (id, name, email)
+        user_id
       `)
-      .eq('plan_node_id', nodeId)
-      .order('created_at', { ascending: false });
+      .eq('plan_node_id', nodeId);
+
+    // Apply log_type filter if provided
+    if (log_type) {
+      query = query.eq('log_type', log_type);
+    }
+
+    // Execute query
+    const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) {
       return res.status(500).json({ error: error.message });
     }
 
-    res.json(data);
+    // Transform data to include user info (simplified)
+    const logsWithUser = data.map(log => ({
+      ...log,
+      user: {
+        id: log.user_id,
+        name: null,
+        email: null
+      }
+    }));
+
+    res.json(logsWithUser);
   } catch (error) {
     next(error);
   }
