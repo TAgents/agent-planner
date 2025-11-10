@@ -42,21 +42,36 @@ npm install
 cp .env.example .env
 ```
 Edit the `.env` file with your Supabase credentials:
-- `SUPABASE_URL` - Your Supabase project URL
+- `SUPABASE_URL` - Your Supabase project URL (API URL, not database URL)
 - `SUPABASE_ANON_KEY` - Your Supabase anonymous key
 - `SUPABASE_SERVICE_KEY` - Your Supabase service role key
+- `DATABASE_URL` - PostgreSQL connection string (required for migrations)
 - `JWT_SECRET` - Secret for JWT token generation
+
+**For local Supabase:**
+```env
+SUPABASE_URL=http://127.0.0.1:54321
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
+```
+
+**For hosted Supabase:**
+```env
+SUPABASE_URL=https://your-project.supabase.co
+DATABASE_URL=postgresql://postgres:[password]@db.your-project.supabase.co:5432/postgres
+```
 
 4. **Set up the database**
 
-Initialize the database schema in your Supabase project:
+Initialize the database schema by running migrations:
 
 ```bash
-# Run the initialization script
 npm run db:init
 ```
 
-Then go to your [Supabase SQL Editor](https://app.supabase.com/project/_/editor) and execute the generated SQL scripts.
+This will:
+- Apply all database migrations automatically
+- Create the admin user (`admin@example.com` / `password123`) if no users exist
+- Track which migrations have been applied
 
 5. **Start the server**
 ```bash
@@ -183,9 +198,30 @@ The system uses PostgreSQL (via Supabase) with the following main tables:
 - `plan_comments` - Comments on nodes
 - `plan_node_logs` - Activity tracking
 - `plan_node_artifacts` - File/resource attachments
+- `plan_node_labels` - Tags for nodes
 - `api_tokens` - API authentication tokens
+- `node_assignments` - User assignments to nodes
+- `user_presence` - Real-time presence tracking
+- `audit_logs` - Activity audit trail
+- `schema_migrations` - Migration tracking (managed automatically)
 
 Row Level Security (RLS) policies ensure users can only access their own data and plans they collaborate on.
+
+### Database Migrations
+
+The system uses an incremental migration system:
+- Migration files in `src/db/sql/` with numeric prefixes (e.g., `00001_*.sql`)
+- `schema_migrations` table tracks which migrations have been applied
+- Only new migrations execute when running `npm run db:init`
+- Each migration runs in a transaction (all-or-nothing)
+- Requires `DATABASE_URL` environment variable for direct PostgreSQL access
+
+**Running Migrations:**
+```bash
+npm run db:init  # Applies new migrations + creates admin user if needed
+```
+
+**Note:** Safe to run multiple times - already-applied migrations are skipped.
 
 ## Authentication System
 
@@ -195,6 +231,22 @@ The system uses Supabase's built-in authentication:
 - The frontend stores a Supabase session
 - Login/registration return Supabase sessions
 - API tokens provide programmatic access with scoped permissions
+
+### Email Handling
+
+All authentication emails are handled automatically by Supabase:
+- **Verification emails** - Sent automatically on registration
+- **Password reset emails** - Sent via `resetPasswordForEmail()`
+- **Magic link emails** - If configured in Supabase dashboard
+
+**Local Development:**
+- Emails are captured by Mailpit at http://127.0.0.1:54324
+- No SMTP configuration needed
+
+**Production:**
+- Configure email templates: Supabase Dashboard → Authentication → Email Templates
+- (Optional) Add custom SMTP settings if you want to use your own email provider
+- Default: Supabase uses their own email service
 
 ## Related Projects
 

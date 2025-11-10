@@ -1,33 +1,6 @@
 const { supabase, supabaseAdmin } = require('../config/supabase');
 const logger = require('../utils/logger');
-const crypto = require('crypto');
-const nodemailer = require('nodemailer');
 require('dotenv').config();
-
-// Email transporter configuration (you'll need to configure this with your email service)
-const createEmailTransporter = () => {
-  // Use environment variables for email configuration
-  if (process.env.EMAIL_SERVICE === 'gmail') {
-    return nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
-    });
-  } else if (process.env.EMAIL_HOST) {
-    return nodemailer.createTransport({
-      host: process.env.EMAIL_HOST,
-      port: process.env.EMAIL_PORT || 587,
-      secure: process.env.EMAIL_SECURE === 'true',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
-    });
-  }
-  return null;
-};
 
 /**
  * Register a new user
@@ -61,13 +34,9 @@ const register = async (req, res, next) => {
       await logger.error(`Supabase Auth signUp failed for ${email}`, authError);
       return res.status(400).json({ error: authError.message });
     }
-    
-    await logger.auth(`Supabase Auth signUp succeeded for ${email}. User ID: ${authData.user?.id}`);
 
-    // Send verification email
-    if (authData.user && process.env.SEND_VERIFICATION_EMAIL === 'true') {
-      await sendVerificationEmail(authData.user.email, authData.user.id);
-    }
+    await logger.auth(`Supabase Auth signUp succeeded for ${email}. User ID: ${authData.user?.id}`);
+    await logger.auth(`Supabase will send verification email to ${email}`);
 
     // Return the Supabase session data directly
     const response = {
@@ -462,57 +431,6 @@ const changePassword = async (req, res, next) => {
   } catch (error) {
     await logger.error(`Unexpected error in changePassword endpoint`, error);
     next(error);
-  }
-};
-
-/**
- * Helper function to send verification email
- */
-const sendVerificationEmail = async (email, userId) => {
-  try {
-    const transporter = createEmailTransporter();
-    
-    if (!transporter) {
-      await logger.warn('Email transporter not configured, skipping verification email');
-      return;
-    }
-
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3001'}/verify-email?token=${verificationToken}`;
-
-    // Store token in user metadata (in production, use a separate table with expiry)
-    await supabaseAdmin.auth.admin.updateUserById(userId, {
-      user_metadata: {
-        verification_token: verificationToken,
-        verification_token_expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours
-      }
-    });
-
-    const mailOptions = {
-      from: process.env.EMAIL_FROM || 'noreply@agentplanner.com',
-      to: email,
-      subject: 'Verify your Agent Planner account',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2>Welcome to Agent Planner!</h2>
-          <p>Please verify your email address by clicking the link below:</p>
-          <p style="margin: 30px 0;">
-            <a href="${verificationUrl}" 
-               style="background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
-              Verify Email
-            </a>
-          </p>
-          <p>Or copy and paste this link into your browser:</p>
-          <p style="color: #666; word-break: break-all;">${verificationUrl}</p>
-          <p style="color: #666; margin-top: 30px;">This link will expire in 24 hours.</p>
-        </div>
-      `
-    };
-
-    await transporter.sendMail(mailOptions);
-    await logger.auth(`Verification email sent to ${email}`);
-  } catch (error) {
-    await logger.error(`Failed to send verification email to ${email}`, error);
   }
 };
 
