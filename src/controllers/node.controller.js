@@ -1,5 +1,14 @@
 const { v4: uuidv4 } = require('uuid');
 const { supabaseAdmin: supabase } = require('../config/supabase');
+const { broadcastPlanUpdate } = require('../websocket/broadcast');
+const {
+  createNodeCreatedMessage,
+  createNodeUpdatedMessage,
+  createNodeDeletedMessage,
+  createNodeMovedMessage,
+  createNodeStatusChangedMessage,
+  createLogAddedMessage
+} = require('../websocket/message-schema');
 
 /**
  * Helper function to check if a user has access to a plan with specified roles
@@ -290,6 +299,11 @@ const createNode = async (req, res, next) => {
       },
     ]);
 
+    // Broadcast node creation event
+    const userName = req.user.name || req.user.email;
+    const message = createNodeCreatedMessage(data[0], userId, userName);
+    await broadcastPlanUpdate(planId, message);
+
     res.status(201).json(data[0]);
   } catch (error) {
     next(error);
@@ -380,6 +394,11 @@ const updateNode = async (req, res, next) => {
         },
       ]);
     }
+
+    // Broadcast node update event
+    const userName = req.user.name || req.user.email;
+    const message = createNodeUpdatedMessage(data[0], userId, userName);
+    await broadcastPlanUpdate(planId, message);
 
     res.json(data[0]);
   } catch (error) {
@@ -479,6 +498,11 @@ const deleteNode = async (req, res, next) => {
     if (error) {
       return res.status(500).json({ error: error.message });
     }
+
+    // Broadcast node deletion event
+    const userName = req.user.name || req.user.email;
+    const message = createNodeDeletedMessage(nodeId, planId, userId, userName);
+    await broadcastPlanUpdate(planId, message);
 
     res.status(204).send();
   } catch (error) {
@@ -742,15 +766,32 @@ const updateNodeStatus = async (req, res, next) => {
     // Valid statuses
     const validStatuses = ['not_started', 'in_progress', 'completed', 'blocked'];
     if (!validStatuses.includes(status)) {
-      return res.status(400).json({ 
-        error: `Invalid status. Valid values are: ${validStatuses.join(', ')}` 
+      return res.status(400).json({
+        error: `Invalid status. Valid values are: ${validStatuses.join(', ')}`
       });
     }
+
+    // Get old status first
+    const { data: oldNode, error: oldNodeError } = await supabase
+      .from('plan_nodes')
+      .select('status')
+      .eq('id', nodeId)
+      .eq('plan_id', planId)
+      .single();
+
+    if (oldNodeError) {
+      if (oldNodeError.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Node not found' });
+      }
+      return res.status(500).json({ error: oldNodeError.message });
+    }
+
+    const oldStatus = oldNode.status;
 
     // Update the node status
     const { data, error } = await supabase
       .from('plan_nodes')
-      .update({ 
+      .update({
         status,
         updated_at: new Date(),
       })
@@ -778,6 +819,18 @@ const updateNodeStatus = async (req, res, next) => {
       },
     ]);
 
+    // Broadcast status change event
+    const userName = req.user.name || req.user.email;
+    const message = createNodeStatusChangedMessage(
+      nodeId,
+      planId,
+      oldStatus,
+      status,
+      userId,
+      userName
+    );
+    await broadcastPlanUpdate(planId, message);
+
     res.json(data[0]);
   } catch (error) {
     next(error);
@@ -799,10 +852,10 @@ const moveNode = async (req, res, next) => {
       return res.status(403).json({ error: 'You do not have permission to move nodes in this plan' });
     }
 
-    // Check if the node exists
+    // Check if the node exists and capture old state
     const { data: node, error: nodeError } = await supabase
       .from('plan_nodes')
-      .select('parent_id, node_type, title')
+      .select('parent_id, node_type, title, order_index')
       .eq('id', nodeId)
       .eq('plan_id', planId)
       .single();
@@ -813,6 +866,10 @@ const moveNode = async (req, res, next) => {
       }
       return res.status(500).json({ error: nodeError.message });
     }
+
+    // Store old values for broadcast
+    const oldParentId = node.parent_id;
+    const oldOrderIndex = node.order_index;
 
     // Don't allow moving root nodes
     if (node.node_type === 'root') {
@@ -891,6 +948,17 @@ const moveNode = async (req, res, next) => {
       },
     ]);
 
+    // Broadcast node moved event
+    const userName = req.user.name || req.user.email;
+    const moveData = {
+      oldParentId,
+      newParentId: parentId,
+      oldOrderIndex,
+      newOrderIndex: orderIndex
+    };
+    const message = createNodeMovedMessage(nodeId, planId, moveData, userId, userName);
+    await broadcastPlanUpdate(planId, message);
+
     res.json(data[0]);
   } catch (error) {
     next(error);
@@ -942,29 +1010,38 @@ const addLogEntry = async (req, res, next) => {
     }
 
     // Create the log entry
+    const logId = uuidv4();
+    const createdAt = new Date();
+
     const { data, error } = await supabase
       .from('plan_node_logs')
       .insert([
         {
-          id: uuidv4(),
+          id: logId,
           plan_node_id: nodeId,
           user_id: userId,
           content,
           log_type: logType,
-          created_at: new Date(),
+          created_at: createdAt,
         },
       ])
       .select(`
-        id, 
-        content, 
-        log_type, 
+        id,
+        content,
+        log_type,
         created_at,
-        user:user_id (id, name, email)
+        plan_node_id,
+        user_id
       `);
 
     if (error) {
       return res.status(400).json({ error: error.message });
     }
+
+    // Broadcast log creation event
+    const userName = req.user.name || req.user.email;
+    const message = createLogAddedMessage(data[0], planId, userName);
+    await broadcastPlanUpdate(planId, message);
 
     res.status(201).json(data[0]);
   } catch (error) {

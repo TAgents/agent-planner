@@ -1,0 +1,194 @@
+{
+  "schema_version": "1.0.0",
+  "examples": {
+    "plan_created": {
+      "type": "plan.created",
+      "payload": {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "title": "Q4 Product Roadmap",
+        "description": "Strategic planning for Q4 2025",
+        "status": "active",
+        "ownerId": "123e4567-e89b-12d3-a456-426614174000",
+        "createdAt": "2025-11-11T10:00:00.000Z",
+        "metadata": {
+          "priority": "high"
+        }
+      },
+      "metadata": {
+        "userId": "123e4567-e89b-12d3-a456-426614174000",
+        "userName": "John Doe",
+        "timestamp": "2025-11-11T18:33:45.241Z",
+        "planId": "550e8400-e29b-41d4-a716-446655440000",
+        "version": "1.0.0"
+      }
+    },
+    "plan_status_changed": {
+      "type": "plan.status_changed",
+      "payload": {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "oldStatus": "draft",
+        "newStatus": "active"
+      },
+      "metadata": {
+        "userId": "123e4567-e89b-12d3-a456-426614174000",
+        "userName": "John Doe",
+        "timestamp": "2025-11-11T18:33:45.241Z",
+        "planId": "550e8400-e29b-41d4-a716-446655440000",
+        "version": "1.0.0"
+      }
+    },
+    "node_created": {
+      "type": "node.created",
+      "payload": {
+        "id": "660e8400-e29b-41d4-a716-446655440001",
+        "planId": "550e8400-e29b-41d4-a716-446655440000",
+        "parentId": null,
+        "nodeType": "phase",
+        "title": "Authentication System",
+        "description": "Implement OAuth2 and JWT authentication",
+        "status": "in_progress",
+        "orderIndex": 0,
+        "dueDate": "2025-11-30T00:00:00.000Z",
+        "createdAt": "2025-11-11T10:15:00.000Z",
+        "metadata": {
+          "complexity": "high"
+        }
+      },
+      "metadata": {
+        "userId": "456e7890-e89b-12d3-a456-426614174001",
+        "userName": "Jane Smith",
+        "timestamp": "2025-11-11T18:33:45.241Z",
+        "planId": "550e8400-e29b-41d4-a716-446655440000",
+        "version": "1.0.0"
+      }
+    },
+    "node_moved": {
+      "type": "node.moved",
+      "payload": {
+        "nodeId": "660e8400-e29b-41d4-a716-446655440001",
+        "oldParentId": "parent-uuid-old",
+        "newParentId": "parent-uuid-new",
+        "oldOrderIndex": 2,
+        "newOrderIndex": 0
+      },
+      "metadata": {
+        "userId": "456e7890-e89b-12d3-a456-426614174001",
+        "userName": "Jane Smith",
+        "timestamp": "2025-11-11T18:33:45.241Z",
+        "planId": "550e8400-e29b-41d4-a716-446655440000",
+        "version": "1.0.0"
+      }
+    },
+    "comment_added": {
+      "type": "collaboration.comment_added",
+      "payload": {
+        "id": "770e8400-e29b-41d4-a716-446655440002",
+        "nodeId": "660e8400-e29b-41d4-a716-446655440001",
+        "userId": "789e0123-e89b-12d3-a456-426614174002",
+        "userName": "Alice Johnson",
+        "content": "Should we consider using Supabase Auth instead?",
+        "commentType": "human",
+        "createdAt": "2025-11-11T10:30:00.000Z"
+      },
+      "metadata": {
+        "userId": "789e0123-e89b-12d3-a456-426614174002",
+        "userName": "Alice Johnson",
+        "timestamp": "2025-11-11T18:33:45.241Z",
+        "planId": "550e8400-e29b-41d4-a716-446655440000",
+        "version": "1.0.0"
+      }
+    },
+    "user_assigned": {
+      "type": "collaboration.user_assigned",
+      "payload": {
+        "nodeId": "660e8400-e29b-41d4-a716-446655440001",
+        "userId": "890e1234-e89b-12d3-a456-426614174003",
+        "userName": "Bob Wilson"
+      },
+      "metadata": {
+        "userId": "123e4567-e89b-12d3-a456-426614174000",
+        "userName": "John Doe",
+        "timestamp": "2025-11-11T18:33:45.241Z",
+        "planId": "550e8400-e29b-41d4-a716-446655440000",
+        "version": "1.0.0"
+      }
+    },
+    "log_added": {
+      "type": "collaboration.log_added",
+      "payload": {
+        "id": "880e8400-e29b-41d4-a716-446655440003",
+        "nodeId": "660e8400-e29b-41d4-a716-446655440001",
+        "userId": "456e7890-e89b-12d3-a456-426614174001",
+        "userName": "Jane Smith",
+        "content": "Completed initial research on OAuth2 providers",
+        "logType": "progress",
+        "tags": [
+          "research",
+          "oauth2"
+        ],
+        "createdAt": "2025-11-11T11:00:00.000Z"
+      },
+      "metadata": {
+        "userId": "456e7890-e89b-12d3-a456-426614174001",
+        "userName": "Jane Smith",
+        "timestamp": "2025-11-11T18:33:45.241Z",
+        "planId": "550e8400-e29b-41d4-a716-446655440000",
+        "version": "1.0.0"
+      }
+    },
+    "artifact_added": {
+      "type": "collaboration.artifact_added",
+      "payload": {
+        "id": "990e8400-e29b-41d4-a716-446655440004",
+        "nodeId": "660e8400-e29b-41d4-a716-446655440001",
+        "name": "auth-architecture.pdf",
+        "contentType": "application/pdf",
+        "url": "https://storage.example.com/artifacts/auth-architecture.pdf",
+        "createdBy": "456e7890-e89b-12d3-a456-426614174001",
+        "createdAt": "2025-11-11T11:15:00.000Z"
+      },
+      "metadata": {
+        "userId": "456e7890-e89b-12d3-a456-426614174001",
+        "userName": "Jane Smith",
+        "timestamp": "2025-11-11T18:33:45.241Z",
+        "planId": "550e8400-e29b-41d4-a716-446655440000",
+        "version": "1.0.0"
+      }
+    },
+    "collaborator_added": {
+      "type": "collaborator.added",
+      "payload": {
+        "id": "aa0e8400-e29b-41d4-a716-446655440005",
+        "planId": "550e8400-e29b-41d4-a716-446655440000",
+        "userId": "901e2345-e89b-12d3-a456-426614174004",
+        "userName": "Carol Davis",
+        "userEmail": "carol@example.com",
+        "role": "editor"
+      },
+      "metadata": {
+        "userId": "123e4567-e89b-12d3-a456-426614174000",
+        "userName": "John Doe",
+        "timestamp": "2025-11-11T18:33:45.241Z",
+        "planId": "550e8400-e29b-41d4-a716-446655440000",
+        "version": "1.0.0"
+      }
+    },
+    "collaborator_role_changed": {
+      "type": "collaborator.role_changed",
+      "payload": {
+        "id": "aa0e8400-e29b-41d4-a716-446655440005",
+        "planId": "550e8400-e29b-41d4-a716-446655440000",
+        "userId": "901e2345-e89b-12d3-a456-426614174004",
+        "oldRole": "editor",
+        "role": "admin"
+      },
+      "metadata": {
+        "userId": "123e4567-e89b-12d3-a456-426614174000",
+        "userName": "John Doe",
+        "timestamp": "2025-11-11T18:33:45.241Z",
+        "planId": "550e8400-e29b-41d4-a716-446655440000",
+        "version": "1.0.0"
+      }
+    }
+  }
+}

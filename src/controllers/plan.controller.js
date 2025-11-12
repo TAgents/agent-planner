@@ -1,5 +1,11 @@
 const { v4: uuidv4 } = require('uuid');
 const { supabaseAdmin: supabase } = require('../config/supabase');
+const { broadcastPlanUpdate, broadcastToAll } = require('../websocket/broadcast');
+const {
+  createPlanCreatedMessage,
+  createPlanUpdatedMessage,
+  createPlanDeletedMessage
+} = require('../websocket/message-schema');
 
 /**
  * Calculate progress percentage for a plan based on node completion
@@ -173,6 +179,11 @@ const createPlan = async (req, res, next) => {
     // Add progress (will be 0 for a new plan)
     newPlan.progress = 0;
 
+    // Broadcast plan created event to all users (so plans list updates)
+    const userName = req.user.name || req.user.email;
+    const message = createPlanCreatedMessage(newPlan, req.user.id, userName);
+    await broadcastToAll(message);
+
     res.status(201).json(newPlan);
   } catch (error) {
     next(error);
@@ -291,6 +302,11 @@ const updatePlan = async (req, res, next) => {
     const progress = await calculatePlanProgress(id);
     data[0].progress = progress;
 
+    // Broadcast plan updated event
+    const userName = req.user.name || req.user.email;
+    const message = createPlanUpdatedMessage(data[0], req.user.id, userName);
+    await broadcastPlanUpdate(id, message);
+
     res.json(data[0]);
   } catch (error) {
     next(error);
@@ -333,6 +349,19 @@ const deletePlan = async (req, res, next) => {
 
       if (error) {
         return res.status(400).json({ error: error.message });
+      }
+
+      // Broadcast plan updated event (status changed to archived)
+      const userName = req.user.name || req.user.email;
+      const { data: archivedPlan } = await supabase
+        .from('plans')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (archivedPlan) {
+        const message = createPlanUpdatedMessage(archivedPlan, userId, userName);
+        await broadcastPlanUpdate(id, message);
       }
 
       return res.status(200).json({ message: 'Plan archived successfully' });
@@ -386,6 +415,11 @@ const deletePlan = async (req, res, next) => {
     if (error) {
       return res.status(400).json({ error: error.message });
     }
+
+    // Broadcast plan deleted event to all users (so plans list updates)
+    const userName = req.user.name || req.user.email;
+    const message = createPlanDeletedMessage(id, userId, userName);
+    await broadcastToAll(message);
 
     res.status(204).send();
   } catch (error) {

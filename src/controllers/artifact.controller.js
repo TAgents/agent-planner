@@ -1,5 +1,10 @@
 const { v4: uuidv4 } = require('uuid');
 const { supabaseAdmin: supabase } = require('../config/supabase');
+const { broadcastPlanUpdate } = require('../websocket/broadcast');
+const {
+  createArtifactAddedMessage,
+  createArtifactDeletedMessage
+} = require('../websocket/message-schema');
 
 /**
  * Helper function to check if a user has access to a plan with specified roles
@@ -90,16 +95,19 @@ const addArtifact = async (req, res, next) => {
     }
 
     // Create the artifact
+    const artifactId = uuidv4();
+    const createdAt = new Date();
+
     const { data, error } = await supabase
       .from('plan_node_artifacts')
       .insert([
         {
-          id: uuidv4(),
+          id: artifactId,
           plan_node_id: nodeId,
           name,
           content_type,
           url,
-          created_at: new Date(),
+          created_at: createdAt,
           created_by: userId,
           metadata: metadata || {},
         },
@@ -121,6 +129,11 @@ const addArtifact = async (req, res, next) => {
         created_at: new Date(),
       },
     ]);
+
+    // Broadcast artifact creation event
+    const userName = req.user.name || req.user.email;
+    const message = createArtifactAddedMessage(data[0], planId, userName);
+    await broadcastPlanUpdate(planId, message);
 
     res.status(201).json(data[0]);
   } catch (error) {
@@ -354,6 +367,17 @@ const deleteArtifact = async (req, res, next) => {
         created_at: new Date(),
       },
     ]);
+
+    // Broadcast artifact deletion event
+    const userName = req.user.name || req.user.email;
+    const message = createArtifactDeletedMessage(
+      artifactId,
+      nodeId,
+      planId,
+      userId,
+      userName
+    );
+    await broadcastPlanUpdate(planId, message);
 
     res.status(204).send();
   } catch (error) {

@@ -1,6 +1,5 @@
 const WebSocket = require('ws');
-const jwt = require('jsonwebtoken');
-const { supabase } = require('../config/supabase');
+const { supabaseAdmin } = require('../config/supabase');
 const logger = require('../utils/logger');
 
 class CollaborationServer {
@@ -28,16 +27,21 @@ class CollaborationServer {
       // Authenticate the connection
       try {
         const token = this.extractToken(req);
-        const user = await this.authenticateUser(token);
-        if (!user) {
-          ws.close(1008, 'Authentication failed');
+        const authResult = await this.authenticateUser(token);
+        if (!authResult.user) {
+          // Close with specific code for bad JWT to prevent reconnection attempts
+          if (authResult.error?.code === 'bad_jwt') {
+            ws.close(4001, 'Token expired or invalid');
+          } else {
+            ws.close(1008, 'Authentication failed');
+          }
           return;
         }
-        
-        userId = user.id;
+
+        userId = authResult.user.id;
         this.connections.set(userId, ws);
-        
-        await logger.info(`WebSocket connection established for user ${userId}`);
+
+        await logger.api(`WebSocket connection established for user ${userId}`);
         
         // Send initial connection success
         ws.send(JSON.stringify({
@@ -132,7 +136,7 @@ class CollaborationServer {
             await this.handleLeavePlan(userId, currentPlanId);
           }
           
-          await logger.info(`WebSocket connection closed for user ${userId}`);
+          await logger.api(`WebSocket connection closed for user ${userId}`);
         }
       });
 
@@ -159,27 +163,35 @@ class CollaborationServer {
   }
 
   async authenticateUser(token) {
-    if (!token) return null;
-    
+    if (!token) return { user: null, error: { code: 'no_token' } };
+
     try {
-      // Verify JWT token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      
-      // Get user from database to ensure they exist
-      const { data: user, error } = await supabase
-        .from('auth.users')
-        .select('id, email')
-        .eq('id', decoded.sub || decoded.id)
-        .single();
-      
-      if (error || !user) {
-        return null;
+      // Verify token using Supabase's getUser method with admin client (same as REST API middleware)
+      const { data: userData, error } = await supabaseAdmin.auth.getUser(token);
+
+      if (error || !userData.user) {
+        // Only log non-JWT errors (bad_jwt is expected during development reconnection attempts)
+        if (error?.code !== 'bad_jwt') {
+          if (error) {
+            await logger.error(`WebSocket token verification failed: ${JSON.stringify(error)}`);
+          } else {
+            await logger.error('WebSocket token verification failed: No user data');
+          }
+        }
+        return { user: null, error };
       }
-      
-      return user;
+
+      return {
+        user: {
+          id: userData.user.id,
+          email: userData.user.email,
+          name: userData.user.user_metadata?.name
+        },
+        error: null
+      };
     } catch (error) {
-      await logger.error('Token verification failed:', error);
-      return null;
+      await logger.error('WebSocket authentication error:', error);
+      return { user: null, error };
     }
   }
 
@@ -210,7 +222,7 @@ class CollaborationServer {
       users: activeUsers
     }));
     
-    await logger.info(`User ${userId} joined plan ${planId}`);
+    await logger.api(`User ${userId} joined plan ${planId}`);
   }
 
   async handleLeavePlan(userId, planId) {
@@ -233,7 +245,7 @@ class CollaborationServer {
       timestamp: new Date()
     }, userId);
     
-    await logger.info(`User ${userId} left plan ${planId}`);
+    await logger.api(`User ${userId} left plan ${planId}`);
   }
 
   async handleJoinNode(userId, nodeId, previousNodeId, planId, ws) {
@@ -264,7 +276,7 @@ class CollaborationServer {
       users: nodeViewers
     }));
     
-    await logger.info(`User ${userId} joined node ${nodeId}`);
+    await logger.api(`User ${userId} joined node ${nodeId}`);
   }
 
   async handleLeaveNode(userId, nodeId, planId) {
@@ -293,7 +305,7 @@ class CollaborationServer {
       timestamp: new Date()
     }, userId);
     
-    await logger.info(`User ${userId} left node ${nodeId}`);
+    await logger.api(`User ${userId} left node ${nodeId}`);
   }
 
   async handleTypingStart(userId, nodeId, planId) {
@@ -364,11 +376,22 @@ class CollaborationServer {
   async broadcastToNode(nodeId, planId, message, excludeUserId = null) {
     const nodeUserIds = this.nodeUsers.get(nodeId);
     if (!nodeUserIds) return;
-    
+
     for (const userId of nodeUserIds) {
       if (userId === excludeUserId) continue;
-      
+
       const ws = this.connections.get(userId);
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(message));
+      }
+    }
+  }
+
+  async broadcastToAll(message, excludeUserId = null) {
+    // Broadcast to all connected users
+    for (const [userId, ws] of this.connections) {
+      if (userId === excludeUserId) continue;
+
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(message));
       }

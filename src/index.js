@@ -28,7 +28,8 @@ const artifactController = require('./controllers/artifact.controller');
 
 // Import WebSocket collaboration server
 const CollaborationServer = require('./websocket/collaboration');
-const { setCollaborationServer } = require('./controllers/collaboration.controller');
+const { setCollaborationServer: setCollaborationServerController } = require('./controllers/collaboration.controller');
+const { setCollaborationServer } = require('./websocket/broadcast');
 
 // Import middlewares
 const { debugRequest } = require('./middleware/debug.middleware');
@@ -186,7 +187,13 @@ const startServer = async () => {
       
       // Initialize WebSocket collaboration server
       const collaborationServer = new CollaborationServer(server);
+
+      // Set the server instance in both places:
+      // 1. Broadcast utility (new centralized approach)
       setCollaborationServer(collaborationServer);
+      // 2. Collaboration controller (backward compatibility)
+      setCollaborationServerController(collaborationServer);
+
       await logger.api('WebSocket collaboration server initialized at /ws/collaborate');
     });
   } catch (error) {
