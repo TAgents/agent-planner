@@ -803,6 +803,252 @@ const checkPlanAccess = async (planId, userId, roles = []) => {
   return true;
 };
 
+/**
+ * List all public plans (no authentication required)
+ */
+const listPublicPlans = async (req, res, next) => {
+  try {
+    const { sort = 'recent', limit = 50, offset = 0 } = req.query;
+    const limitNum = Math.min(parseInt(limit) || 50, 100); // Max 100
+    const offsetNum = parseInt(offset) || 0;
+
+    // Build query for public plans
+    let query = supabase
+      .from('plans')
+      .select('id, title, description, status, created_at, updated_at, view_count, github_repo_owner, github_repo_name, owner_id', { count: 'exact' })
+      .eq('is_public', true);
+
+    // Apply sorting
+    if (sort === 'popular' || sort === 'views') {
+      query = query.order('view_count', { ascending: false });
+    } else {
+      // Default to recent
+      query = query.order('created_at', { ascending: false });
+    }
+
+    // Apply pagination
+    query = query.range(offsetNum, offsetNum + limitNum - 1);
+
+    const { data: plans, error, count } = await query;
+
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    // Fetch owner information for each plan
+    const plansWithOwners = await Promise.all(
+      plans.map(async (plan) => {
+        const { data: owner } = await supabase
+          .from('users')
+          .select('name, email')
+          .eq('id', plan.owner_id)
+          .single();
+
+        const progress = await calculatePlanProgress(plan.id);
+
+        return {
+          id: plan.id,
+          title: plan.title,
+          description: plan.description,
+          status: plan.status,
+          view_count: plan.view_count,
+          created_at: plan.created_at,
+          updated_at: plan.updated_at,
+          github_repo_owner: plan.github_repo_owner,
+          github_repo_name: plan.github_repo_name,
+          owner: owner || { name: 'Unknown', email: '' },
+          progress
+        };
+      })
+    );
+
+    res.json({
+      plans: plansWithOwners,
+      total: count || 0,
+      limit: limitNum,
+      offset: offsetNum
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get a public plan (no authentication required)
+ */
+const getPublicPlan = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Get the plan
+    const { data: plan, error: planError } = await supabase
+      .from('plans')
+      .select('id, title, description, status, created_at, updated_at, owner_id, metadata, is_public, view_count, github_repo_owner, github_repo_name')
+      .eq('id', id)
+      .single();
+
+    if (planError) {
+      if (planError.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Plan not found' });
+      }
+      return res.status(500).json({ error: planError.message });
+    }
+
+    // Check if plan is public
+    if (!plan.is_public) {
+      return res.status(403).json({ error: 'This plan is not public' });
+    }
+
+    // Get the root node
+    const { data: rootNode, error: nodeError } = await supabase
+      .from('plan_nodes')
+      .select('id, node_type, title, description, status, created_at, updated_at, context, agent_instructions, acceptance_criteria')
+      .eq('plan_id', id)
+      .eq('node_type', 'root')
+      .single();
+
+    if (nodeError) {
+      return res.status(500).json({ error: nodeError.message });
+    }
+
+    // Get owner info
+    const { data: owner } = await supabase
+      .from('users')
+      .select('name, email')
+      .eq('id', plan.owner_id)
+      .single();
+
+    // Calculate progress for this plan
+    const progress = await calculatePlanProgress(id);
+
+    // Build response
+    const result = {
+      id: plan.id,
+      title: plan.title,
+      description: plan.description,
+      status: plan.status,
+      view_count: plan.view_count,
+      created_at: plan.created_at,
+      updated_at: plan.updated_at,
+      github_repo_owner: plan.github_repo_owner,
+      github_repo_name: plan.github_repo_name,
+      metadata: plan.metadata,
+      owner: owner || { name: 'Unknown', email: '' },
+      root_node: rootNode,
+      progress
+    };
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Update plan visibility settings (public/private)
+ */
+const updatePlanVisibility = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { is_public, github_repo_owner, github_repo_name } = req.body;
+    const userId = req.user.id;
+
+    if (is_public === undefined) {
+      return res.status(400).json({ error: 'is_public field is required' });
+    }
+
+    // Check if the user is the owner of this plan
+    const { data: plan, error: planError } = await supabase
+      .from('plans')
+      .select('owner_id')
+      .eq('id', id)
+      .single();
+
+    if (planError) {
+      if (planError.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Plan not found' });
+      }
+      return res.status(500).json({ error: planError.message });
+    }
+
+    if (plan.owner_id !== userId) {
+      return res.status(403).json({ error: 'Only the plan owner can change visibility settings' });
+    }
+
+    // Update visibility settings
+    const updates = {
+      is_public: Boolean(is_public),
+      updated_at: new Date()
+    };
+
+    if (github_repo_owner !== undefined) {
+      updates.github_repo_owner = github_repo_owner || null;
+    }
+
+    if (github_repo_name !== undefined) {
+      updates.github_repo_name = github_repo_name || null;
+    }
+
+    const { data, error } = await supabase
+      .from('plans')
+      .update(updates)
+      .eq('id', id)
+      .select('id, is_public, github_repo_owner, github_repo_name');
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    if (data.length === 0) {
+      return res.status(404).json({ error: 'Plan not found' });
+    }
+
+    res.json(data[0]);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Increment view count for a public plan
+ */
+const incrementViewCount = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // First check if plan exists and is public
+    const { data: plan, error: planError } = await supabase
+      .from('plans')
+      .select('id, is_public, view_count')
+      .eq('id', id)
+      .single();
+
+    if (planError) {
+      if (planError.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Plan not found' });
+      }
+      return res.status(500).json({ error: planError.message });
+    }
+
+    if (!plan.is_public) {
+      return res.status(403).json({ error: 'This plan is not public' });
+    }
+
+    // Call the database function to increment view count
+    const { error: funcError } = await supabase
+      .rpc('increment_plan_view_count', { plan_uuid: id });
+
+    if (funcError) {
+      return res.status(500).json({ error: funcError.message });
+    }
+
+    // Return updated view count
+    res.json({ view_count: plan.view_count + 1 });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   listPlans,
   createPlan,
@@ -814,4 +1060,8 @@ module.exports = {
   removeCollaborator,
   getPlanContext,
   getPlanProgress,
+  listPublicPlans,
+  getPublicPlan,
+  updatePlanVisibility,
+  incrementViewCount,
 };

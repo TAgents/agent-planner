@@ -101,6 +101,78 @@ router.post('/', authenticate, planController.createPlan);
 
 /**
  * @swagger
+ * /plans/public:
+ *   get:
+ *     summary: List all public plans (no authentication required)
+ *     tags: [Plans]
+ *     parameters:
+ *       - in: query
+ *         name: sort
+ *         schema:
+ *           type: string
+ *           enum: [recent, popular, views]
+ *         description: Sort order (recent, popular, or views)
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *         description: Maximum number of plans to return
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *         description: Offset for pagination
+ *     responses:
+ *       200:
+ *         description: A list of public plans
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 plans:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       title:
+ *                         type: string
+ *                       description:
+ *                         type: string
+ *                       status:
+ *                         type: string
+ *                       view_count:
+ *                         type: integer
+ *                       created_at:
+ *                         type: string
+ *                       updated_at:
+ *                         type: string
+ *                       github_repo_owner:
+ *                         type: string
+ *                       github_repo_name:
+ *                         type: string
+ *                       owner:
+ *                         type: object
+ *                         properties:
+ *                           name:
+ *                             type: string
+ *                           email:
+ *                             type: string
+ *                 total:
+ *                   type: integer
+ *                 limit:
+ *                   type: integer
+ *                 offset:
+ *                   type: integer
+ */
+router.get('/public', planController.listPublicPlans);
+
+/**
+ * @swagger
  * /plans/{id}:
  *   get:
  *     summary: Get a specific plan with its root node
@@ -461,5 +533,147 @@ router.get('/:id/context', authenticate, planController.getPlanContext);
  *         description: Failed to calculate progress
  */
 router.get('/:id/progress', authenticate, planController.getPlanProgress);
+
+/**
+ * @swagger
+ * /plans/{id}/public:
+ *   get:
+ *     summary: Get a public plan (no authentication required)
+ *     tags: [Plans]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The plan ID
+ *     responses:
+ *       200:
+ *         description: Public plan details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                 title:
+ *                   type: string
+ *                 description:
+ *                   type: string
+ *                 status:
+ *                   type: string
+ *                 view_count:
+ *                   type: integer
+ *                 created_at:
+ *                   type: string
+ *                 updated_at:
+ *                   type: string
+ *                 github_repo_owner:
+ *                   type: string
+ *                 github_repo_name:
+ *                   type: string
+ *                 owner:
+ *                   type: object
+ *                 root_node:
+ *                   type: object
+ *                 progress:
+ *                   type: integer
+ *       403:
+ *         description: Plan is not public
+ *       404:
+ *         description: Plan not found
+ */
+router.get('/:id/public', planController.getPublicPlan);
+
+/**
+ * @swagger
+ * /plans/{id}/visibility:
+ *   put:
+ *     summary: Update plan visibility settings (public/private)
+ *     tags: [Plans]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The plan ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - is_public
+ *             properties:
+ *               is_public:
+ *                 type: boolean
+ *                 description: Whether the plan should be publicly accessible
+ *               github_repo_owner:
+ *                 type: string
+ *                 description: GitHub repository owner (optional)
+ *               github_repo_name:
+ *                 type: string
+ *                 description: GitHub repository name (optional)
+ *     responses:
+ *       200:
+ *         description: Visibility updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                 is_public:
+ *                   type: boolean
+ *                 github_repo_owner:
+ *                   type: string
+ *                 github_repo_name:
+ *                   type: string
+ *       400:
+ *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied (must be owner)
+ *       404:
+ *         description: Plan not found
+ */
+router.put('/:id/visibility', authenticate, planController.updatePlanVisibility);
+
+/**
+ * @swagger
+ * /plans/{id}/view:
+ *   post:
+ *     summary: Increment view count for a public plan
+ *     tags: [Plans]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The plan ID
+ *     responses:
+ *       200:
+ *         description: View count incremented
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 view_count:
+ *                   type: integer
+ *       403:
+ *         description: Plan is not public
+ *       404:
+ *         description: Plan not found
+ */
+router.post('/:id/view', planController.incrementViewCount);
 
 module.exports = router;
