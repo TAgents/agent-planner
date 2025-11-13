@@ -40,7 +40,7 @@ const listPlans = async (req, res, next) => {
     // Query plans that the user owns or is a collaborator on
     const { data: ownedPlans, error: ownedError } = await supabase
       .from('plans')
-      .select('id, title, description, status, created_at, updated_at, owner_id')
+      .select('id, title, description, status, created_at, updated_at, owner_id, visibility, is_public')
       .eq('owner_id', userId);
 
     if (ownedError) {
@@ -64,7 +64,7 @@ const listPlans = async (req, res, next) => {
       
       const { data: sharedData, error: sharedError } = await supabase
         .from('plans')
-        .select('id, title, description, status, created_at, updated_at, owner_id')
+        .select('id, title, description, status, created_at, updated_at, owner_id, visibility, is_public')
         .in('id', sharedPlanIds);
 
       if (sharedError) {
@@ -207,7 +207,7 @@ const getPlan = async (req, res, next) => {
     // Get the plan
     const { data: plan, error: planError } = await supabase
       .from('plans')
-      .select('id, title, description, status, created_at, updated_at, owner_id, metadata')
+      .select('id, title, description, status, created_at, updated_at, owner_id, metadata, visibility, is_public')
       .eq('id', id)
       .single();
 
@@ -238,6 +238,8 @@ const getPlan = async (req, res, next) => {
       ...plan,
       root_node: rootNode,
       is_owner: plan.owner_id === userId,
+      visibility: plan.visibility || 'private',
+      is_public: plan.is_public || false,
       progress
     };
 
@@ -816,7 +818,7 @@ const listPublicPlans = async (req, res, next) => {
     let query = supabase
       .from('plans')
       .select('id, title, description, status, created_at, updated_at, view_count, github_repo_owner, github_repo_name, owner_id', { count: 'exact' })
-      .eq('is_public', true);
+      .eq('visibility', 'public');
 
     // Apply sorting
     if (sort === 'popular' || sort === 'views') {
@@ -883,7 +885,7 @@ const getPublicPlan = async (req, res, next) => {
     // Get the plan
     const { data: plan, error: planError } = await supabase
       .from('plans')
-      .select('id, title, description, status, created_at, updated_at, owner_id, metadata, is_public, view_count, github_repo_owner, github_repo_name')
+      .select('id, title, description, status, created_at, updated_at, owner_id, metadata, visibility, view_count, github_repo_owner, github_repo_name')
       .eq('id', id)
       .single();
 
@@ -895,7 +897,7 @@ const getPublicPlan = async (req, res, next) => {
     }
 
     // Check if plan is public
-    if (!plan.is_public) {
+    if (plan.visibility !== 'public') {
       return res.status(403).json({ error: 'This plan is not public' });
     }
 
@@ -945,16 +947,121 @@ const getPublicPlan = async (req, res, next) => {
 };
 
 /**
+ * Get a public plan with full node hierarchy (no authentication required)
+ */
+const getPublicPlanById = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Get the plan
+    const { data: plan, error: planError } = await supabase
+      .from('plans')
+      .select('id, title, description, status, created_at, updated_at, owner_id, metadata, visibility, view_count, github_repo_owner, github_repo_name')
+      .eq('id', id)
+      .single();
+
+    if (planError) {
+      if (planError.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Plan not found' });
+      }
+      return res.status(500).json({ error: planError.message });
+    }
+
+    // Check if plan is public
+    if (plan.visibility !== 'public') {
+      return res.status(404).json({ error: 'Plan not found' });
+    }
+
+    // Get all nodes for the plan
+    const { data: nodes, error: nodesError } = await supabase
+      .from('plan_nodes')
+      .select('id, parent_id, node_type, title, description, status, context, agent_instructions, acceptance_criteria, created_at, updated_at')
+      .eq('plan_id', id)
+      .order('created_at', { ascending: true });
+
+    if (nodesError) {
+      return res.status(500).json({ error: nodesError.message });
+    }
+
+    // Build hierarchical structure
+    const rootNode = nodes.find(node => node.node_type === 'root');
+    if (!rootNode) {
+      return res.status(500).json({ error: 'Plan structure is invalid (no root node)' });
+    }
+
+    // Build node hierarchy
+    const nodeMap = {};
+    nodes.forEach(node => {
+      nodeMap[node.id] = {
+        ...node,
+        children: [],
+      };
+    });
+
+    // Connect parent-child relationships
+    nodes.forEach(node => {
+      if (node.parent_id && nodeMap[node.parent_id]) {
+        nodeMap[node.parent_id].children.push(nodeMap[node.id]);
+      }
+    });
+
+    // Get owner info
+    const { data: owner } = await supabase
+      .from('users')
+      .select('name, email')
+      .eq('id', plan.owner_id)
+      .single();
+
+    // Calculate progress for this plan
+    const progress = await calculatePlanProgress(id);
+
+    // Build response
+    const result = {
+      plan: {
+        id: plan.id,
+        title: plan.title,
+        description: plan.description,
+        status: plan.status,
+        view_count: plan.view_count,
+        created_at: plan.created_at,
+        updated_at: plan.updated_at,
+        github_repo_owner: plan.github_repo_owner,
+        github_repo_name: plan.github_repo_name,
+        metadata: plan.metadata,
+        progress: progress,
+        owner: owner || { name: 'Unknown', email: '' }
+      },
+      structure: nodeMap[rootNode.id],
+    };
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Update plan visibility settings (public/private)
  */
 const updatePlanVisibility = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { is_public, github_repo_owner, github_repo_name } = req.body;
+    const { visibility, github_repo_owner, github_repo_name } = req.body;
     const userId = req.user.id;
 
-    if (is_public === undefined) {
-      return res.status(400).json({ error: 'is_public field is required' });
+    // Support both old (is_public) and new (visibility) parameters for backward compatibility
+    let visibilityValue = visibility;
+    if (visibility === undefined && req.body.is_public !== undefined) {
+      // Convert old boolean is_public to new visibility string
+      visibilityValue = req.body.is_public ? 'public' : 'private';
+    }
+
+    if (!visibilityValue) {
+      return res.status(400).json({ error: 'visibility field is required (or is_public for backward compatibility)' });
+    }
+
+    if (!['public', 'private'].includes(visibilityValue)) {
+      return res.status(400).json({ error: 'visibility must be either "public" or "private"' });
     }
 
     // Check if the user is the owner of this plan
@@ -977,7 +1084,9 @@ const updatePlanVisibility = async (req, res, next) => {
 
     // Update visibility settings
     const updates = {
-      is_public: Boolean(is_public),
+      visibility: visibilityValue,
+      // Also update is_public for backward compatibility
+      is_public: visibilityValue === 'public',
       updated_at: new Date()
     };
 
@@ -993,7 +1102,7 @@ const updatePlanVisibility = async (req, res, next) => {
       .from('plans')
       .update(updates)
       .eq('id', id)
-      .select('id, is_public, github_repo_owner, github_repo_name');
+      .select('id, visibility, is_public, github_repo_owner, github_repo_name');
 
     if (error) {
       return res.status(400).json({ error: error.message });
@@ -1019,7 +1128,7 @@ const incrementViewCount = async (req, res, next) => {
     // First check if plan exists and is public
     const { data: plan, error: planError } = await supabase
       .from('plans')
-      .select('id, is_public, view_count')
+      .select('id, visibility, view_count')
       .eq('id', id)
       .single();
 
@@ -1030,7 +1139,7 @@ const incrementViewCount = async (req, res, next) => {
       return res.status(500).json({ error: planError.message });
     }
 
-    if (!plan.is_public) {
+    if (plan.visibility !== 'public') {
       return res.status(403).json({ error: 'This plan is not public' });
     }
 
@@ -1062,6 +1171,7 @@ module.exports = {
   getPlanProgress,
   listPublicPlans,
   getPublicPlan,
+  getPublicPlanById,
   updatePlanVisibility,
   incrementViewCount,
 };

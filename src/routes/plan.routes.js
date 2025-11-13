@@ -173,6 +173,67 @@ router.get('/public', planController.listPublicPlans);
 
 /**
  * @swagger
+ * /plans/public/{id}:
+ *   get:
+ *     summary: Get a public plan with full node hierarchy (no authentication required)
+ *     tags: [Plans]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The plan ID
+ *     responses:
+ *       200:
+ *         description: Public plan with full hierarchy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 plan:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     title:
+ *                       type: string
+ *                     description:
+ *                       type: string
+ *                     status:
+ *                       type: string
+ *                     view_count:
+ *                       type: integer
+ *                     created_at:
+ *                       type: string
+ *                     updated_at:
+ *                       type: string
+ *                     github_repo_owner:
+ *                       type: string
+ *                     github_repo_name:
+ *                       type: string
+ *                     metadata:
+ *                       type: object
+ *                     progress:
+ *                       type: integer
+ *                     owner:
+ *                       type: object
+ *                       properties:
+ *                         name:
+ *                           type: string
+ *                         email:
+ *                           type: string
+ *                 structure:
+ *                   type: object
+ *                   description: Hierarchical structure of all plan nodes
+ *       404:
+ *         description: Plan not found or not public
+ */
+router.get('/public/:id', planController.getPublicPlanById);
+
+/**
+ * @swagger
  * /plans/{id}:
  *   get:
  *     summary: Get a specific plan with its root node
@@ -608,11 +669,12 @@ router.get('/:id/public', planController.getPublicPlan);
  *           schema:
  *             type: object
  *             required:
- *               - is_public
+ *               - visibility
  *             properties:
- *               is_public:
- *                 type: boolean
- *                 description: Whether the plan should be publicly accessible
+ *               visibility:
+ *                 type: string
+ *                 enum: [public, private]
+ *                 description: Plan visibility setting
  *               github_repo_owner:
  *                 type: string
  *                 description: GitHub repository owner (optional)
@@ -629,14 +691,18 @@ router.get('/:id/public', planController.getPublicPlan);
  *               properties:
  *                 id:
  *                   type: string
+ *                 visibility:
+ *                   type: string
+ *                   enum: [public, private]
  *                 is_public:
  *                   type: boolean
+ *                   description: Deprecated - use visibility instead
  *                 github_repo_owner:
  *                   type: string
  *                 github_repo_name:
  *                   type: string
  *       400:
- *         description: Invalid input
+ *         description: Invalid input (invalid visibility value)
  *       401:
  *         description: Authentication required
  *       403:

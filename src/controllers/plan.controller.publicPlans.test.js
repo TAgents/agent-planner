@@ -90,6 +90,7 @@ describe('Public Plans API Endpoints', () => {
       description: 'This is a public plan',
       owner_id: testUserId,
       status: 'active',
+      visibility: 'public',
       is_public: true,
       view_count: 5,
       github_repo_owner: 'testorg',
@@ -202,6 +203,94 @@ describe('Public Plans API Endpoints', () => {
     });
   });
 
+  describe('GET /api/plans/public/:id', () => {
+    test('should get a public plan with full hierarchy without authentication', async () => {
+      // First create some child nodes for the public plan
+      const childNode1Id = uuidv4();
+      const childNode2Id = uuidv4();
+
+      const { data: rootNode } = await supabase
+        .from('plan_nodes')
+        .select('id')
+        .eq('plan_id', publicPlanId)
+        .eq('node_type', 'root')
+        .single();
+
+      await supabase.from('plan_nodes').insert([
+        {
+          id: childNode1Id,
+          plan_id: publicPlanId,
+          parent_id: rootNode.id,
+          node_type: 'phase',
+          title: 'Phase 1',
+          description: 'First phase',
+          status: 'in_progress',
+          order_index: 0
+        },
+        {
+          id: childNode2Id,
+          plan_id: publicPlanId,
+          parent_id: rootNode.id,
+          node_type: 'task',
+          title: 'Task 1',
+          description: 'First task',
+          status: 'completed',
+          order_index: 1
+        }
+      ]);
+
+      const response = await request(app)
+        .get(`/api/plans/public/${publicPlanId}`)
+        .expect(200);
+
+      // Verify plan structure
+      expect(response.body).toHaveProperty('plan');
+      expect(response.body).toHaveProperty('structure');
+
+      // Verify plan details
+      expect(response.body.plan.id).toBe(publicPlanId);
+      expect(response.body.plan.title).toBe('Public Test Plan');
+      expect(response.body.plan.view_count).toBe(5);
+      expect(response.body.plan.github_repo_owner).toBe('testorg');
+      expect(response.body.plan.github_repo_name).toBe('testrepo');
+      expect(response.body.plan.owner).toBeDefined();
+      expect(response.body.plan.owner.email).toBe('publicplans@test.com');
+      expect(response.body.plan.progress).toBeDefined();
+
+      // Verify structure includes hierarchy
+      expect(response.body.structure).toBeDefined();
+      expect(response.body.structure.node_type).toBe('root');
+      expect(response.body.structure.children).toBeDefined();
+      expect(response.body.structure.children.length).toBe(2);
+
+      // Verify child nodes are in the hierarchy
+      const childTitles = response.body.structure.children.map(n => n.title);
+      expect(childTitles).toContain('Phase 1');
+      expect(childTitles).toContain('Task 1');
+
+      // Cleanup child nodes
+      await supabase.from('plan_nodes').delete().eq('id', childNode1Id);
+      await supabase.from('plan_nodes').delete().eq('id', childNode2Id);
+    });
+
+    test('should return 404 for private plan', async () => {
+      const response = await request(app)
+        .get(`/api/plans/public/${testPlanId}`)
+        .expect(404);
+
+      expect(response.body.error).toContain('not found');
+    });
+
+    test('should return 404 for non-existent plan', async () => {
+      const nonExistentId = uuidv4();
+      const response = await request(app)
+        .get(`/api/plans/public/${nonExistentId}`)
+        .expect(404);
+
+      expect(response.body.error).toContain('not found');
+    });
+  });
+
   describe('GET /api/plans/:id/public', () => {
     test('should get a public plan without authentication', async () => {
       const response = await request(app)
@@ -237,7 +326,103 @@ describe('Public Plans API Endpoints', () => {
   });
 
   describe('PUT /api/plans/:id/visibility', () => {
-    test('should make a plan public', async () => {
+    test('should make a plan public using visibility parameter', async () => {
+      const response = await request(app)
+        .put(`/api/plans/${testPlanId}/visibility`)
+        .send({
+          visibility: 'public',
+          github_repo_owner: 'myorg',
+          github_repo_name: 'myrepo'
+        })
+        .expect(200);
+
+      expect(response.body.visibility).toBe('public');
+      expect(response.body.is_public).toBe(true);
+      expect(response.body.github_repo_owner).toBe('myorg');
+      expect(response.body.github_repo_name).toBe('myrepo');
+
+      // Verify in database
+      const { data } = await supabase
+        .from('plans')
+        .select('visibility, is_public, github_repo_owner, github_repo_name')
+        .eq('id', testPlanId)
+        .single();
+
+      expect(data.visibility).toBe('public');
+      expect(data.is_public).toBe(true);
+      expect(data.github_repo_owner).toBe('myorg');
+      expect(data.github_repo_name).toBe('myrepo');
+    });
+
+    test('should make a plan private using visibility parameter', async () => {
+      const response = await request(app)
+        .put(`/api/plans/${publicPlanId}/visibility`)
+        .send({
+          visibility: 'private'
+        })
+        .expect(200);
+
+      expect(response.body.visibility).toBe('private');
+      expect(response.body.is_public).toBe(false);
+
+      // Verify in database
+      const { data } = await supabase
+        .from('plans')
+        .select('visibility, is_public')
+        .eq('id', publicPlanId)
+        .single();
+
+      expect(data.visibility).toBe('private');
+      expect(data.is_public).toBe(false);
+    });
+
+    test('should reject invalid visibility value', async () => {
+      const response = await request(app)
+        .put(`/api/plans/${testPlanId}/visibility`)
+        .send({
+          visibility: 'invalid'
+        })
+        .expect(400);
+
+      expect(response.body.error).toContain('public');
+      expect(response.body.error).toContain('private');
+    });
+
+    test('should require visibility field', async () => {
+      const response = await request(app)
+        .put(`/api/plans/${testPlanId}/visibility`)
+        .send({})
+        .expect(400);
+
+      expect(response.body.error).toBeDefined();
+    });
+
+    test('should return 404 for non-existent plan', async () => {
+      const nonExistentId = uuidv4();
+      const response = await request(app)
+        .put(`/api/plans/${nonExistentId}/visibility`)
+        .send({ visibility: 'public' })
+        .expect(404);
+
+      expect(response.body.error).toContain('not found');
+    });
+
+    test('should allow clearing GitHub repository info', async () => {
+      const response = await request(app)
+        .put(`/api/plans/${publicPlanId}/visibility`)
+        .send({
+          visibility: 'public',
+          github_repo_owner: null,
+          github_repo_name: null
+        })
+        .expect(200);
+
+      expect(response.body.github_repo_owner).toBeNull();
+      expect(response.body.github_repo_name).toBeNull();
+    });
+
+    // Backward compatibility tests
+    test('should still support is_public boolean for backward compatibility', async () => {
       const response = await request(app)
         .put(`/api/plans/${testPlanId}/visibility`)
         .send({
@@ -248,22 +433,24 @@ describe('Public Plans API Endpoints', () => {
         .expect(200);
 
       expect(response.body.is_public).toBe(true);
+      expect(response.body.visibility).toBe('public');
       expect(response.body.github_repo_owner).toBe('myorg');
       expect(response.body.github_repo_name).toBe('myrepo');
 
       // Verify in database
       const { data } = await supabase
         .from('plans')
-        .select('is_public, github_repo_owner, github_repo_name')
+        .select('is_public, visibility, github_repo_owner, github_repo_name')
         .eq('id', testPlanId)
         .single();
 
       expect(data.is_public).toBe(true);
+      expect(data.visibility).toBe('public');
       expect(data.github_repo_owner).toBe('myorg');
       expect(data.github_repo_name).toBe('myrepo');
     });
 
-    test('should make a plan private', async () => {
+    test('should convert is_public false to private visibility', async () => {
       const response = await request(app)
         .put(`/api/plans/${publicPlanId}/visibility`)
         .send({
@@ -272,48 +459,17 @@ describe('Public Plans API Endpoints', () => {
         .expect(200);
 
       expect(response.body.is_public).toBe(false);
+      expect(response.body.visibility).toBe('private');
 
       // Verify in database
       const { data } = await supabase
         .from('plans')
-        .select('is_public')
+        .select('is_public, visibility')
         .eq('id', publicPlanId)
         .single();
 
       expect(data.is_public).toBe(false);
-    });
-
-    test('should require is_public field', async () => {
-      const response = await request(app)
-        .put(`/api/plans/${testPlanId}/visibility`)
-        .send({})
-        .expect(400);
-
-      expect(response.body.error).toContain('is_public');
-    });
-
-    test('should return 404 for non-existent plan', async () => {
-      const nonExistentId = uuidv4();
-      const response = await request(app)
-        .put(`/api/plans/${nonExistentId}/visibility`)
-        .send({ is_public: true })
-        .expect(404);
-
-      expect(response.body.error).toContain('not found');
-    });
-
-    test('should allow clearing GitHub repository info', async () => {
-      const response = await request(app)
-        .put(`/api/plans/${publicPlanId}/visibility`)
-        .send({
-          is_public: true,
-          github_repo_owner: null,
-          github_repo_name: null
-        })
-        .expect(200);
-
-      expect(response.body.github_repo_owner).toBeNull();
-      expect(response.body.github_repo_name).toBeNull();
+      expect(data.visibility).toBe('private');
     });
   });
 
@@ -431,6 +587,7 @@ describe('Public Plans API Endpoints', () => {
         description: 'Plan with missing owner',
         owner_id: testUserId, // Use valid owner so plan can be created
         status: 'active',
+        visibility: 'public',
         is_public: true
       });
 
