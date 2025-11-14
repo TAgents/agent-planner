@@ -3,6 +3,35 @@ const { supabase, supabaseAdmin } = require('../config/supabase');
 const crypto = require('crypto');
 
 /**
+ * Sync GitHub profile data to users table if user signed in with GitHub OAuth
+ */
+const syncGitHubProfile = async (user) => {
+  try {
+    // Check if user signed in with GitHub
+    if (user && user.app_metadata?.provider === 'github') {
+      const githubData = user.user_metadata;
+
+      // Sync GitHub profile to database
+      await supabaseAdmin
+        .from('users')
+        .update({
+          github_id: githubData.provider_id,
+          github_username: githubData.user_name,
+          github_avatar_url: githubData.avatar_url,
+          github_profile_url: `https://github.com/${githubData.user_name}`,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+
+      await logger.middleware('auth', `Synced GitHub profile for user: ${user.email} (@${githubData.user_name})`);
+    }
+  } catch (error) {
+    // Log error but don't block authentication
+    await logger.error('Error syncing GitHub profile', error);
+  }
+};
+
+/**
  * Middleware to validate both Supabase JWTs and API tokens
  */
 const authenticate = async (req, res, next) => {
@@ -100,7 +129,10 @@ const authenticate = async (req, res, next) => {
             await logger.middleware('auth', `Admin verification also failed: ${adminError?.message || 'No user'}`);
             return res.status(401).json({ error: 'Invalid session token' });
           }
-          
+
+          // Sync GitHub profile if applicable
+          await syncGitHubProfile(userData.user);
+
           // Admin verification succeeded
           req.user = {
             id: userData.user.id,
@@ -108,7 +140,7 @@ const authenticate = async (req, res, next) => {
             name: userData.user.user_metadata?.name,
             authMethod: 'supabase_jwt'
           };
-          
+
           await logger.middleware('auth', `Admin JWT auth successful for user: ${userData.user.email}`);
           return next();
         }
@@ -120,6 +152,9 @@ const authenticate = async (req, res, next) => {
           await logger.middleware('auth', `Failed to get user after setting session: ${error?.message || 'No user'}`);
           return res.status(401).json({ error: 'Invalid session token' });
         }
+
+        // Sync GitHub profile if applicable
+        await syncGitHubProfile(data.user);
 
         // Attach user information to the request
         req.user = {

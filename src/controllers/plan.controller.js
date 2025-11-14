@@ -40,7 +40,7 @@ const listPlans = async (req, res, next) => {
     // Query plans that the user owns or is a collaborator on
     const { data: ownedPlans, error: ownedError } = await supabase
       .from('plans')
-      .select('id, title, description, status, created_at, updated_at, owner_id, visibility, is_public')
+      .select('id, title, description, status, created_at, updated_at, owner_id, visibility, is_public, github_repo_owner, github_repo_name, github_repo_url, github_repo_full_name')
       .eq('owner_id', userId);
 
     if (ownedError) {
@@ -64,7 +64,7 @@ const listPlans = async (req, res, next) => {
       
       const { data: sharedData, error: sharedError } = await supabase
         .from('plans')
-        .select('id, title, description, status, created_at, updated_at, owner_id, visibility, is_public')
+        .select('id, title, description, status, created_at, updated_at, owner_id, visibility, is_public, github_repo_owner, github_repo_name, github_repo_url, github_repo_full_name')
         .in('id', sharedPlanIds);
 
       if (sharedError) {
@@ -207,7 +207,7 @@ const getPlan = async (req, res, next) => {
     // Get the plan
     const { data: plan, error: planError } = await supabase
       .from('plans')
-      .select('id, title, description, status, created_at, updated_at, owner_id, metadata, visibility, is_public')
+      .select('id, title, description, status, created_at, updated_at, owner_id, metadata, visibility, is_public, github_repo_owner, github_repo_name, github_repo_url, github_repo_full_name')
       .eq('id', id)
       .single();
 
@@ -643,7 +643,7 @@ const getPlanContext = async (req, res, next) => {
     // Get the plan
     const { data: plan, error: planError } = await supabase
       .from('plans')
-      .select('id, title, description, status, created_at, updated_at, metadata')
+      .select('id, title, description, status, created_at, updated_at, metadata, github_repo_owner, github_repo_name, github_repo_url, github_repo_full_name')
       .eq('id', id)
       .single();
 
@@ -697,6 +697,10 @@ const getPlanContext = async (req, res, next) => {
         created_at: plan.created_at,
         updated_at: plan.updated_at,
         metadata: plan.metadata,
+        github_repo_owner: plan.github_repo_owner,
+        github_repo_name: plan.github_repo_name,
+        github_repo_url: plan.github_repo_url,
+        github_repo_full_name: plan.github_repo_full_name,
         progress: progress
       },
       structure: nodeMap[rootNode.id],
@@ -885,7 +889,7 @@ const getPublicPlan = async (req, res, next) => {
     // Get the plan
     const { data: plan, error: planError } = await supabase
       .from('plans')
-      .select('id, title, description, status, created_at, updated_at, owner_id, metadata, visibility, view_count, github_repo_owner, github_repo_name')
+      .select('id, title, description, status, created_at, updated_at, owner_id, metadata, visibility, view_count, github_repo_owner, github_repo_name, github_repo_url, github_repo_full_name')
       .eq('id', id)
       .single();
 
@@ -934,6 +938,8 @@ const getPublicPlan = async (req, res, next) => {
       updated_at: plan.updated_at,
       github_repo_owner: plan.github_repo_owner,
       github_repo_name: plan.github_repo_name,
+      github_repo_url: plan.github_repo_url,
+      github_repo_full_name: plan.github_repo_full_name,
       metadata: plan.metadata,
       owner: owner || { name: 'Unknown', email: '' },
       root_node: rootNode,
@@ -956,7 +962,7 @@ const getPublicPlanById = async (req, res, next) => {
     // Get the plan
     const { data: plan, error: planError } = await supabase
       .from('plans')
-      .select('id, title, description, status, created_at, updated_at, owner_id, metadata, visibility, view_count, github_repo_owner, github_repo_name')
+      .select('id, title, description, status, created_at, updated_at, owner_id, metadata, visibility, view_count, github_repo_owner, github_repo_name, github_repo_url, github_repo_full_name')
       .eq('id', id)
       .single();
 
@@ -1027,6 +1033,8 @@ const getPublicPlanById = async (req, res, next) => {
         updated_at: plan.updated_at,
         github_repo_owner: plan.github_repo_owner,
         github_repo_name: plan.github_repo_name,
+        github_repo_url: plan.github_repo_url,
+        github_repo_full_name: plan.github_repo_full_name,
         metadata: plan.metadata,
         progress: progress,
         owner: owner || { name: 'Unknown', email: '' }
@@ -1158,6 +1166,82 @@ const incrementViewCount = async (req, res, next) => {
   }
 };
 
+/**
+ * Link a GitHub repository to a plan
+ */
+const linkGitHubRepo = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { github_repo_owner, github_repo_name } = req.body;
+    const userId = req.user.id;
+
+    // Validate input
+    if (!github_repo_owner || !github_repo_name) {
+      return res.status(400).json({
+        error: 'github_repo_owner and github_repo_name are required'
+      });
+    }
+
+    // Validate format (alphanumeric, hyphens, underscores, dots)
+    const repoRegex = /^[a-zA-Z0-9._-]+$/;
+    if (!repoRegex.test(github_repo_owner) || !repoRegex.test(github_repo_name)) {
+      return res.status(400).json({
+        error: 'Invalid repository owner or name format'
+      });
+    }
+
+    // Check plan ownership
+    const { data: plan, error: fetchError } = await supabase
+      .from('plans')
+      .select('id, owner_id')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) {
+      if (fetchError.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Plan not found' });
+      }
+      return res.status(500).json({ error: fetchError.message });
+    }
+
+    if (!plan) {
+      return res.status(404).json({ error: 'Plan not found' });
+    }
+
+    if (plan.owner_id !== userId) {
+      return res.status(403).json({ error: 'Only plan owner can link repository' });
+    }
+
+    // Update plan with GitHub repo
+    const github_repo_full_name = `${github_repo_owner}/${github_repo_name}`;
+    const github_repo_url = `https://github.com/${github_repo_full_name}`;
+
+    const { data: updated, error: updateError } = await supabase
+      .from('plans')
+      .update({
+        github_repo_owner,
+        github_repo_name,
+        github_repo_url,
+        github_repo_full_name,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) {
+      return res.status(500).json({ error: updateError.message });
+    }
+
+    res.json({
+      message: 'GitHub repository linked successfully',
+      plan: updated
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   listPlans,
   createPlan,
@@ -1174,4 +1258,5 @@ module.exports = {
   getPublicPlanById,
   updatePlanVisibility,
   incrementViewCount,
+  linkGitHubRepo,
 };

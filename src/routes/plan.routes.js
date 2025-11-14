@@ -714,6 +714,60 @@ router.put('/:id/visibility', authenticate, planController.updatePlanVisibility)
 
 /**
  * @swagger
+ * /plans/{id}/github:
+ *   put:
+ *     summary: Link GitHub repository to plan
+ *     tags: [Plans]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The plan ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - github_repo_owner
+ *               - github_repo_name
+ *             properties:
+ *               github_repo_owner:
+ *                 type: string
+ *                 example: facebook
+ *                 description: GitHub repository owner (user or organization)
+ *               github_repo_name:
+ *                 type: string
+ *                 example: react
+ *                 description: GitHub repository name
+ *     responses:
+ *       200:
+ *         description: Repository linked successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 plan:
+ *                   type: object
+ *       400:
+ *         description: Invalid repository format or missing required fields
+ *       403:
+ *         description: Not plan owner
+ *       404:
+ *         description: Plan not found
+ */
+router.put('/:id/github', authenticate, planController.linkGitHubRepo);
+
+/**
+ * @swagger
  * /plans/{id}/view:
  *   post:
  *     summary: Increment view count for a public plan

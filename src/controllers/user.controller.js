@@ -33,6 +33,10 @@ const getUserProfile = async (req, res, next) => {
       organization: dbUser?.organization || userData.user.user_metadata?.organization,
       avatar_url: dbUser?.avatar_url || userData.user.user_metadata?.avatar_url,
       email_verified: userData.user.user_metadata?.email_verified || false,
+      github_id: dbUser?.github_id || null,
+      github_username: dbUser?.github_username || null,
+      github_avatar_url: dbUser?.github_avatar_url || null,
+      github_profile_url: dbUser?.github_profile_url || null,
       created_at: userData.user.created_at,
       updated_at: userData.user.updated_at
     };
@@ -213,15 +217,39 @@ const listUsers = async (req, res, next) => {
       return res.status(500).json({ error: 'Failed to retrieve users' });
     }
 
+    // Get user IDs to fetch additional data from database
+    const userIds = users.users.map(u => u.id);
+
+    // Fetch GitHub profile data from database
+    const { data: dbUsers, error: dbError } = await supabaseAdmin
+      .from('users')
+      .select('id, github_id, github_username, github_avatar_url, github_profile_url')
+      .in('id', userIds);
+
+    // Create a map for quick lookup
+    const dbUserMap = {};
+    if (dbUsers) {
+      dbUsers.forEach(dbUser => {
+        dbUserMap[dbUser.id] = dbUser;
+      });
+    }
+
     // Format the response
-    const formattedUsers = users.users.map(user => ({
-      id: user.id,
-      email: user.email,
-      name: user.user_metadata?.name || user.email.split('@')[0],
-      organization: user.user_metadata?.organization,
-      avatar_url: user.user_metadata?.avatar_url,
-      created_at: user.created_at
-    }));
+    const formattedUsers = users.users.map(user => {
+      const dbUser = dbUserMap[user.id];
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.user_metadata?.name || user.email.split('@')[0],
+        organization: user.user_metadata?.organization,
+        avatar_url: user.user_metadata?.avatar_url,
+        github_id: dbUser?.github_id || null,
+        github_username: dbUser?.github_username || null,
+        github_avatar_url: dbUser?.github_avatar_url || null,
+        github_profile_url: dbUser?.github_profile_url || null,
+        created_at: user.created_at
+      };
+    });
 
     res.json({
       users: formattedUsers,
@@ -261,23 +289,49 @@ const searchUsers = async (req, res, next) => {
 
     // Filter users based on query
     const searchLower = query.toLowerCase();
-    const matchedUsers = authUsers.users
+    const matched = authUsers.users
       .filter(user => {
         const email = user.email?.toLowerCase() || '';
         const name = (user.user_metadata?.name || '').toLowerCase();
         return email.includes(searchLower) || name.includes(searchLower);
       })
-      .slice(0, limit)
-      .map(user => ({
+      .slice(0, limit);
+
+    // Get user IDs to fetch additional data from database
+    const userIds = matched.map(u => u.id);
+
+    // Fetch GitHub profile data from database
+    const { data: dbUsers, error: dbError } = await supabaseAdmin
+      .from('users')
+      .select('id, github_id, github_username, github_avatar_url, github_profile_url')
+      .in('id', userIds);
+
+    // Create a map for quick lookup
+    const dbUserMap = {};
+    if (dbUsers) {
+      dbUsers.forEach(dbUser => {
+        dbUserMap[dbUser.id] = dbUser;
+      });
+    }
+
+    // Format matched users with GitHub data
+    const matchedUsers = matched.map(user => {
+      const dbUser = dbUserMap[user.id];
+      return {
         id: user.id,
         email: user.email,
         name: user.user_metadata?.name || user.email.split('@')[0],
         organization: user.user_metadata?.organization,
-        avatar_url: user.user_metadata?.avatar_url
-      }));
+        avatar_url: user.user_metadata?.avatar_url,
+        github_id: dbUser?.github_id || null,
+        github_username: dbUser?.github_username || null,
+        github_avatar_url: dbUser?.github_avatar_url || null,
+        github_profile_url: dbUser?.github_profile_url || null
+      };
+    });
 
     await logger.auth(`Found ${matchedUsers.length} users matching "${query}"`);
-    
+
     res.json({
       query: query,
       results: matchedUsers,
