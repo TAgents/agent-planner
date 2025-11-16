@@ -1,4 +1,4 @@
-const { supabase } = require('../config/supabase');
+const { supabase, supabaseAdmin } = require('../config/supabase');
 
 /**
  * Star a plan (add to favorites)
@@ -8,23 +8,29 @@ const starPlan = async (req, res, next) => {
     const { id: planId } = req.params;
     const userId = req.user.id;
 
-    // Check if plan exists and is public
-    const { data: plan, error: planError } = await supabase
+    // Check if plan exists and is public (using admin client to bypass RLS)
+    console.log('[STAR] Checking plan:', planId, 'for user:', userId);
+    const { data: plan, error: planError} = await supabaseAdmin
       .from('plans')
-      .select('id, visibility')
+      .select('id, visibility, is_public')
       .eq('id', planId)
       .single();
 
+    console.log('[STAR] Query result - plan:', plan, 'error:', planError);
+
     if (planError || !plan) {
+      console.log('[STAR] Plan not found or error:', planError?.message);
       return res.status(404).json({ error: 'Plan not found' });
     }
 
-    if (plan.visibility !== 'public') {
+    // Check both visibility and is_public for backward compatibility
+    const isPublic = plan.visibility === 'public' || plan.is_public === true;
+    if (!isPublic) {
       return res.status(403).json({ error: 'Can only star public plans' });
     }
 
-    // Insert star
-    const { error: insertError } = await supabase
+    // Insert star (using admin client to bypass RLS and avoid circular policy dependencies)
+    const { error: insertError } = await supabaseAdmin
       .from('plan_stars')
       .insert({
         user_id: userId,
@@ -39,8 +45,8 @@ const starPlan = async (req, res, next) => {
       throw insertError;
     }
 
-    // Get updated star count
-    const { count } = await supabase
+    // Get updated star count (using admin client to bypass RLS)
+    const { count } = await supabaseAdmin
       .from('plan_stars')
       .select('*', { count: 'exact', head: true })
       .eq('plan_id', planId);
@@ -63,8 +69,8 @@ const unstarPlan = async (req, res, next) => {
     const { id: planId } = req.params;
     const userId = req.user.id;
 
-    // Delete star
-    const { error: deleteError } = await supabase
+    // Delete star (using admin client to bypass RLS)
+    const { error: deleteError } = await supabaseAdmin
       .from('plan_stars')
       .delete()
       .match({ user_id: userId, plan_id: planId });
@@ -73,8 +79,8 @@ const unstarPlan = async (req, res, next) => {
       throw deleteError;
     }
 
-    // Get updated star count
-    const { count } = await supabase
+    // Get updated star count (using admin client to bypass RLS)
+    const { count } = await supabaseAdmin
       .from('plan_stars')
       .select('*', { count: 'exact', head: true })
       .eq('plan_id', planId);
@@ -97,16 +103,16 @@ const getPlanStars = async (req, res, next) => {
     const { id: planId } = req.params;
     const userId = req.user?.id; // Optional - may not be authenticated
 
-    // Get total star count
-    const { count } = await supabase
+    // Get total star count (using admin client to bypass RLS)
+    const { count } = await supabaseAdmin
       .from('plan_stars')
       .select('*', { count: 'exact', head: true })
       .eq('plan_id', planId);
 
-    // Check if current user has starred (if authenticated)
+    // Check if current user has starred (if authenticated, using admin client to bypass RLS)
     let isStarred = false;
     if (userId) {
-      const { data: userStar } = await supabase
+      const { data: userStar } = await supabaseAdmin
         .from('plan_stars')
         .select('id')
         .match({ user_id: userId, plan_id: planId })

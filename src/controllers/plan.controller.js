@@ -1371,6 +1371,10 @@ const linkGitHubRepo = async (req, res, next) => {
   }
 };
 
+// Note: AI plan generation has been moved to A2A architecture.
+// The UI now calls the Planner Agent directly via A2A protocol at http://localhost:4001/a2a/message
+// instead of using this backend endpoint. The old /plans/generate-with-ai endpoint has been removed.
+
 module.exports = {
   listPlans,
   createPlan,

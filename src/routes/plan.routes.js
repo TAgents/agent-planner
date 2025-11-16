@@ -100,6 +100,8 @@ router.get('/', authenticate, planController.listPlans);
  */
 router.post('/', authenticate, planController.createPlan);
 
+// Note: AI plan generation endpoint removed - UI now uses A2A protocol to call Planner Agent directly
+
 /**
  * @swagger
  * /plans/public:
