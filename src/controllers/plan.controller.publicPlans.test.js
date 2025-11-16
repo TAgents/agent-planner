@@ -131,7 +131,8 @@ describe('Public Plans API Endpoints', () => {
       expect(response.body).toHaveProperty('plans');
       expect(response.body).toHaveProperty('total');
       expect(response.body).toHaveProperty('limit');
-      expect(response.body).toHaveProperty('offset');
+      expect(response.body).toHaveProperty('page');
+      expect(response.body).toHaveProperty('total_pages');
       expect(Array.isArray(response.body.plans)).toBe(true);
 
       // Should include our public plan
@@ -143,6 +144,14 @@ describe('Public Plans API Endpoints', () => {
       expect(publicPlan.github_repo_name).toBe('testrepo');
       expect(publicPlan.owner).toBeDefined();
       expect(publicPlan.owner.email).toBe('publicplans@test.com');
+
+      // Should include computed fields
+      expect(publicPlan).toHaveProperty('task_count');
+      expect(publicPlan).toHaveProperty('completed_count');
+      expect(publicPlan).toHaveProperty('completion_percentage');
+      expect(typeof publicPlan.task_count).toBe('number');
+      expect(typeof publicPlan.completed_count).toBe('number');
+      expect(typeof publicPlan.completion_percentage).toBe('number');
     });
 
     test('should not include private plans in public list', async () => {
@@ -160,9 +169,9 @@ describe('Public Plans API Endpoints', () => {
         .expect(200);
 
       expect(response.body.plans).toBeDefined();
-      // Verify plans are sorted by created_at descending
+      // Verify plans are sorted by updated_at descending (changed from created_at)
       if (response.body.plans.length > 1) {
-        const dates = response.body.plans.map(p => new Date(p.created_at).getTime());
+        const dates = response.body.plans.map(p => new Date(p.updated_at).getTime());
         for (let i = 1; i < dates.length; i++) {
           expect(dates[i]).toBeLessThanOrEqual(dates[i - 1]);
         }
@@ -191,15 +200,26 @@ describe('Public Plans API Endpoints', () => {
 
       expect(response.body.plans.length).toBeLessThanOrEqual(1);
       expect(response.body.limit).toBe(1);
+      expect(response.body.page).toBe(1);
     });
 
-    test('should support pagination with offset', async () => {
+    test('should support pagination with page parameter', async () => {
       const response = await request(app)
-        .get('/api/plans/public?offset=0&limit=10')
+        .get('/api/plans/public?page=1&limit=10')
         .expect(200);
 
-      expect(response.body.offset).toBe(0);
+      expect(response.body.page).toBe(1);
       expect(response.body.limit).toBe(10);
+      expect(response.body.total_pages).toBeGreaterThanOrEqual(0);
+    });
+
+    test('should default to page 1 and limit 12', async () => {
+      const response = await request(app)
+        .get('/api/plans/public')
+        .expect(200);
+
+      expect(response.body.page).toBe(1);
+      expect(response.body.limit).toBe(12);
     });
   });
 

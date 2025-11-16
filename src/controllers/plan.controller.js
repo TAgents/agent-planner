@@ -814,9 +814,60 @@ const checkPlanAccess = async (planId, userId, roles = []) => {
  */
 const listPublicPlans = async (req, res, next) => {
   try {
-    const { sort = 'recent', limit = 50, offset = 0 } = req.query;
-    const limitNum = Math.min(parseInt(limit) || 50, 100); // Max 100
-    const offsetNum = parseInt(offset) || 0;
+    const {
+      sortBy = 'recent',
+      limit = 12,
+      page = 1,
+      status,
+      hasGithubLink,
+      owner,
+      updatedAfter,
+      updatedBefore,
+      search
+    } = req.query;
+
+    const limitNum = Math.min(parseInt(limit) || 12, 100); // Max 100
+    const pageNum = Math.max(parseInt(page) || 1, 1); // Min page 1
+    const offsetNum = (pageNum - 1) * limitNum;
+
+    // Validate sortBy parameter
+    if (!['recent', 'alphabetical', 'completion'].includes(sortBy)) {
+      return res.status(400).json({
+        error: 'Invalid sortBy value. Must be one of: recent, alphabetical, completion'
+      });
+    }
+
+    // Validate filter values
+    if (status && !['active', 'completed', 'draft', 'archived'].includes(status)) {
+      return res.status(400).json({
+        error: 'Invalid status value. Must be one of: active, completed, draft, archived'
+      });
+    }
+
+    if (hasGithubLink && !['true', 'false'].includes(hasGithubLink)) {
+      return res.status(400).json({
+        error: 'Invalid hasGithubLink value. Must be "true" or "false"'
+      });
+    }
+
+    // Validate date formats
+    if (updatedAfter) {
+      const date = new Date(updatedAfter);
+      if (isNaN(date.getTime())) {
+        return res.status(400).json({
+          error: 'Invalid updatedAfter value. Must be a valid ISO date string'
+        });
+      }
+    }
+
+    if (updatedBefore) {
+      const date = new Date(updatedBefore);
+      if (isNaN(date.getTime())) {
+        return res.status(400).json({
+          error: 'Invalid updatedBefore value. Must be a valid ISO date string'
+        });
+      }
+    }
 
     // Build query for public plans
     let query = supabase
@@ -824,16 +875,44 @@ const listPublicPlans = async (req, res, next) => {
       .select('id, title, description, status, created_at, updated_at, view_count, github_repo_owner, github_repo_name, owner_id', { count: 'exact' })
       .eq('visibility', 'public');
 
-    // Apply sorting
-    if (sort === 'popular' || sort === 'views') {
-      query = query.order('view_count', { ascending: false });
-    } else {
-      // Default to recent
-      query = query.order('created_at', { ascending: false });
+    // Apply status filter
+    if (status) {
+      query = query.eq('status', status);
     }
 
-    // Apply pagination
-    query = query.range(offsetNum, offsetNum + limitNum - 1);
+    // Apply GitHub link filter
+    if (hasGithubLink === 'true') {
+      query = query.not('github_repo_owner', 'is', null);
+    } else if (hasGithubLink === 'false') {
+      query = query.is('github_repo_owner', null);
+    }
+
+    // Apply owner filter (by user_id)
+    if (owner) {
+      query = query.eq('owner_id', owner);
+    }
+
+    // Apply date range filters
+    if (updatedAfter) {
+      query = query.gte('updated_at', updatedAfter);
+    }
+
+    if (updatedBefore) {
+      query = query.lte('updated_at', updatedBefore);
+    }
+
+    // Apply sorting - for completion, we need to fetch all and sort in memory
+    // For recent and alphabetical, we can use database sorting
+    if (sortBy === 'recent') {
+      query = query.order('updated_at', { ascending: false });
+      // Apply pagination
+      query = query.range(offsetNum, offsetNum + limitNum - 1);
+    } else if (sortBy === 'alphabetical') {
+      query = query.order('title', { ascending: true });
+      // Apply pagination
+      query = query.range(offsetNum, offsetNum + limitNum - 1);
+    }
+    // For completion sort, we'll handle pagination after sorting in memory
 
     const { data: plans, error, count } = await query;
 
@@ -841,16 +920,32 @@ const listPublicPlans = async (req, res, next) => {
       return res.status(500).json({ error: error.message });
     }
 
-    // Fetch owner information for each plan
-    const plansWithOwners = await Promise.all(
+    // Fetch owner information and calculate stats for each plan
+    let plansWithMetadata = await Promise.all(
       plans.map(async (plan) => {
+        // Get owner info
         const { data: owner } = await supabase
           .from('users')
-          .select('name, email')
+          .select('id, name, email, github_username, avatar_url')
           .eq('id', plan.owner_id)
           .single();
 
-        const progress = await calculatePlanProgress(plan.id);
+        // Get task counts
+        const { data: nodes } = await supabase
+          .from('plan_nodes')
+          .select('id, status')
+          .eq('plan_id', plan.id)
+          .neq('node_type', 'root'); // Exclude root node from task count
+
+        const task_count = nodes ? nodes.length : 0;
+        const completed_count = nodes ? nodes.filter(n => n.status === 'completed').length : 0;
+        const completion_percentage = task_count > 0 ? Math.round((completed_count / task_count) * 100) : 0;
+
+        // Get star count
+        const { count: starCount } = await supabase
+          .from('plan_stars')
+          .select('*', { count: 'exact', head: true })
+          .eq('plan_id', plan.id);
 
         return {
           id: plan.id,
@@ -862,17 +957,51 @@ const listPublicPlans = async (req, res, next) => {
           updated_at: plan.updated_at,
           github_repo_owner: plan.github_repo_owner,
           github_repo_name: plan.github_repo_name,
-          owner: owner || { name: 'Unknown', email: '' },
-          progress
+          owner: owner || { id: plan.owner_id, name: 'Unknown', email: '', github_username: null, avatar_url: null },
+          task_count,
+          completed_count,
+          completion_percentage,
+          star_count: starCount || 0
         };
       })
     );
 
+    // Apply search filter (case-insensitive)
+    if (search && search.trim()) {
+      const searchLower = search.trim().toLowerCase();
+      plansWithMetadata = plansWithMetadata.filter(plan => {
+        const titleMatch = plan.title && plan.title.toLowerCase().includes(searchLower);
+        const descMatch = plan.description && plan.description.toLowerCase().includes(searchLower);
+        const usernameMatch = plan.owner.github_username && plan.owner.github_username.toLowerCase().includes(searchLower);
+        const nameMatch = plan.owner.name && plan.owner.name.toLowerCase().includes(searchLower);
+
+        return titleMatch || descMatch || usernameMatch || nameMatch;
+      });
+    }
+
+    // Handle completion sorting - sort in memory and apply pagination
+    // Note: When search is applied, we need to re-paginate after filtering
+    let finalPlans = plansWithMetadata;
+    let totalCount = count || 0;
+
+    if (sortBy === 'completion') {
+      // Sort by completion_percentage DESC
+      finalPlans.sort((a, b) => b.completion_percentage - a.completion_percentage);
+      // Apply pagination manually
+      totalCount = finalPlans.length; // Update total if sorting in memory
+      finalPlans = finalPlans.slice(offsetNum, offsetNum + limitNum);
+    } else if (search && search.trim()) {
+      // If search was applied, we need to re-paginate
+      totalCount = finalPlans.length;
+      finalPlans = finalPlans.slice(offsetNum, offsetNum + limitNum);
+    }
+
     res.json({
-      plans: plansWithOwners,
-      total: count || 0,
+      plans: finalPlans,
+      total: totalCount,
       limit: limitNum,
-      offset: offsetNum
+      page: pageNum,
+      total_pages: totalCount ? Math.ceil(totalCount / limitNum) : 0
     });
   } catch (error) {
     next(error);
@@ -920,7 +1049,7 @@ const getPublicPlan = async (req, res, next) => {
     // Get owner info
     const { data: owner } = await supabase
       .from('users')
-      .select('name, email')
+      .select('id, name, email, github_username, avatar_url')
       .eq('id', plan.owner_id)
       .single();
 
@@ -941,7 +1070,7 @@ const getPublicPlan = async (req, res, next) => {
       github_repo_url: plan.github_repo_url,
       github_repo_full_name: plan.github_repo_full_name,
       metadata: plan.metadata,
-      owner: owner || { name: 'Unknown', email: '' },
+      owner: owner || { id: plan.owner_id, name: 'Unknown', email: '', github_username: null, avatar_url: null },
       root_node: rootNode,
       progress
     };
@@ -1014,7 +1143,7 @@ const getPublicPlanById = async (req, res, next) => {
     // Get owner info
     const { data: owner } = await supabase
       .from('users')
-      .select('name, email')
+      .select('id, name, email, github_username, avatar_url')
       .eq('id', plan.owner_id)
       .single();
 
@@ -1037,7 +1166,7 @@ const getPublicPlanById = async (req, res, next) => {
         github_repo_full_name: plan.github_repo_full_name,
         metadata: plan.metadata,
         progress: progress,
-        owner: owner || { name: 'Unknown', email: '' }
+        owner: owner || { id: plan.owner_id, name: 'Unknown', email: '', github_username: null, avatar_url: null }
       },
       structure: nodeMap[rootNode.id],
     };

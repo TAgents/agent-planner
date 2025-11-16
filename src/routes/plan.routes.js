@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const planController = require('../controllers/plan.controller');
+const starController = require('../controllers/star.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 
 /**
@@ -103,30 +104,69 @@ router.post('/', authenticate, planController.createPlan);
  * @swagger
  * /plans/public:
  *   get:
- *     summary: List all public plans (no authentication required)
+ *     summary: List all public plans with pagination and filtering (no authentication required)
  *     tags: [Plans]
  *     parameters:
  *       - in: query
- *         name: sort
+ *         name: sortBy
  *         schema:
  *           type: string
- *           enum: [recent, popular, views]
- *         description: Sort order (recent, popular, or views)
+ *           enum: [recent, alphabetical, completion]
+ *           default: recent
+ *         description: Sort order - recent (by updated_at DESC), alphabetical (by title ASC), or completion (by completion_percentage DESC)
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
- *           default: 50
- *         description: Maximum number of plans to return
+ *           default: 12
+ *           minimum: 1
+ *           maximum: 100
+ *         description: Maximum number of plans to return per page
  *       - in: query
- *         name: offset
+ *         name: page
  *         schema:
  *           type: integer
- *           default: 0
- *         description: Offset for pagination
+ *           default: 1
+ *           minimum: 1
+ *         description: Page number for pagination (1-indexed)
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [active, completed, draft, archived]
+ *         description: Filter plans by status
+ *       - in: query
+ *         name: hasGithubLink
+ *         schema:
+ *           type: string
+ *           enum: [true, false]
+ *         description: Filter plans by GitHub repository presence (true = has repo, false = no repo)
+ *       - in: query
+ *         name: owner
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter plans by owner user ID
+ *       - in: query
+ *         name: updatedAfter
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Filter plans updated after this ISO date string
+ *       - in: query
+ *         name: updatedBefore
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Filter plans updated before this ISO date string
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search keyword to filter plans by title, description, or owner name/username (case-insensitive)
  *     responses:
  *       200:
- *         description: A list of public plans
+ *         description: A paginated list of public plans with metadata
  *         content:
  *           application/json:
  *             schema:
@@ -139,35 +179,87 @@ router.post('/', authenticate, planController.createPlan);
  *                     properties:
  *                       id:
  *                         type: string
+ *                         format: uuid
+ *                         description: Plan ID
  *                       title:
  *                         type: string
+ *                         description: Plan title
  *                       description:
  *                         type: string
+ *                         description: Plan description
  *                       status:
  *                         type: string
+ *                         enum: [draft, active, completed, archived]
+ *                         description: Plan status
  *                       view_count:
  *                         type: integer
+ *                         description: Number of times the plan has been viewed
  *                       created_at:
  *                         type: string
+ *                         format: date-time
+ *                         description: Creation timestamp
  *                       updated_at:
  *                         type: string
+ *                         format: date-time
+ *                         description: Last update timestamp
  *                       github_repo_owner:
  *                         type: string
+ *                         nullable: true
+ *                         description: GitHub repository owner
  *                       github_repo_name:
  *                         type: string
+ *                         nullable: true
+ *                         description: GitHub repository name
  *                       owner:
  *                         type: object
+ *                         description: Plan owner information
  *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
  *                           name:
  *                             type: string
  *                           email:
  *                             type: string
+ *                           github_username:
+ *                             type: string
+ *                             nullable: true
+ *                           avatar_url:
+ *                             type: string
+ *                             nullable: true
+ *                       task_count:
+ *                         type: integer
+ *                         description: Total number of tasks in the plan
+ *                       completed_count:
+ *                         type: integer
+ *                         description: Number of completed tasks
+ *                       completion_percentage:
+ *                         type: integer
+ *                         description: Completion percentage (0-100)
  *                 total:
  *                   type: integer
+ *                   description: Total number of public plans
  *                 limit:
  *                   type: integer
- *                 offset:
+ *                   description: Number of plans per page
+ *                 page:
  *                   type: integer
+ *                   description: Current page number
+ *                 total_pages:
+ *                   type: integer
+ *                   description: Total number of pages
+ *       400:
+ *         description: Invalid filter or sort parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Invalid sortBy value. Must be one of recent, alphabetical, completion
+ *       500:
+ *         description: Server error
  */
 router.get('/public', planController.listPublicPlans);
 
@@ -795,5 +887,154 @@ router.put('/:id/github', authenticate, planController.linkGitHubRepo);
  *         description: Plan not found
  */
 router.post('/:id/view', planController.incrementViewCount);
+
+/**
+ * @swagger
+ * /plans/{id}/star:
+ *   post:
+ *     summary: Star a public plan (add to favorites)
+ *     tags: [Plans]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Plan ID
+ *     responses:
+ *       200:
+ *         description: Plan successfully starred
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 starred:
+ *                   type: boolean
+ *                 star_count:
+ *                   type: integer
+ *       400:
+ *         description: Plan already starred
+ *       403:
+ *         description: Can only star public plans
+ *       404:
+ *         description: Plan not found
+ */
+router.post('/:id/star', authenticate, starController.starPlan);
+
+/**
+ * @swagger
+ * /plans/{id}/star:
+ *   delete:
+ *     summary: Unstar a plan (remove from favorites)
+ *     tags: [Plans]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Plan ID
+ *     responses:
+ *       200:
+ *         description: Plan successfully unstarred
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 starred:
+ *                   type: boolean
+ *                 star_count:
+ *                   type: integer
+ */
+router.delete('/:id/star', authenticate, starController.unstarPlan);
+
+/**
+ * @swagger
+ * /plans/{id}/stars:
+ *   get:
+ *     summary: Get star information for a plan
+ *     tags: [Plans]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Plan ID
+ *     responses:
+ *       200:
+ *         description: Star information
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 plan_id:
+ *                   type: string
+ *                   format: uuid
+ *                 star_count:
+ *                   type: integer
+ *                 is_starred:
+ *                   type: boolean
+ *                   description: Whether the current user has starred this plan (false if not authenticated)
+ */
+router.get('/:id/stars', starController.getPlanStars);
+
+/**
+ * @swagger
+ * /plans/starred:
+ *   get:
+ *     summary: Get user's starred plans
+ *     tags: [Plans]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 12
+ *         description: Plans per page
+ *     responses:
+ *       200:
+ *         description: List of starred plans
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 plans:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 total:
+ *                   type: integer
+ *                 limit:
+ *                   type: integer
+ *                 page:
+ *                   type: integer
+ *                 total_pages:
+ *                   type: integer
+ */
+router.get('/starred', authenticate, starController.getUserStarredPlans);
 
 module.exports = router;

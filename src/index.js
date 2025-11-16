@@ -24,6 +24,7 @@ const debugRoutes = require('./routes/debug.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const userRoutes = require('./routes/user.routes');
 const collaborationRoutes = require('./routes/collaboration.routes');
+const statsRoutes = require('./routes/stats.routes');
 const artifactController = require('./controllers/artifact.controller');
 
 // Import WebSocket collaboration server
@@ -90,6 +91,7 @@ app.use('/debug', debugRoutes);
 app.use('/upload', uploadRoutes);
 app.use('/users', userRoutes);
 app.use('/plans', collaborationRoutes);
+app.use('/stats', statsRoutes);
 
 // File download endpoint
 const { authenticate } = require('./middleware/auth.middleware');
