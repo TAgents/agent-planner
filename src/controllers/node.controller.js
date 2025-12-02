@@ -63,6 +63,7 @@ const checkPlanAccess = async (planId, userId, roles = []) => {
 const getNodes = async (req, res, next) => {
   try {
     const { id: planId } = req.params;
+    const { include_details } = req.query;
     const userId = req.user.id;
 
     // Check if the user has access to this plan
@@ -71,26 +72,43 @@ const getNodes = async (req, res, next) => {
       return res.status(403).json({ error: 'You do not have access to this plan' });
     }
 
+    // Default: Return minimal fields for efficient structure navigation
+    // The purpose of this endpoint is to get an overview of the plan structure.
+    // For detailed node information, use GET /plans/{id}/nodes/{nodeId}/context
+    const minimalFields = `
+      id,
+      parent_id,
+      node_type,
+      title,
+      status,
+      order_index
+    `;
+
+    // Full details only when explicitly requested
+    const fullFields = `
+      id,
+      plan_id,
+      parent_id,
+      node_type,
+      title,
+      description,
+      status,
+      order_index,
+      due_date,
+      created_at,
+      updated_at,
+      context,
+      agent_instructions,
+      acceptance_criteria,
+      metadata
+    `;
+
+    const fieldsToSelect = include_details === 'true' ? fullFields : minimalFields;
+
     // Get all nodes for the plan
     const { data: nodes, error } = await supabase
       .from('plan_nodes')
-      .select(`
-        id, 
-        plan_id, 
-        parent_id, 
-        node_type, 
-        title, 
-        description, 
-        status, 
-        order_index, 
-        due_date, 
-        created_at, 
-        updated_at, 
-        context, 
-        agent_instructions, 
-        acceptance_criteria, 
-        metadata
-      `)
+      .select(fieldsToSelect)
       .eq('plan_id', planId)
       .order('order_index', { ascending: true });
 

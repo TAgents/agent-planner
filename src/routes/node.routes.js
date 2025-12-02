@@ -70,6 +70,7 @@ const { authenticate } = require('../middleware/auth.middleware');
  * /plans/{id}/nodes:
  *   get:
  *     summary: Get all nodes for a plan (tree structure)
+ *     description: Returns hierarchical tree of nodes. By default returns minimal fields (id, parent_id, node_type, title, status, order_index) for efficient navigation. Use include_details=true for full node data, or use GET /plans/{id}/nodes/{nodeId}/context for detailed information about specific nodes.
  *     tags: [Nodes]
  *     security:
  *       - bearerAuth: []
@@ -80,6 +81,13 @@ const { authenticate } = require('../middleware/auth.middleware');
  *         schema:
  *           type: string
  *         description: The plan ID
+ *       - in: query
+ *         name: include_details
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Include full node details (description, context, agent_instructions, acceptance_criteria, metadata, timestamps). Default is false for minimal response size.
  *     responses:
  *       200:
  *         description: Hierarchical tree of plan nodes
