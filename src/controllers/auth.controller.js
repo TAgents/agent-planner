@@ -384,6 +384,43 @@ const updateUserProfile = async (req, res, next) => {
 };
 
 /**
+ * Refresh access token using refresh token
+ */
+const refreshToken = async (req, res, next) => {
+  try {
+    const { refresh_token } = req.body;
+
+    if (!refresh_token) {
+      await logger.auth('Token refresh failed: refresh_token is required');
+      return res.status(400).json({ error: 'Refresh token is required' });
+    }
+
+    await logger.auth('Token refresh request received');
+
+    // Use Supabase to refresh the session
+    const { data, error } = await supabase.auth.refreshSession({
+      refresh_token
+    });
+
+    if (error) {
+      await logger.error('Token refresh failed', error);
+      return res.status(401).json({ error: 'Invalid or expired refresh token' });
+    }
+
+    await logger.auth(`Token refreshed successfully for user ${data.user?.id}`);
+
+    res.json({
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      expires_at: data.session.expires_at
+    });
+  } catch (error) {
+    await logger.error('Unexpected error in refreshToken endpoint', error);
+    next(error);
+  }
+};
+
+/**
  * Change user password
  */
 const changePassword = async (req, res, next) => {
@@ -444,5 +481,6 @@ module.exports = {
   resendVerificationEmail,
   getUserProfile,
   updateUserProfile,
-  changePassword
+  changePassword,
+  refreshToken
 };
