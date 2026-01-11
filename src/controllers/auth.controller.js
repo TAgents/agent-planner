@@ -76,9 +76,26 @@ const login = async (req, res, next) => {
       email,
       password,
     });
-    
+
     if (error) {
       await logger.error(`Supabase Auth sign in failed for ${email}`, error);
+
+      // Check for specific error types and return more helpful responses
+      if (error.message === 'Email not confirmed') {
+        return res.status(401).json({
+          error: 'Please verify your email address before signing in. Check your inbox for a verification link.',
+          code: 'EMAIL_NOT_CONFIRMED',
+          email: email
+        });
+      }
+
+      if (error.message === 'Invalid login credentials') {
+        return res.status(401).json({
+          error: 'Invalid email or password. Please check your credentials and try again.',
+          code: 'INVALID_CREDENTIALS'
+        });
+      }
+
       return res.status(401).json({ error: error.message });
     }
     
