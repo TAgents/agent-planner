@@ -153,6 +153,10 @@ const swaggerOptions = {
       {
         name: 'Health',
         description: 'System health and status'
+      },
+      {
+        name: 'GitHub',
+        description: 'GitHub integration operations'
       }
     ]
   },
