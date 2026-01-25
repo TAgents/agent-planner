@@ -1,0 +1,51 @@
+{
+  "name": "@agent-planner/clawdbot-skill",
+  "version": "1.0.0",
+  "description": "Clawdbot skill for managing plans with Agent Planner",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./lib/*": "./lib/*.js",
+    "./commands/*": "./commands/*.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "lint": "eslint ."
+  },
+  "keywords": [
+    "clawdbot",
+    "skill",
+    "agent-planner",
+    "planning",
+    "project-management",
+    "ai-agent",
+    "collaboration"
+  ],
+  "author": "TalkingAgents",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/talkingagents/agent-planner"
+  },
+  "bugs": {
+    "url": "https://github.com/talkingagents/agent-planner/issues"
+  },
+  "homepage": "https://github.com/talkingagents/agent-planner#readme",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "peerDependencies": {
+    "clawdbot": ">=1.0.0"
+  },
+  "files": [
+    "index.js",
+    "manifest.json",
+    "lib/",
+    "commands/",
+    "README.md"
+  ]
+}

@@ -1,0 +1,165 @@
+{
+  "name": "agent-planner",
+  "version": "1.0.0",
+  "description": "Clawdbot skill for managing plans with Agent Planner - create, track, and collaborate on plans via messaging",
+  "author": "TalkingAgents",
+  "license": "MIT",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/talkingagents/agent-planner"
+  },
+  "keywords": [
+    "clawdbot",
+    "skill",
+    "planning",
+    "project-management",
+    "collaboration",
+    "ai-agents"
+  ],
+  "engines": {
+    "node": ">=22.0.0",
+    "clawdbot": ">=1.0.0"
+  },
+  "config": {
+    "api_url": {
+      "type": "string",
+      "description": "Agent Planner API URL",
+      "required": true,
+      "default": "https://api.agentplanner.app"
+    },
+    "ws_url": {
+      "type": "string",
+      "description": "Agent Planner WebSocket URL for real-time updates",
+      "required": false
+    },
+    "api_token": {
+      "type": "string",
+      "description": "API token for authentication (generate at Agent Planner settings)",
+      "required": true,
+      "secret": true,
+      "env": "AGENT_PLANNER_TOKEN"
+    },
+    "default_plan": {
+      "type": "string",
+      "description": "Default plan ID to use when not specified",
+      "required": false
+    },
+    "notifications": {
+      "type": "object",
+      "description": "Notification settings",
+      "properties": {
+        "on_task_created": { "type": "boolean", "default": true },
+        "on_status_change": { "type": "boolean", "default": true },
+        "on_comment": { "type": "boolean", "default": true },
+        "on_assignment": { "type": "boolean", "default": true },
+        "on_milestone": { "type": "boolean", "default": true }
+      }
+    }
+  },
+  "commands": [
+    {
+      "name": "plan",
+      "description": "Manage plans - create, list, show, update plans",
+      "aliases": ["p", "plans"],
+      "subcommands": [
+        { "name": "create", "description": "Create a new plan", "usage": "/plan create <title>" },
+        { "name": "list", "description": "List all your plans", "usage": "/plan list [status]" },
+        { "name": "show", "description": "Show plan details", "usage": "/plan show <plan-id>" },
+        { "name": "delete", "description": "Delete a plan", "usage": "/plan delete <plan-id>" },
+        { "name": "progress", "description": "Show plan progress", "usage": "/plan progress <plan-id>" },
+        { "name": "subscribe", "description": "Subscribe to plan updates", "usage": "/plan subscribe <plan-id>" },
+        { "name": "unsubscribe", "description": "Unsubscribe from plan updates", "usage": "/plan unsubscribe <plan-id>" }
+      ]
+    },
+    {
+      "name": "task",
+      "description": "Manage tasks within plans",
+      "aliases": ["t"],
+      "subcommands": [
+        { "name": "add", "description": "Add a task to a plan/phase", "usage": "/task add <title> [to <parent>]" },
+        { "name": "status", "description": "Update task status", "usage": "/task status <task-id> <status>" },
+        { "name": "assign", "description": "Assign user to task", "usage": "/task assign <task-id> <user>" },
+        { "name": "comment", "description": "Add comment to task", "usage": "/task comment <task-id> <message>" },
+        { "name": "log", "description": "Add activity log to task", "usage": "/task log <task-id> <message>" }
+      ]
+    },
+    {
+      "name": "phase",
+      "description": "Manage phases within plans",
+      "subcommands": [
+        { "name": "add", "description": "Add a phase to a plan", "usage": "/phase add <title> to <plan-id>" },
+        { "name": "list", "description": "List phases in a plan", "usage": "/phase list <plan-id>" }
+      ]
+    },
+    {
+      "name": "milestone",
+      "description": "Manage milestones within plans",
+      "aliases": ["ms"],
+      "subcommands": [
+        { "name": "add", "description": "Add a milestone", "usage": "/milestone add <title> to <parent>" },
+        { "name": "list", "description": "List milestones", "usage": "/milestone list <plan-id>" }
+      ]
+    }
+  ],
+  "intents": [
+    {
+      "name": "create_plan",
+      "patterns": [
+        "create a plan for *",
+        "start a new plan *",
+        "make a plan to *",
+        "I need to plan *"
+      ]
+    },
+    {
+      "name": "check_progress",
+      "patterns": [
+        "what's the progress on *",
+        "how is * going",
+        "status of *",
+        "progress on *"
+      ]
+    },
+    {
+      "name": "add_task",
+      "patterns": [
+        "add task *",
+        "create task *",
+        "new task *",
+        "add * to the plan"
+      ]
+    },
+    {
+      "name": "complete_task",
+      "patterns": [
+        "mark * as complete",
+        "complete *",
+        "finish *",
+        "done with *"
+      ]
+    },
+    {
+      "name": "list_plans",
+      "patterns": [
+        "show my plans",
+        "list plans",
+        "what plans do I have",
+        "my plans"
+      ]
+    }
+  ],
+  "events": {
+    "subscribe": [
+      "plan:created",
+      "plan:updated",
+      "plan:deleted",
+      "node:created",
+      "node:updated",
+      "node:deleted",
+      "comment:added",
+      "log:added",
+      "user:assigned"
+    ]
+  }
+}
