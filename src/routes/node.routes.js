@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const nodeController = require('../controllers/node.controller');
 const { authenticate } = require('../middleware/auth.middleware');
+const { validate, schemas } = require('../validation');
 
 /**
  * @swagger
@@ -210,7 +211,7 @@ router.get('/:id/nodes/:nodeId', authenticate, nodeController.getNode);
  *       404:
  *         description: Plan or parent node not found
  */
-router.post('/:id/nodes', authenticate, nodeController.createNode);
+router.post('/:id/nodes', authenticate, ...validate({ params: schemas.node.planIdParam, body: schemas.node.createNode }), nodeController.createNode);
 
 /**
  * @swagger
@@ -279,7 +280,7 @@ router.post('/:id/nodes', authenticate, nodeController.createNode);
  *       404:
  *         description: Node not found
  */
-router.put('/:id/nodes/:nodeId', authenticate, nodeController.updateNode);
+router.put('/:id/nodes/:nodeId', authenticate, ...validate({ params: schemas.node.planNodeParams, body: schemas.node.updateNode }), nodeController.updateNode);
 
 /**
  * @swagger
@@ -558,7 +559,7 @@ router.put('/:id/nodes/:nodeId/status', authenticate, nodeController.updateNodeS
  *       404:
  *         description: Node or parent not found
  */
-router.post('/:id/nodes/:nodeId/move', authenticate, nodeController.moveNode);
+router.post('/:id/nodes/:nodeId/move', authenticate, ...validate({ params: schemas.node.planNodeParams, body: schemas.node.moveNode }), nodeController.moveNode);
 
 /**
  * @swagger
@@ -608,7 +609,7 @@ router.post('/:id/nodes/:nodeId/move', authenticate, nodeController.moveNode);
  *       404:
  *         description: Node not found
  */
-router.post('/:id/nodes/:nodeId/log', authenticate, nodeController.addLogEntry);
+router.post('/:id/nodes/:nodeId/log', authenticate, ...validate({ params: schemas.node.planNodeParams, body: schemas.node.addLog }), nodeController.addLogEntry);
 
 /**
  * @swagger
