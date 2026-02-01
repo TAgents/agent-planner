@@ -3,6 +3,7 @@ const router = express.Router();
 const planController = require('../controllers/plan.controller');
 const starController = require('../controllers/star.controller');
 const { authenticate } = require('../middleware/auth.middleware');
+const { validate, schemas } = require('../validation');
 
 /**
  * @swagger
@@ -98,7 +99,7 @@ router.get('/', authenticate, planController.listPlans);
  *       401:
  *         description: Authentication required
  */
-router.post('/', authenticate, planController.createPlan);
+router.post('/', authenticate, ...validate({ body: schemas.plan.createPlan }), planController.createPlan);
 
 // Note: AI plan generation endpoint removed - UI now uses A2A protocol to call Planner Agent directly
 
@@ -422,7 +423,7 @@ router.get('/:id', authenticate, planController.getPlan);
  *       404:
  *         description: Plan not found
  */
-router.put('/:id', authenticate, planController.updatePlan);
+router.put('/:id', authenticate, ...validate({ params: schemas.plan.planIdParam, body: schemas.plan.updatePlan }), planController.updatePlan);
 
 /**
  * @swagger
@@ -565,7 +566,7 @@ router.get('/:id/collaborators', authenticate, planController.listCollaborators)
  *       404:
  *         description: User or plan not found
  */
-router.post('/:id/collaborators', authenticate, planController.addCollaborator);
+router.post('/:id/collaborators', authenticate, ...validate({ params: schemas.plan.planIdParam, body: schemas.plan.addCollaborator }), planController.addCollaborator);
 
 /**
  * @swagger
@@ -804,7 +805,7 @@ router.get('/:id/public', planController.getPublicPlan);
  *       404:
  *         description: Plan not found
  */
-router.put('/:id/visibility', authenticate, planController.updatePlanVisibility);
+router.put('/:id/visibility', authenticate, ...validate({ params: schemas.plan.planIdParam, body: schemas.plan.updateVisibility }), planController.updatePlanVisibility);
 
 /**
  * @swagger
