@@ -33,6 +33,8 @@ const templateRoutes = require('./routes/template.routes');
 const analyticsRoutes = require('./routes/analytics.routes');
 const importExportRoutes = require('./routes/import-export.routes');
 const organizationRoutes = require('./routes/organization.routes');
+const goalRoutes = require('./routes/goal.routes');
+const knowledgeRoutes = require('./routes/knowledge.routes');
 const artifactController = require('./controllers/artifact.controller');
 
 // Import WebSocket collaboration server
@@ -137,6 +139,12 @@ app.use('/plans', generalLimiter, importExportRoutes);
 
 // Organization routes
 app.use('/organizations', generalLimiter, organizationRoutes);
+
+// Goal routes
+app.use('/goals', generalLimiter, goalRoutes);
+
+// Knowledge routes
+app.use('/knowledge', generalLimiter, knowledgeRoutes);
 
 // File download endpoint
 const { authenticate } = require('./middleware/auth.middleware');
