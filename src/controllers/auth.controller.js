@@ -1,5 +1,6 @@
 const { supabase, supabaseAdmin } = require('../config/supabase');
 const logger = require('../utils/logger');
+const { convertPendingInvites } = require('../services/invites');
 require('dotenv').config();
 
 /**
@@ -38,16 +39,25 @@ const register = async (req, res, next) => {
     await logger.auth(`Supabase Auth signUp succeeded for ${email}. User ID: ${authData.user?.id}`);
     await logger.auth(`Supabase will send verification email to ${email}`);
 
+    // Convert any pending invites for this email to collaborator access
+    const userName = authData.user.user_metadata?.name || email.split('@')[0];
+    const inviteResult = await convertPendingInvites(authData.user.id, email, userName);
+    if (inviteResult.converted > 0) {
+      await logger.auth(`Converted ${inviteResult.converted} pending invites for ${email}`);
+    }
+
     // Return the Supabase session data directly
     const response = {
       user: {
         id: authData.user.id,
         email: authData.user.email,
-        name: authData.user.user_metadata?.name || email.split('@')[0],
+        name: userName,
         organization: authData.user.user_metadata?.organization,
         email_verified: false
       },
-      session: authData.session
+      session: authData.session,
+      // Include converted invites so UI can show welcome message
+      converted_invites: inviteResult.invites
     };
     
     await logger.auth(`Sending registration success response with status 201 for: ${email}`);
@@ -101,16 +111,25 @@ const login = async (req, res, next) => {
     
     await logger.auth(`Supabase Auth sign in succeeded for ${email}. User ID: ${data.user?.id}`);
 
+    // Convert any pending invites for this email (for users who registered before being invited)
+    const userName = data.user.user_metadata?.name || email.split('@')[0];
+    const inviteResult = await convertPendingInvites(data.user.id, email, userName);
+    if (inviteResult.converted > 0) {
+      await logger.auth(`Converted ${inviteResult.converted} pending invites for ${email} on login`);
+    }
+
     // Return the Supabase session data
     res.json({
       user: {
         id: data.user.id,
         email: data.user.email,
-        name: data.user.user_metadata?.name || email.split('@')[0],
+        name: userName,
         organization: data.user.user_metadata?.organization,
         email_verified: data.user.user_metadata?.email_verified || false
       },
-      session: data.session
+      session: data.session,
+      // Include converted invites so UI can show notification
+      converted_invites: inviteResult.invites
     });
   } catch (error) {
     await logger.error(`Unexpected error in login endpoint`, error);

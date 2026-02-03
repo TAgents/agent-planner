@@ -28,6 +28,7 @@ const statsRoutes = require('./routes/stats.routes');
 const githubRoutes = require('./routes/github.routes');
 const aiRoutes = require('./routes/ai.routes');
 const webhookRoutes = require('./routes/webhook.routes');
+const shareRoutes = require('./routes/share.routes');
 const artifactController = require('./controllers/artifact.controller');
 
 // Import WebSocket collaboration server
@@ -114,6 +115,10 @@ app.use('/plans', generalLimiter, collaborationRoutes);
 app.use('/stats', generalLimiter, statsRoutes);
 app.use('/github', generalLimiter, githubRoutes);
 app.use('/ai', generalLimiter, aiRoutes);
+
+// Share routes (plan sharing by email)
+app.use('/plans', generalLimiter, shareRoutes);
+app.use('/invites', generalLimiter, shareRoutes);
 
 // File download endpoint
 const { authenticate } = require('./middleware/auth.middleware');
