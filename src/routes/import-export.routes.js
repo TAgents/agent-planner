@@ -556,6 +556,9 @@ function parseMarkdownImport(markdown) {
     // Collect content for current field
     if (currentField && currentTask) {
       descriptionLines.push(line);
+    } else if (currentPhase && !currentTask && trimmed && !trimmed.startsWith('**')) {
+      // Phase description (content after phase header but before first task)
+      currentPhase.description += (currentPhase.description ? '\n' : '') + line;
     } else if (!currentPhase && !currentTask && trimmed && !trimmed.startsWith('**')) {
       // Plan description (content before first phase)
       plan.description += (plan.description ? '\n' : '') + line;
