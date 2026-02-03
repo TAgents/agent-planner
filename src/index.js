@@ -31,6 +31,7 @@ const webhookRoutes = require('./routes/webhook.routes');
 const shareRoutes = require('./routes/share.routes');
 const templateRoutes = require('./routes/template.routes');
 const analyticsRoutes = require('./routes/analytics.routes');
+const importExportRoutes = require('./routes/import-export.routes');
 const artifactController = require('./controllers/artifact.controller');
 
 // Import WebSocket collaboration server
@@ -62,6 +63,7 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+app.use(express.text({ type: ['text/markdown', 'text/plain'] }));
 app.use(express.urlencoded({ extended: true }));
 
 // Request logging middleware
@@ -128,6 +130,9 @@ app.use('/plans', generalLimiter, templateRoutes);
 
 // Analytics routes
 app.use('/plans', generalLimiter, analyticsRoutes);
+
+// Import/Export routes
+app.use('/plans', generalLimiter, importExportRoutes);
 
 // File download endpoint
 const { authenticate } = require('./middleware/auth.middleware');
