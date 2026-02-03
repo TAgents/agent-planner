@@ -17,8 +17,9 @@ const SCOPES = ['organization', 'goal', 'plan'];
 
 /**
  * Helper: Check if user can access a knowledge store based on scope
+ * @param {boolean} writeAccess - If true, checks for write permission
  */
-async function canAccessStore(storeId, userId) {
+async function canAccessStore(storeId, userId, writeAccess = false) {
   const { data: store } = await supabaseAdmin
     .from('knowledge_stores')
     .select('scope, scope_id')
@@ -27,13 +28,17 @@ async function canAccessStore(storeId, userId) {
 
   if (!store) return false;
 
-  return canAccessScope(store.scope, store.scope_id, userId);
+  return canAccessScope(store.scope, store.scope_id, userId, writeAccess);
 }
 
 /**
  * Helper: Check if user can access a scope (org/goal/plan)
+ * @param {string} scope - 'organization', 'goal', or 'plan'
+ * @param {string} scopeId - UUID of the scope entity
+ * @param {string} userId - User's UUID
+ * @param {boolean} writeAccess - If true, checks for write permission (public plans are read-only)
  */
-async function canAccessScope(scope, scopeId, userId) {
+async function canAccessScope(scope, scopeId, userId, writeAccess = false) {
   switch (scope) {
     case 'organization': {
       const { data } = await supabaseAdmin
@@ -67,7 +72,8 @@ async function canAccessScope(scope, scopeId, userId) {
         .single();
       if (!plan) return false;
       if (plan.owner_id === userId) return true;
-      if (plan.visibility === 'public') return true;
+      // Public plans are read-only for non-owners/collaborators
+      if (plan.visibility === 'public' && !writeAccess) return true;
       const { data: collab } = await supabaseAdmin
         .from('plan_collaborators')
         .select('role')
@@ -334,7 +340,10 @@ router.get('/stores/:id', authenticate, async (req, res) => {
  */
 router.get('/entries', authenticate, async (req, res) => {
   try {
-    const { store_id, entry_type, tags, limit = 50, offset = 0 } = req.query;
+    const { store_id, entry_type, tags } = req.query;
+    // Parse pagination params to integers to avoid string concatenation bugs
+    const limit = parseInt(req.query.limit, 10) || 50;
+    const offset = parseInt(req.query.offset, 10) || 0;
     const userId = req.user.id;
 
     if (!store_id) {
@@ -383,8 +392,8 @@ router.get('/entries', authenticate, async (req, res) => {
         embedding: undefined // Don't send embedding vectors to client
       })),
       total: count,
-      limit: parseInt(limit),
-      offset: parseInt(offset)
+      limit,
+      offset
     });
 
   } catch (error) {
@@ -470,7 +479,7 @@ router.post('/entries', authenticate, async (req, res) => {
       if (!SCOPES.includes(scope)) {
         return res.status(400).json({ error: 'Invalid scope' });
       }
-      const hasAccess = await canAccessScope(scope, scope_id, userId);
+      const hasAccess = await canAccessScope(scope, scope_id, userId, true); // writeAccess=true
       if (!hasAccess) {
         return res.status(403).json({ error: 'Access denied to scope' });
       }
@@ -485,8 +494,8 @@ router.post('/entries', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'store_id or (scope + scope_id) required' });
     }
 
-    // Check store access
-    const hasAccess = await canAccessStore(targetStoreId, userId);
+    // Check store access (write)
+    const hasAccess = await canAccessStore(targetStoreId, userId, true); // writeAccess=true
     if (!hasAccess) {
       return res.status(403).json({ error: 'Access denied to store' });
     }
@@ -551,8 +560,8 @@ router.put('/entries/:id', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Entry not found' });
     }
 
-    // Check if user created entry or has admin access
-    const hasAccess = await canAccessStore(entry.store_id, userId);
+    // Check if user created entry or has admin access (write)
+    const hasAccess = await canAccessStore(entry.store_id, userId, true); // writeAccess=true
     if (!hasAccess) {
       return res.status(403).json({ error: 'Access denied' });
     }
@@ -833,7 +842,7 @@ router.put('/entries/:id/embedding', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Entry not found' });
     }
 
-    const hasAccess = await canAccessStore(entry.store_id, userId);
+    const hasAccess = await canAccessStore(entry.store_id, userId, true); // writeAccess=true
     if (!hasAccess) {
       return res.status(403).json({ error: 'Access denied' });
     }
