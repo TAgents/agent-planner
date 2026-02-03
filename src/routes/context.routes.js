@@ -268,17 +268,33 @@ router.get('/', authenticate, async (req, res) => {
     if (include_knowledge === 'true') {
       const scopes = [];
       
-      // Add plan scope
+      // Add plan scope (always allowed if user has plan access)
       scopes.push({ scope: 'plan', scopeId: planId });
       
-      // Add goal scopes
-      goals.forEach(g => {
-        scopes.push({ scope: 'goal', scopeId: g.id });
-      });
-      
-      // Add org scope
+      // Check if user is org member before including org/goal knowledge
+      // This prevents knowledge leakage on public plans
+      let isOrgMember = false;
       if (organization) {
-        scopes.push({ scope: 'organization', scopeId: organization.id });
+        const { data: membership } = await supabaseAdmin
+          .from('organization_members')
+          .select('role')
+          .eq('organization_id', organization.id)
+          .eq('user_id', userId)
+          .single();
+        isOrgMember = !!membership;
+      }
+      
+      // Only include org/goal knowledge if user is an org member
+      if (isOrgMember) {
+        // Add goal scopes
+        goals.forEach(g => {
+          scopes.push({ scope: 'goal', scopeId: g.id });
+        });
+        
+        // Add org scope
+        if (organization) {
+          scopes.push({ scope: 'organization', scopeId: organization.id });
+        }
       }
 
       response.knowledge = await getKnowledgeForScopes(scopes);
@@ -421,8 +437,25 @@ router.get('/plan', authenticate, async (req, res) => {
     // Include knowledge if requested
     if (include_knowledge === 'true') {
       const scopes = [{ scope: 'plan', scopeId: plan_id }];
-      goals.forEach(g => scopes.push({ scope: 'goal', scopeId: g.id }));
-      if (organization) scopes.push({ scope: 'organization', scopeId: organization.id });
+      
+      // Check if user is org member before including org/goal knowledge
+      // This prevents knowledge leakage on public plans
+      let isOrgMember = false;
+      if (organization) {
+        const { data: membership } = await supabaseAdmin
+          .from('organization_members')
+          .select('role')
+          .eq('organization_id', organization.id)
+          .eq('user_id', userId)
+          .single();
+        isOrgMember = !!membership;
+      }
+      
+      // Only include org/goal knowledge if user is an org member
+      if (isOrgMember) {
+        goals.forEach(g => scopes.push({ scope: 'goal', scopeId: g.id }));
+        if (organization) scopes.push({ scope: 'organization', scopeId: organization.id });
+      }
       
       response.knowledge = await getKnowledgeForScopes(scopes);
     }
