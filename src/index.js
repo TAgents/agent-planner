@@ -30,6 +30,7 @@ const aiRoutes = require('./routes/ai.routes');
 const webhookRoutes = require('./routes/webhook.routes');
 const shareRoutes = require('./routes/share.routes');
 const templateRoutes = require('./routes/template.routes');
+const analyticsRoutes = require('./routes/analytics.routes');
 const artifactController = require('./controllers/artifact.controller');
 
 // Import WebSocket collaboration server
@@ -124,6 +125,9 @@ app.use('/invites', generalLimiter, shareRoutes);
 // Template routes
 app.use('/templates', generalLimiter, templateRoutes);
 app.use('/plans', generalLimiter, templateRoutes);
+
+// Analytics routes
+app.use('/plans', generalLimiter, analyticsRoutes);
 
 // File download endpoint
 const { authenticate } = require('./middleware/auth.middleware');
