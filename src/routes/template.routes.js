@@ -74,11 +74,19 @@ router.get('/', optionalAuthenticate, async (req, res) => {
       query = query.eq('is_starter', true);
     }
 
-    // Only user's own templates
-    if (mine === 'true' && userId) {
+    // Only user's own templates - requires authentication
+    if (mine === 'true') {
+      if (!userId) {
+        // mine=true without auth - return empty result (not an error, just no "my" templates)
+        return res.json({
+          templates: [],
+          categories: [],
+          total: 0
+        });
+      }
       query = query.eq('owner_id', userId);
-    } else if (mine !== 'true') {
-      // Show public + starter + own templates
+    } else {
+      // Default: Show public + starter + own templates (if authenticated)
       if (userId) {
         query = query.or(`is_public.eq.true,is_starter.eq.true,owner_id.eq.${userId}`);
       } else {
