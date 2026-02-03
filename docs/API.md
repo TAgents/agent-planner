@@ -123,6 +123,8 @@ Get active and typing users for a specific node
 #### GET /debug/tokens
 Debug endpoint to view all tokens for current user including revoked ones
 
+Only the token debug endpoint is supported; the legacy test-search route has been removed.
+
 
 ### Nodes
 
@@ -264,4 +266,3 @@ Swagger UI interface for exploring and testing the API
 
 #### GET /api-docs-json
 OpenAPI specification in JSON format
-
