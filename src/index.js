@@ -35,6 +35,7 @@ const importExportRoutes = require('./routes/import-export.routes');
 const organizationRoutes = require('./routes/organization.routes');
 const goalRoutes = require('./routes/goal.routes');
 const knowledgeRoutes = require('./routes/knowledge.routes');
+const contextRoutes = require('./routes/context.routes');
 const artifactController = require('./controllers/artifact.controller');
 
 // Import WebSocket collaboration server
@@ -145,6 +146,9 @@ app.use('/goals', generalLimiter, goalRoutes);
 
 // Knowledge routes
 app.use('/knowledge', generalLimiter, knowledgeRoutes);
+
+// Agent context routes (leaf-up context loading)
+app.use('/context', generalLimiter, contextRoutes);
 
 // File download endpoint
 const { authenticate } = require('./middleware/auth.middleware');
