@@ -9,6 +9,7 @@ const {
   createNodeStatusChangedMessage,
   createLogAddedMessage
 } = require('../websocket/message-schema');
+const { notifyStatusChange } = require('../services/notifications');
 
 /**
  * Helper function to check if a user has access to a plan with specified roles
@@ -354,10 +355,10 @@ const updateNode = async (req, res, next) => {
       return res.status(403).json({ error: 'You do not have permission to update nodes in this plan' });
     }
 
-    // Check if node exists and belongs to this plan
+    // Check if node exists and belongs to this plan (also get status for notification)
     const { data: existingNode, error: nodeError } = await supabase
       .from('plan_nodes')
-      .select('node_type')
+      .select('node_type, status, title')
       .eq('id', nodeId)
       .eq('plan_id', planId)
       .single();
@@ -368,6 +369,9 @@ const updateNode = async (req, res, next) => {
       }
       return res.status(500).json({ error: nodeError.message });
     }
+
+    // Store old status for notification comparison
+    const oldStatus = existingNode.status;
 
     // Don't allow changing root node type
     if (existingNode.node_type === 'root' && nodeType && nodeType !== 'root') {
@@ -399,7 +403,7 @@ const updateNode = async (req, res, next) => {
       return res.status(400).json({ error: error.message });
     }
 
-    // If status was updated, add a log entry
+    // If status was updated, add a log entry and send notification
     if (status !== undefined) {
       await supabase.from('plan_node_logs').insert([
         {
@@ -411,6 +415,24 @@ const updateNode = async (req, res, next) => {
           created_at: new Date(),
         },
       ]);
+
+      // Send webhook notification if status changed
+      if (oldStatus !== status) {
+        // Get plan info for notification
+        const { data: planData } = await supabase
+          .from('plans')
+          .select('id, title, owner_id')
+          .eq('id', planId)
+          .single();
+
+        if (planData) {
+          const actor = { name: req.user.name || req.user.email, type: 'user' };
+          // Fire and forget - don't await
+          notifyStatusChange(data[0], planData, actor, oldStatus, status).catch(err => {
+            console.error('Notification error:', err);
+          });
+        }
+      }
     }
 
     // Broadcast node update event
