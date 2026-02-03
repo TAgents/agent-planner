@@ -37,6 +37,13 @@ const { setCollaborationServer } = require('./websocket/broadcast');
 
 // Import middlewares
 const { debugRequest } = require('./middleware/debug.middleware');
+const { 
+  generalLimiter, 
+  authLimiter, 
+  searchLimiter, 
+  tokenLimiter,
+  webhookLimiter 
+} = require('./middleware/rateLimit.middleware');
 
 // Create Express app
 const app = express();
@@ -82,22 +89,31 @@ if (process.env.NODE_ENV === 'development') {
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
-// Routes
-app.use('/auth', authRoutes);
-app.use('/plans', planRoutes);
-app.use('/plans', nodeRoutes);
-app.use('/plans', artifactRoutes);
-app.use('/activity', activityRoutes);
-app.use('/search', searchRoutes);
-app.use('/tokens', tokenRoutes);
-app.use('/debug', debugRoutes);
-app.use('/upload', uploadRoutes);
-app.use('/users', userRoutes);
-app.use('/plans', collaborationRoutes);
-app.use('/stats', statsRoutes);
-app.use('/github', githubRoutes);
-app.use('/ai', aiRoutes);
-app.use('/webhooks', webhookRoutes);
+// Routes with rate limiting
+// Auth routes - strict rate limiting to prevent brute force
+app.use('/auth', authLimiter, authRoutes);
+
+// Search routes - moderate rate limiting for expensive operations
+app.use('/search', searchLimiter, searchRoutes);
+
+// Token routes - strict rate limiting to prevent token abuse
+app.use('/tokens', tokenLimiter, tokenRoutes);
+
+// Webhook routes - moderate rate limiting
+app.use('/webhooks', webhookLimiter, webhookRoutes);
+
+// General routes with standard rate limiting
+app.use('/plans', generalLimiter, planRoutes);
+app.use('/plans', generalLimiter, nodeRoutes);
+app.use('/plans', generalLimiter, artifactRoutes);
+app.use('/activity', generalLimiter, activityRoutes);
+app.use('/debug', generalLimiter, debugRoutes);
+app.use('/upload', generalLimiter, uploadRoutes);
+app.use('/users', generalLimiter, userRoutes);
+app.use('/plans', generalLimiter, collaborationRoutes);
+app.use('/stats', generalLimiter, statsRoutes);
+app.use('/github', generalLimiter, githubRoutes);
+app.use('/ai', generalLimiter, aiRoutes);
 
 // File download endpoint
 const { authenticate } = require('./middleware/auth.middleware');
