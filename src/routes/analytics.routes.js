@@ -79,14 +79,24 @@ router.get('/:id/analytics', authenticate, async (req, res) => {
       return res.status(500).json({ error: 'Failed to fetch plan data' });
     }
 
-    // Get activity logs for trends
+    // Get activity logs for trends (skip if no nodes to avoid empty IN clause)
     const periodStart = getPeriodStart(period);
-    const { data: logs } = await supabaseAdmin
-      .from('plan_node_logs')
-      .select('id, node_id, log_type, created_at, content')
-      .in('node_id', nodes.map(n => n.id))
-      .gte('created_at', periodStart.toISOString())
-      .order('created_at', { ascending: true });
+    let logs = [];
+    if (nodes.length > 0) {
+      const { data: logsData, error: logsError } = await supabaseAdmin
+        .from('plan_node_logs')
+        .select('id, node_id, log_type, created_at, content')
+        .in('node_id', nodes.map(n => n.id))
+        .gte('created_at', periodStart.toISOString())
+        .order('created_at', { ascending: true });
+
+      if (logsError) {
+        await logger.error('Failed to fetch logs for analytics:', logsError);
+        // Continue with empty logs rather than failing - logs are supplementary
+      } else {
+        logs = logsData || [];
+      }
+    }
 
     // Calculate metrics
     const tasks = nodes.filter(n => n.node_type === 'task');
@@ -157,10 +167,10 @@ router.get('/:id/analytics', authenticate, async (req, res) => {
 
     // Activity summary
     const activitySummary = {
-      total_logs: logs?.length || 0,
-      progress_updates: logs?.filter(l => l.log_type === 'progress').length || 0,
-      status_changes: logs?.filter(l => l.log_type === 'status_change').length || 0,
-      comments: logs?.filter(l => l.log_type === 'comment').length || 0
+      total_logs: logs.length,
+      progress_updates: logs.filter(l => l.log_type === 'progress').length,
+      status_changes: logs.filter(l => l.log_type === 'status_change').length,
+      comments: logs.filter(l => l.log_type === 'comment').length
     };
 
     // Build response
@@ -304,7 +314,7 @@ router.get('/:id/analytics/export', authenticate, async (req, res) => {
         t.id,
         `"${t.title.replace(/"/g, '""')}"`,
         `"${t.description.replace(/"/g, '""')}"`,
-        `"${t.phase}"`,
+        `"${t.phase.replace(/"/g, '""')}"`,
         t.status,
         t.created_at,
         t.updated_at,
