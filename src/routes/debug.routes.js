@@ -27,6 +27,4 @@ const { supabaseAdmin } = require('../config/supabase');
  */
 router.get('/tokens', authenticate, debugController.debugTokens);
 
-// Debug test-search route has been removed as per recommendations
-
 module.exports = router;
