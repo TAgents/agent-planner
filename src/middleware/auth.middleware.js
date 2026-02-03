@@ -252,4 +252,35 @@ const authenticate = async (req, res, next) => {
   }
 };
 
-module.exports = { authenticate };
+/**
+ * Optional authentication middleware
+ * Tries to authenticate but doesn't fail if no auth header is provided
+ * Sets req.user if authentication succeeds, otherwise leaves it undefined
+ */
+const optionalAuthenticate = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  
+  // If no auth header, just continue without authentication
+  if (!authHeader) {
+    return next();
+  }
+
+  // If auth header exists, try to authenticate
+  // Reuse the authenticate middleware logic
+  try {
+    await authenticate(req, res, (err) => {
+      // If authenticate calls next with error, ignore it for optional auth
+      // Just continue without user
+      if (err) {
+        req.user = undefined;
+      }
+      next();
+    });
+  } catch (error) {
+    // On any error, just continue without authentication
+    req.user = undefined;
+    next();
+  }
+};
+
+module.exports = { authenticate, optionalAuthenticate };
