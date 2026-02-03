@@ -51,6 +51,15 @@ router.get('/', authenticate, async (req, res) => {
       return res.json({ goals: [] });
     }
 
+    // Validate organization_id filter against user's memberships (security)
+    let filterOrgIds = orgIds;
+    if (organization_id) {
+      if (!orgIds.includes(organization_id)) {
+        return res.status(403).json({ error: 'Access denied to this organization' });
+      }
+      filterOrgIds = [organization_id];
+    }
+
     let query = supabaseAdmin
       .from('goals')
       .select(`
@@ -58,7 +67,7 @@ router.get('/', authenticate, async (req, res) => {
         organizations (id, name, slug),
         users!goals_created_by_fkey (id, name, email)
       `)
-      .in('organization_id', organization_id ? [organization_id] : orgIds)
+      .in('organization_id', filterOrgIds)
       .order('created_at', { ascending: false });
 
     if (status) {
