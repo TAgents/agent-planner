@@ -140,6 +140,100 @@ https://agentplanner.io
 };
 
 /**
+ * Send notification to existing user that they've been added as collaborator
+ * (No invite token - direct plan access)
+ */
+const sendCollaboratorAddedEmail = async ({ to, inviterName, planTitle, planId, role }) => {
+  const transport = initializeTransporter();
+  
+  const appUrl = process.env.APP_URL || 'https://agentplanner.io';
+  const planUrl = `${appUrl}/plans/${planId}`;
+
+  const roleDescription = {
+    viewer: 'view',
+    editor: 'view and edit',
+    admin: 'view, edit, and manage'
+  }[role] || 'view';
+
+  const subject = `${inviterName} added you to "${planTitle}"`;
+  
+  const text = `
+Hi there!
+
+${inviterName} has added you as a collaborator on the plan "${planTitle}".
+
+You now have ${role} access and can ${roleDescription} the plan.
+
+View the plan here:
+${planUrl}
+
+---
+AgentPlanner - AI-Powered Collaborative Planning
+https://agentplanner.io
+`.trim();
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 30px; border-radius: 12px 12px 0 0; text-align: center;">
+    <h1 style="color: white; margin: 0; font-size: 24px;">You've Been Added! ✨</h1>
+  </div>
+  
+  <div style="background: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
+    <p style="font-size: 16px; margin-top: 0;">
+      <strong>${inviterName}</strong> has added you as a collaborator on:
+    </p>
+    
+    <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0;">
+      <h2 style="margin: 0 0 10px 0; color: #1f2937; font-size: 20px;">${planTitle}</h2>
+      <span style="display: inline-block; background: #d1fae5; color: #065f46; padding: 4px 12px; border-radius: 20px; font-size: 14px; font-weight: 500;">
+        ${role.charAt(0).toUpperCase() + role.slice(1)} Access
+      </span>
+    </div>
+    
+    <p style="color: #6b7280; font-size: 14px;">
+      You can now ${roleDescription} this plan directly from your AgentPlanner dashboard.
+    </p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${planUrl}" style="display: inline-block; background: #10b981; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+        View Plan
+      </a>
+    </div>
+  </div>
+  
+  <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
+    <p style="margin: 0;">
+      <a href="${appUrl}" style="color: #9ca3af; text-decoration: none;">AgentPlanner</a> - AI-Powered Collaborative Planning
+    </p>
+  </div>
+</body>
+</html>
+`.trim();
+
+  try {
+    const result = await transport.sendMail({
+      from: process.env.SMTP_FROM || '"AgentPlanner" <noreply@agentplanner.io>',
+      to,
+      subject,
+      text,
+      html
+    });
+    
+    await logger.api(`Collaborator added email sent to ${to} for plan ${planId}: ${result.messageId}`);
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    await logger.error(`Failed to send collaborator added email to ${to}:`, error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
  * Send notification when someone accepts an invite
  */
 const sendInviteAcceptedEmail = async ({ to, accepterName, planTitle, planId }) => {
@@ -179,5 +273,6 @@ AgentPlanner - AI-Powered Collaborative Planning
 
 module.exports = {
   sendPlanInviteEmail,
+  sendCollaboratorAddedEmail,
   sendInviteAcceptedEmail
 };

@@ -9,7 +9,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth.middleware');
 const { supabaseAdmin } = require('../config/supabase');
-const { sendPlanInviteEmail, sendInviteAcceptedEmail } = require('../services/email');
+const { sendPlanInviteEmail, sendCollaboratorAddedEmail, sendInviteAcceptedEmail } = require('../services/email');
 const logger = require('../utils/logger');
 
 /**
@@ -155,14 +155,13 @@ router.post('/:id/share', authenticate, async (req, res) => {
         return res.status(500).json({ error: 'Failed to add collaborator' });
       }
 
-      // Send notification email
-      await sendPlanInviteEmail({
+      // Send notification email (different template for existing users - no invite token)
+      await sendCollaboratorAddedEmail({
         to: email,
         inviterName,
         planTitle: plan.title,
         planId: plan.id,
-        role,
-        token: 'direct-access' // They can access directly
+        role
       });
 
       await logger.api(`User ${email} added as ${role} to plan ${planId}`);
