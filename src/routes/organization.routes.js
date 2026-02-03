@@ -635,7 +635,8 @@ function generateSlug(name) {
 async function createPersonalOrganization(userId, userName, userEmail) {
   try {
     const name = `${userName || userEmail.split('@')[0]}'s Workspace`;
-    const slug = `personal-${userId.substring(0, 8)}`;
+    // Use full UUID to avoid collisions at scale
+    const slug = `personal-${userId}`;
 
     const { data: org, error: orgError } = await supabaseAdmin
       .from('organizations')
