@@ -1,6 +1,7 @@
 const { supabase, supabaseAdmin } = require('../config/supabase');
 const logger = require('../utils/logger');
 const { convertPendingInvites } = require('../services/invites');
+const { createPersonalOrganization } = require('../routes/organization.routes');
 require('dotenv').config();
 
 /**
@@ -44,6 +45,12 @@ const register = async (req, res, next) => {
     const inviteResult = await convertPendingInvites(authData.user.id, email, userName);
     if (inviteResult.converted > 0) {
       await logger.auth(`Converted ${inviteResult.converted} pending invites for ${email}`);
+    }
+
+    // Create personal organization for new user
+    const personalOrg = await createPersonalOrganization(authData.user.id, userName, email);
+    if (personalOrg) {
+      await logger.auth(`Personal organization created for ${email}`);
     }
 
     // Return the Supabase session data directly
