@@ -636,6 +636,89 @@ const getPlanTimeline = async (req, res, next) => {
         }))
     ];
 
+    // Get decision requests for this plan
+    const { data: decisions } = await supabase
+      .from('decision_requests')
+      .select(`
+        id, title, context, urgency, status, 
+        created_at, decided_at,
+        requested_by_agent_name,
+        decision, rationale,
+        node_id
+      `)
+      .eq('plan_id', planId)
+      .order('created_at', { ascending: true });
+
+    if (decisions && decisions.length > 0) {
+      // Add decision requested events
+      decisions.forEach(dec => {
+        timeline.push({
+          id: `decision-requested-${dec.id}`,
+          type: 'decision_requested',
+          date: dec.created_at,
+          title: `Decision requested: "${dec.title}"`,
+          description: dec.context?.substring(0, 200) + (dec.context?.length > 200 ? '...' : ''),
+          entity_id: dec.id,
+          entity_type: 'decision',
+          urgency: dec.urgency,
+          actor_type: dec.requested_by_agent_name ? 'agent' : 'human',
+          actor_name: dec.requested_by_agent_name,
+          node_id: dec.node_id
+        });
+
+        // Add decision resolved events
+        if (dec.status === 'decided' && dec.decided_at) {
+          timeline.push({
+            id: `decision-resolved-${dec.id}`,
+            type: 'decision_resolved',
+            date: dec.decided_at,
+            title: `Decision made: "${dec.title}"`,
+            description: dec.decision,
+            entity_id: dec.id,
+            entity_type: 'decision',
+            rationale: dec.rationale
+          });
+        }
+      });
+    }
+
+    // Get knowledge entries for this plan
+    const { data: stores } = await supabase
+      .from('knowledge_stores')
+      .select('id')
+      .eq('scope', 'plan')
+      .eq('scope_id', planId);
+
+    if (stores && stores.length > 0) {
+      const storeIds = stores.map(s => s.id);
+      const { data: entries } = await supabase
+        .from('knowledge_entries')
+        .select(`
+          id, title, entry_type, created_at,
+          metadata
+        `)
+        .in('store_id', storeIds)
+        .order('created_at', { ascending: true });
+
+      if (entries && entries.length > 0) {
+        entries.forEach(entry => {
+          // Skip auto-captured decisions (they already appear as decision_resolved)
+          if (entry.metadata?.source === 'decision_request') return;
+
+          timeline.push({
+            id: `knowledge-${entry.id}`,
+            type: 'knowledge_added',
+            date: entry.created_at,
+            title: `Knowledge added: "${entry.title}"`,
+            description: '',
+            entity_id: entry.id,
+            entity_type: 'knowledge',
+            entry_type: entry.entry_type
+          });
+        });
+      }
+    }
+
     // Sort timeline by date
     timeline.sort((a, b) => new Date(a.date) - new Date(b.date));
 

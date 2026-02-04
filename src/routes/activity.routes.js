@@ -156,6 +156,16 @@ router.get('/plans/:id/activity', authenticate, activityController.getPlanActivi
  * /activity/plans/{id}/timeline:
  *   get:
  *     summary: Get a chronological timeline of significant events for a plan
+ *     description: |
+ *       Returns a unified timeline including:
+ *       - Plan creation
+ *       - Node/task creation
+ *       - Status changes
+ *       - Decision requests (with urgency and actor type)
+ *       - Decision resolutions (with rationale)
+ *       - Knowledge entries added
+ *       
+ *       Each event has a type: plan_created, node_created, log, decision_requested, decision_resolved, knowledge_added
  *     tags: [Activity]
  *     security:
  *       - bearerAuth: []
@@ -168,7 +178,7 @@ router.get('/plans/:id/activity', authenticate, activityController.getPlanActivi
  *         description: The plan ID
  *     responses:
  *       200:
- *         description: Plan timeline
+ *         description: Plan timeline with all events sorted chronologically
  *       401:
  *         description: Authentication required
  *       403:
