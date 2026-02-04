@@ -10,6 +10,7 @@ const router = express.Router();
 const { authenticate } = require('../middleware/auth.middleware');
 const { supabaseAdmin } = require('../config/supabase');
 const logger = require('../utils/logger');
+const { generateEmbedding, createSearchableText, isConfigured: isEmbeddingConfigured } = require('../services/embedding');
 
 // Valid entry types
 const ENTRY_TYPES = ['decision', 'context', 'constraint', 'learning', 'reference', 'note'];
@@ -500,7 +501,17 @@ router.post('/entries', authenticate, async (req, res) => {
       return res.status(403).json({ error: 'Access denied to store' });
     }
 
-    // Create entry (embedding will be added later via separate endpoint or background job)
+    // Generate embedding for semantic search
+    let embedding = null;
+    if (isEmbeddingConfigured()) {
+      const searchableText = createSearchableText({ title, content, tags });
+      embedding = await generateEmbedding(searchableText);
+      if (embedding) {
+        await logger.api('Generated embedding for new entry');
+      }
+    }
+
+    // Create entry with embedding
     const { data: entry, error } = await supabaseAdmin
       .from('knowledge_entries')
       .insert({
@@ -511,7 +522,8 @@ router.post('/entries', authenticate, async (req, res) => {
         source_url: source_url || null,
         tags: tags || [],
         metadata: metadata || {},
-        created_by: userId
+        created_by: userId,
+        embedding
       })
       .select()
       .single();
@@ -521,7 +533,7 @@ router.post('/entries', authenticate, async (req, res) => {
       return res.status(500).json({ error: 'Failed to create entry' });
     }
 
-    await logger.api(`Knowledge entry created: ${entry.id} in store ${targetStoreId}`);
+    await logger.api(`Knowledge entry created: ${entry.id} in store ${targetStoreId}${embedding ? ' (with embedding)' : ''}`);
 
     return res.status(201).json({
       ...entry,
@@ -592,20 +604,55 @@ router.put('/entries/:id', authenticate, async (req, res) => {
     }
 
     const updates = { updated_at: new Date().toISOString() };
+    let needsNewEmbedding = false;
+    
     if (entry_type !== undefined) {
       if (!ENTRY_TYPES.includes(entry_type)) {
         return res.status(400).json({ error: 'Invalid entry_type' });
       }
       updates.entry_type = entry_type;
     }
-    if (title !== undefined) updates.title = title;
+    if (title !== undefined) {
+      updates.title = title;
+      needsNewEmbedding = true;
+    }
     if (content !== undefined) {
       updates.content = content;
-      updates.embedding = null; // Clear embedding when content changes
+      needsNewEmbedding = true;
     }
     if (source_url !== undefined) updates.source_url = source_url;
-    if (tags !== undefined) updates.tags = tags;
+    if (tags !== undefined) {
+      updates.tags = tags;
+      needsNewEmbedding = true;
+    }
     if (metadata !== undefined) updates.metadata = metadata;
+
+    // Regenerate embedding if searchable content changed
+    if (needsNewEmbedding && isEmbeddingConfigured()) {
+      // Get current entry to merge with updates
+      const { data: currentEntry } = await supabaseAdmin
+        .from('knowledge_entries')
+        .select('title, content, tags')
+        .eq('id', id)
+        .single();
+      
+      const mergedEntry = {
+        title: updates.title ?? currentEntry?.title,
+        content: updates.content ?? currentEntry?.content,
+        tags: updates.tags ?? currentEntry?.tags,
+      };
+      
+      const searchableText = createSearchableText(mergedEntry);
+      const embedding = await generateEmbedding(searchableText);
+      if (embedding) {
+        updates.embedding = embedding;
+        await logger.api(`Regenerated embedding for entry ${id}`);
+      } else {
+        updates.embedding = null;
+      }
+    } else if (needsNewEmbedding) {
+      updates.embedding = null; // Clear embedding if service not configured
+    }
 
     const { data: updated, error } = await supabaseAdmin
       .from('knowledge_entries')
@@ -751,13 +798,21 @@ router.post('/search', authenticate, async (req, res) => {
       return res.json({ results: [], message: 'No stores to search' });
     }
 
-    // For now, do text-based search. Semantic search requires embedding generation.
-    // TODO: Integrate with OpenAI/embedding service to generate query embedding
+    // Try semantic search if embedding provided or can be generated
+    let queryEmbedding = embedding;
     
-    if (embedding) {
-      // Use provided embedding for semantic search
+    if (!queryEmbedding && query && isEmbeddingConfigured()) {
+      // Generate embedding from query text
+      queryEmbedding = await generateEmbedding(query);
+      if (queryEmbedding) {
+        await logger.api('Generated query embedding for semantic search');
+      }
+    }
+    
+    if (queryEmbedding) {
+      // Use embedding for semantic search
       const { data: results, error } = await supabaseAdmin.rpc('search_knowledge', {
-        query_embedding: embedding,
+        query_embedding: queryEmbedding,
         store_ids: targetStoreIds,
         match_threshold: threshold,
         match_count: limit
@@ -765,10 +820,10 @@ router.post('/search', authenticate, async (req, res) => {
 
       if (error) {
         await logger.error('Semantic search failed:', error);
-        return res.status(500).json({ error: 'Search failed' });
+        // Fall through to text search
+      } else {
+        return res.json({ results, search_type: 'semantic' });
       }
-
-      return res.json({ results, search_type: 'semantic' });
     }
 
     // Fall back to text search
@@ -802,7 +857,7 @@ router.post('/search', authenticate, async (req, res) => {
     return res.json({ 
       results, 
       search_type: 'text',
-      message: 'Provide embedding for semantic search'
+      message: isEmbeddingConfigured() ? 'Text fallback (entries may lack embeddings)' : 'Set OPENAI_API_KEY for semantic search'
     });
 
   } catch (error) {
