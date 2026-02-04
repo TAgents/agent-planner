@@ -13,6 +13,7 @@ const {
   createDecisionResolvedMessage
 } = require('../websocket/message-schema');
 const { notifyDecisionRequested, notifyDecisionResolved } = require('../services/notifications');
+const { captureDecisionAsKnowledge } = require('../services/decision-knowledge');
 
 /**
  * Helper to check if user has access to a plan
@@ -399,6 +400,17 @@ const resolveDecisionRequest = async (req, res, next) => {
         console.error('Failed to send decision resolution notification:', notifyError);
       }
     })();
+
+    // Auto-capture decision as knowledge entry (async, don't block response)
+    captureDecisionAsKnowledge(data, planId, userId)
+      .then(entry => {
+        if (entry) {
+          console.log(`Decision captured as knowledge entry: ${entry.id}`);
+        }
+      })
+      .catch(err => {
+        console.error('Failed to capture decision as knowledge:', err);
+      });
 
     res.json(data);
   } catch (error) {
