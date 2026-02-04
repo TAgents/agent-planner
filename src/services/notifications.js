@@ -32,6 +32,21 @@ const EVENT_CONFIGS = {
     getMessage: (node, plan, actor) => 
       `🔗 Plan '${plan.title}' is now ${plan.visibility}`,
     defaultEnabled: false
+  },
+  'decision.requested': {
+    getMessage: (data, plan, actor) => 
+      `🤔 Decision needed: '${data.title}' in plan '${plan.title}'`,
+    defaultEnabled: true
+  },
+  'decision.requested.blocking': {
+    getMessage: (data, plan, actor) => 
+      `🚨 URGENT: Decision needed: '${data.title}' in plan '${plan.title}' - Agent is blocked!`,
+    defaultEnabled: true
+  },
+  'decision.resolved': {
+    getMessage: (data, plan, actor) => 
+      `✅ Decision made: '${data.title}' in plan '${plan.title}'`,
+    defaultEnabled: false
   }
 };
 
@@ -211,6 +226,119 @@ async function notifyPlanShared(plan, actor) {
   await sendNotification('plan.shared', { node: null, plan, actor, userId: plan.owner_id });
 }
 
+/**
+ * Send decision requested notification
+ * Uses 'decision.requested.blocking' for blocking urgency, otherwise 'decision.requested'
+ * 
+ * @param {Object} decision - The decision request object
+ * @param {Object} plan - The plan object
+ * @param {Object} actor - Who requested the decision (agent or user)
+ * @param {string} planOwnerId - Plan owner to notify
+ */
+async function notifyDecisionRequested(decision, plan, actor, planOwnerId) {
+  const eventType = decision.urgency === 'blocking' 
+    ? 'decision.requested.blocking' 
+    : 'decision.requested';
+  
+  await sendDecisionNotification(eventType, { decision, plan, actor, userId: planOwnerId });
+}
+
+/**
+ * Send decision resolved notification
+ * 
+ * @param {Object} decision - The resolved decision request
+ * @param {Object} plan - The plan object  
+ * @param {Object} actor - Who resolved the decision
+ * @param {string} requesterId - Original requester to notify
+ */
+async function notifyDecisionResolved(decision, plan, actor, requesterId) {
+  await sendDecisionNotification('decision.resolved', { decision, plan, actor, userId: requesterId });
+}
+
+/**
+ * Send decision-specific notification with custom payload structure
+ */
+async function sendDecisionNotification(eventType, { decision, plan, actor, userId }) {
+  try {
+    const eventConfig = EVENT_CONFIGS[eventType];
+    if (!eventConfig) {
+      logger.warn(`Unknown event type: ${eventType}`);
+      return;
+    }
+
+    // Get user's webhook settings
+    const settings = await getUserWebhookSettings(userId);
+    if (!settings || !settings.webhook_enabled || !settings.webhook_url) {
+      return;
+    }
+
+    // Check if user wants this event type
+    // For sub-events like 'decision.requested.blocking', also check if they subscribed
+    // to the base event 'decision.requested' (subscribing to base includes all variants)
+    const baseEvent = eventType.replace('.blocking', '');
+    const wantsEvent = settings.webhook_events && 
+      (settings.webhook_events.includes(eventType) || settings.webhook_events.includes(baseEvent));
+    
+    if (!wantsEvent) {
+      return;
+    }
+
+    // Build decision-specific payload
+    const payload = {
+      event: eventType,
+      timestamp: new Date().toISOString(),
+      plan: {
+        id: plan.id,
+        title: plan.title
+      },
+      decision: {
+        id: decision.id,
+        title: decision.title,
+        context: decision.context,
+        options: decision.options,
+        urgency: decision.urgency,
+        status: decision.status,
+        node_id: decision.node_id
+      },
+      actor: actor ? {
+        name: actor.name || 'Unknown',
+        type: actor.type || 'user',
+        agent_name: actor.agent_name || null
+      } : null,
+      message: eventConfig.getMessage(decision, plan, actor)
+    };
+
+    // Add resolution details if resolved
+    if (decision.status === 'decided') {
+      payload.resolution = {
+        decision: decision.decision,
+        rationale: decision.rationale,
+        decided_at: decision.decided_at
+      };
+    }
+
+    // Send webhook
+    logger.api(`Sending ${eventType} webhook to ${settings.webhook_url}`);
+    const result = await sendWebhook(settings.webhook_url, payload);
+
+    // Log delivery
+    await logDelivery(
+      userId,
+      eventType,
+      payload,
+      result.success ? 'success' : 'failed',
+      result.statusCode,
+      result.error
+    );
+
+    if (!result.success) {
+      logger.error(`Decision webhook delivery failed: ${result.error || `Status ${result.statusCode}`}`);
+    }
+  } catch (err) {
+    logger.error('Error in sendDecisionNotification:', err);
+  }
+}
+
 // Available event types for API/UI
 const AVAILABLE_EVENTS = Object.keys(EVENT_CONFIGS).map(key => ({
   type: key,
@@ -223,5 +351,8 @@ module.exports = {
   notifyStatusChange,
   notifyAssignment,
   notifyPlanShared,
+  notifyDecisionRequested,
+  notifyDecisionResolved,
+  sendDecisionNotification,
   AVAILABLE_EVENTS
 };
