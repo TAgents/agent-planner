@@ -173,6 +173,21 @@ router.get('/:id/analytics', authenticate, async (req, res) => {
       comments: logs.filter(l => l.log_type === 'comment').length
     };
 
+    // Get pending decisions count
+    const { count: pendingDecisions } = await supabaseAdmin
+      .from('decision_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('plan_id', planId)
+      .eq('status', 'pending');
+
+    // Get blocking decisions count
+    const { count: blockingDecisions } = await supabaseAdmin
+      .from('decision_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('plan_id', planId)
+      .eq('status', 'pending')
+      .eq('urgency', 'blocking');
+
     // Build response
     const analytics = {
       plan: {
@@ -188,7 +203,9 @@ router.get('/:id/analytics', authenticate, async (req, res) => {
         blocked: blockedTasks.length,
         not_started: notStartedTasks.length,
         completion_rate: completionRate,
-        total_phases: phases.length
+        total_phases: phases.length,
+        pending_decisions: pendingDecisions || 0,
+        blocking_decisions: blockingDecisions || 0
       },
       velocity: {
         tasks_per_week: velocity.tasksPerWeek,
@@ -200,7 +217,19 @@ router.get('/:id/analytics', authenticate, async (req, res) => {
       insights: {
         bottlenecks: bottlenecks,
         overdue_tasks: overdueTasks || [],
-        longest_running: longestRunning
+        longest_running: longestRunning,
+        needs_attention: [
+          ...(blockingDecisions > 0 ? [{
+            type: 'blocking_decision',
+            count: blockingDecisions,
+            message: `${blockingDecisions} blocking decision(s) awaiting response`
+          }] : []),
+          ...(blockedTasks.length > 0 ? [{
+            type: 'blocked_tasks',
+            count: blockedTasks.length,
+            message: `${blockedTasks.length} task(s) currently blocked`
+          }] : [])
+        ]
       },
       activity: activitySummary,
       period: period,
