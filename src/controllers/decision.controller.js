@@ -308,7 +308,7 @@ const resolveDecisionRequest = async (req, res, next) => {
     // Check the decision exists and is pending
     const { data: existing, error: existingError } = await supabase
       .from('decision_requests')
-      .select('status, title')
+      .select('status, title, expires_at')
       .eq('id', decisionId)
       .eq('plan_id', planId)
       .single();
@@ -321,9 +321,14 @@ const resolveDecisionRequest = async (req, res, next) => {
       return res.status(400).json({ error: 'Decision request has already been resolved' });
     }
 
+    // Check if expired
+    if (existing.expires_at && new Date(existing.expires_at) < new Date()) {
+      return res.status(400).json({ error: 'Decision request has expired' });
+    }
+
     const now = new Date().toISOString();
 
-    // Resolve the decision
+    // Resolve the decision with optimistic locking (status must still be pending)
     const { data, error } = await supabase
       .from('decision_requests')
       .update({
@@ -336,10 +341,15 @@ const resolveDecisionRequest = async (req, res, next) => {
       })
       .eq('id', decisionId)
       .eq('plan_id', planId)
+      .eq('status', 'pending') // Optimistic lock: prevent race condition
       .select()
       .single();
 
     if (error) {
+      // PGRST116 means no rows matched - someone else resolved it first
+      if (error.code === 'PGRST116') {
+        return res.status(409).json({ error: 'Decision was already resolved by another user' });
+      }
       return res.status(400).json({ error: error.message });
     }
 
@@ -373,10 +383,10 @@ const cancelDecisionRequest = async (req, res, next) => {
       return res.status(403).json({ error: 'You do not have edit access to this plan' });
     }
 
-    // Check the decision exists and is pending
+    // Check the decision exists and is pending, also get existing metadata
     const { data: existing, error: existingError } = await supabase
       .from('decision_requests')
-      .select('status')
+      .select('status, metadata')
       .eq('id', decisionId)
       .eq('plan_id', planId)
       .single();
@@ -391,20 +401,31 @@ const cancelDecisionRequest = async (req, res, next) => {
 
     const now = new Date().toISOString();
 
-    // Cancel the decision
+    // Merge cancellation reason with existing metadata (preserve existing data)
+    const updatedMetadata = {
+      ...(existing.metadata || {}),
+      ...(reason ? { cancellation_reason: reason } : {})
+    };
+
+    // Cancel the decision with optimistic locking
     const { data, error } = await supabase
       .from('decision_requests')
       .update({
         status: 'cancelled',
-        metadata: reason ? { cancellation_reason: reason } : {},
+        metadata: updatedMetadata,
         updated_at: now
       })
       .eq('id', decisionId)
       .eq('plan_id', planId)
+      .eq('status', 'pending') // Optimistic lock
       .select()
       .single();
 
     if (error) {
+      // PGRST116 means no rows matched - status changed
+      if (error.code === 'PGRST116') {
+        return res.status(409).json({ error: 'Decision status changed - it may have been resolved or cancelled by another user' });
+      }
       return res.status(400).json({ error: error.message });
     }
 
