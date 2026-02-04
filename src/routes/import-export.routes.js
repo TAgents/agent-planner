@@ -232,6 +232,14 @@ router.post('/import', authenticate, async (req, res) => {
           for (let j = 0; j < phase.tasks.length; j++) {
             const task = phase.tasks[j];
             
+            // Merge acceptance_criteria into description for backward compatibility
+            let taskDescription = task.description || '';
+            if (task.acceptance_criteria) {
+              taskDescription = taskDescription 
+                ? `${taskDescription}\n\n**Acceptance Criteria:**\n${task.acceptance_criteria}`
+                : task.acceptance_criteria;
+            }
+            
             const { error: taskError } = await supabaseAdmin
               .from('plan_nodes')
               .insert({
@@ -239,11 +247,10 @@ router.post('/import', authenticate, async (req, res) => {
                 parent_id: phaseNode.id,
                 node_type: 'task',
                 title: task.title,
-                description: task.description || '',
+                description: taskDescription,
                 status: mapStatus(task.status),
                 context: task.context || '',
                 agent_instructions: task.agent_instructions || '',
-                acceptance_criteria: task.acceptance_criteria || '',
                 order_index: j
               });
 
@@ -312,8 +319,7 @@ function buildHierarchy(nodes) {
           description: task.description,
           status: task.status,
           context: task.context,
-          agent_instructions: task.agent_instructions,
-          acceptance_criteria: task.acceptance_criteria
+          agent_instructions: task.agent_instructions
         }))
     }));
 
@@ -381,12 +387,6 @@ function generateMarkdown(plan, structure) {
             lines.push('```');
             lines.push(task.agent_instructions);
             lines.push('```');
-            lines.push('');
-          }
-          
-          if (task.acceptance_criteria) {
-            lines.push('**Acceptance Criteria:**');
-            lines.push(task.acceptance_criteria);
             lines.push('');
           }
         });
@@ -500,8 +500,7 @@ function parseMarkdownImport(markdown) {
         description: '',
         status: 'not_started',
         context: '',
-        agent_instructions: '',
-        acceptance_criteria: ''
+        agent_instructions: ''
       };
       currentPhase.tasks.push(currentTask);
       currentField = null;
@@ -545,10 +544,17 @@ function parseMarkdownImport(markdown) {
       continue;
     }
     if (trimmed === '**Acceptance Criteria:**') {
+      // Backward compatibility: merge acceptance criteria into description
       if (currentField && descriptionLines.length > 0) {
         currentTask[currentField] = descriptionLines.join('\n').trim();
       }
-      currentField = 'acceptance_criteria';
+      // Append header to description to indicate criteria follows
+      if (currentTask) {
+        currentTask.description = currentTask.description 
+          ? `${currentTask.description}\n\n**Acceptance Criteria:**`
+          : '**Acceptance Criteria:**';
+      }
+      currentField = 'description';
       descriptionLines = [];
       continue;
     }

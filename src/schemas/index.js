@@ -72,9 +72,6 @@
  *         agent_instructions:
  *           type: string
  *           nullable: true
- *         acceptance_criteria:
- *           type: string
- *           nullable: true
  *         metadata:
  *           type: object
  *     

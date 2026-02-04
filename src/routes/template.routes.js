@@ -269,7 +269,7 @@ router.post('/', authenticate, async (req, res) => {
     // Get plan structure (nodes)
     const { data: nodes, error: nodesError } = await supabaseAdmin
       .from('plan_nodes')
-      .select('id, parent_id, node_type, title, description, status, order_index, context, agent_instructions, acceptance_criteria')
+      .select('id, parent_id, node_type, title, description, status, order_index, context, agent_instructions')
       .eq('plan_id', plan_id)
       .order('order_index');
 
@@ -584,8 +584,7 @@ function buildTemplateStructure(nodes) {
           title: task.title,
           description: task.description || '',
           context: task.context || '',
-          agent_instructions: task.agent_instructions || '',
-          acceptance_criteria: task.acceptance_criteria || ''
+          agent_instructions: task.agent_instructions || ''
         }));
 
       return {
@@ -630,6 +629,14 @@ async function createNodesFromStructure(planId, parentId, phases) {
       for (let j = 0; j < phase.tasks.length; j++) {
         const task = phase.tasks[j];
         
+        // Merge acceptance_criteria into description for backward compatibility with old templates
+        let taskDescription = task.description || '';
+        if (task.acceptance_criteria) {
+          taskDescription = taskDescription 
+            ? `${taskDescription}\n\n**Acceptance Criteria:**\n${task.acceptance_criteria}`
+            : task.acceptance_criteria;
+        }
+        
         const { error: taskError } = await supabaseAdmin
           .from('plan_nodes')
           .insert({
@@ -637,10 +644,9 @@ async function createNodesFromStructure(planId, parentId, phases) {
             parent_id: phaseNode.id,
             node_type: 'task',
             title: task.title,
-            description: task.description || '',
+            description: taskDescription,
             context: task.context || '',
             agent_instructions: task.agent_instructions || '',
-            acceptance_criteria: task.acceptance_criteria || '',
             status: 'not_started',
             order_index: j
           });

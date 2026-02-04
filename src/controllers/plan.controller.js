@@ -238,7 +238,7 @@ const getPlan = async (req, res, next) => {
     // Get the root node
     const { data: rootNode, error: nodeError } = await supabase
       .from('plan_nodes')
-      .select('id, node_type, title, description, status, created_at, updated_at, context, agent_instructions, acceptance_criteria')
+      .select('id, node_type, title, description, status, created_at, updated_at, context, agent_instructions')
       .eq('plan_id', id)
       .eq('node_type', 'root')
       .single();
@@ -688,7 +688,7 @@ const getPlanContext = async (req, res, next) => {
     // Get all nodes for the plan
     const { data: nodes, error: nodesError } = await supabase
       .from('plan_nodes')
-      .select('id, parent_id, node_type, title, description, status, context, agent_instructions, acceptance_criteria')
+      .select('id, parent_id, node_type, title, description, status, context, agent_instructions')
       .eq('plan_id', id)
       .order('created_at', { ascending: true });
 
@@ -1071,7 +1071,7 @@ const getPublicPlan = async (req, res, next) => {
     // Get the root node
     const { data: rootNode, error: nodeError } = await supabase
       .from('plan_nodes')
-      .select('id, node_type, title, description, status, created_at, updated_at, context, agent_instructions, acceptance_criteria')
+      .select('id, node_type, title, description, status, created_at, updated_at, context, agent_instructions')
       .eq('plan_id', id)
       .eq('node_type', 'root')
       .single();
@@ -1144,7 +1144,7 @@ const getPublicPlanById = async (req, res, next) => {
     // Get all nodes for the plan
     const { data: nodes, error: nodesError } = await supabase
       .from('plan_nodes')
-      .select('id, parent_id, node_type, title, description, status, context, agent_instructions, acceptance_criteria, created_at, updated_at')
+      .select('id, parent_id, node_type, title, description, status, context, agent_instructions, created_at, updated_at')
       .eq('plan_id', id)
       .order('created_at', { ascending: true });
 

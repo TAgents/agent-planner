@@ -27,13 +27,12 @@ const createNode = z.object({
   parent_id: optionalUuid.describe('Parent node ID (defaults to root node if not provided)'),
   node_type: nodeType.describe('Type of node'),
   title: nonEmptyString(255).describe('Node title'),
-  description: optionalString(10000).describe('Node description'),
+  description: optionalString(10000).describe('Node description (include acceptance criteria here)'),
   status: nodeStatus.optional().default('not_started'),
   order_index: positiveInt.optional().describe('Position among siblings'),
   due_date: dateString.describe('Due date in ISO 8601 format'),
   context: optionalString(50000).describe('Additional context for the node'),
   agent_instructions: optionalString(50000).describe('Instructions for AI agents'),
-  acceptance_criteria: optionalString(10000).describe('Criteria for completion'),
   metadata: metadata
 }).strict();
 
@@ -49,7 +48,6 @@ const updateNode = z.object({
   due_date: dateString,
   context: optionalString(50000),
   agent_instructions: optionalString(50000),
-  acceptance_criteria: optionalString(10000),
   metadata: metadata
 }).strict();
 

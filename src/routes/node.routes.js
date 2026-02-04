@@ -55,9 +55,6 @@ const { validate, schemas } = require('../validation');
  *         agent_instructions:
  *           type: string
  *           nullable: true
- *         acceptance_criteria:
- *           type: string
- *           nullable: true
  *         metadata:
  *           type: object
  *         children:
@@ -88,7 +85,7 @@ const { validate, schemas } = require('../validation');
  *         schema:
  *           type: boolean
  *           default: false
- *         description: Include full node details (description, context, agent_instructions, acceptance_criteria, metadata, timestamps). Default is false for minimal response size.
+ *         description: Include full node details (description, context, agent_instructions, metadata, timestamps). Default is false for minimal response size.
  *     responses:
  *       200:
  *         description: Hierarchical tree of plan nodes
@@ -191,8 +188,6 @@ router.get('/:id/nodes/:nodeId', authenticate, nodeController.getNode);
  *                 type: string
  *               agent_instructions:
  *                 type: string
- *               acceptance_criteria:
- *                 type: string
  *               metadata:
  *                 type: object
  *     responses:
@@ -259,8 +254,6 @@ router.post('/:id/nodes', authenticate, ...validate({ params: schemas.node.planI
  *               context:
  *                 type: string
  *               agent_instructions:
- *                 type: string
- *               acceptance_criteria:
  *                 type: string
  *               metadata:
  *                 type: object

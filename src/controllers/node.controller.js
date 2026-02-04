@@ -100,7 +100,6 @@ const getNodes = async (req, res, next) => {
       updated_at,
       context,
       agent_instructions,
-      acceptance_criteria,
       metadata
     `;
 
@@ -165,7 +164,6 @@ const getNode = async (req, res, next) => {
         updated_at, 
         context, 
         agent_instructions, 
-        acceptance_criteria, 
         metadata
       `)
       .eq('id', nodeId)
@@ -201,7 +199,6 @@ const createNode = async (req, res, next) => {
       due_date: dueDate,
       context,
       agent_instructions: agentInstructions,
-      acceptance_criteria: acceptanceCriteria,
       metadata,
     } = req.body;
     const userId = req.user.id;
@@ -296,7 +293,6 @@ const createNode = async (req, res, next) => {
           updated_at: now,
           context: context || description || '',
           agent_instructions: agentInstructions || null,
-          acceptance_criteria: acceptanceCriteria || null,
           metadata: metadata || {},
         },
       ])
@@ -344,7 +340,6 @@ const updateNode = async (req, res, next) => {
       due_date: dueDate,
       context,
       agent_instructions: agentInstructions,
-      acceptance_criteria: acceptanceCriteria,
       metadata,
     } = req.body;
     const userId = req.user.id;
@@ -388,7 +383,6 @@ const updateNode = async (req, res, next) => {
     if (dueDate !== undefined) updates.due_date = dueDate;
     if (context !== undefined) updates.context = context;
     if (agentInstructions !== undefined) updates.agent_instructions = agentInstructions;
-    if (acceptanceCriteria !== undefined) updates.acceptance_criteria = acceptanceCriteria;
     if (metadata !== undefined) updates.metadata = metadata;
 
     // Perform the update
@@ -597,7 +591,6 @@ const getNodeContext = async (req, res, next) => {
         updated_at, 
         context, 
         agent_instructions, 
-        acceptance_criteria, 
         metadata
       `)
       .eq('id', nodeId)

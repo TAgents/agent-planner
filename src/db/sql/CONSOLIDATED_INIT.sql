@@ -51,7 +51,6 @@ CREATE TABLE plan_nodes (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   context TEXT,
   agent_instructions TEXT,
-  acceptance_criteria TEXT,
   metadata JSONB DEFAULT '{}'::jsonb
 );
 
@@ -81,18 +80,6 @@ CREATE TABLE plan_node_labels (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   plan_node_id UUID NOT NULL REFERENCES plan_nodes(id) ON DELETE CASCADE,
   label TEXT NOT NULL
-);
-
--- Plan node artifacts table
-CREATE TABLE plan_node_artifacts (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  plan_node_id UUID NOT NULL REFERENCES plan_nodes(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  content_type TEXT NOT NULL,
-  url TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  created_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  metadata JSONB DEFAULT '{}'::jsonb
 );
 
 -- Plan node logs table
@@ -130,7 +117,6 @@ CREATE INDEX plan_collaborators_plan_id_idx ON plan_collaborators (plan_id);
 CREATE INDEX plan_collaborators_user_id_idx ON plan_collaborators (user_id);
 CREATE INDEX plan_comments_plan_node_id_idx ON plan_comments (plan_node_id);
 CREATE INDEX plan_node_labels_plan_node_id_idx ON plan_node_labels (plan_node_id);
-CREATE INDEX plan_node_artifacts_plan_node_id_idx ON plan_node_artifacts (plan_node_id);
 CREATE INDEX plan_node_logs_plan_node_id_idx ON plan_node_logs (plan_node_id);
 CREATE INDEX api_tokens_user_id_idx ON api_tokens (user_id);
 CREATE INDEX idx_api_tokens_token_hash ON api_tokens (token_hash);
@@ -144,8 +130,6 @@ CREATE INDEX idx_plan_comments_content ON plan_comments
   USING gin (to_tsvector('english', content));
 CREATE INDEX idx_plan_node_logs_content ON plan_node_logs 
   USING gin (to_tsvector('english', content));
-CREATE INDEX idx_plan_node_artifacts_name ON plan_node_artifacts 
-  USING gin (to_tsvector('english', name));
 
 -- Performance indexes
 CREATE INDEX idx_plan_nodes_status ON plan_nodes (status);
@@ -153,7 +137,6 @@ CREATE INDEX idx_plan_nodes_node_type ON plan_nodes (node_type);
 CREATE INDEX idx_plan_nodes_created_at ON plan_nodes (created_at);
 CREATE INDEX idx_plan_node_logs_log_type ON plan_node_logs (log_type);
 CREATE INDEX idx_plan_node_logs_tags ON plan_node_logs USING gin (tags);
-CREATE INDEX idx_plan_node_artifacts_content_type ON plan_node_artifacts (content_type);
 
 -- ============================================================================
 -- FUNCTIONS
@@ -200,8 +183,7 @@ BEGIN
             n.title ILIKE '%' || search_query || '%' OR
             n.description ILIKE '%' || search_query || '%' OR
             n.context ILIKE '%' || search_query || '%' OR
-            n.agent_instructions ILIKE '%' || search_query || '%' OR
-            n.acceptance_criteria ILIKE '%' || search_query || '%'
+            n.agent_instructions ILIKE '%' || search_query || '%'
         );
     
     -- Return matching comments
@@ -237,23 +219,6 @@ BEGIN
     WHERE 
         n.plan_id = input_plan_id AND
         l.content ILIKE '%' || search_query || '%';
-    
-    -- Return matching artifacts
-    RETURN QUERY
-    SELECT 
-        a.id,
-        'artifact'::TEXT as type,
-        a.name as title,
-        a.url as content,
-        a.created_at,
-        a.created_by as user_id
-    FROM 
-        plan_node_artifacts a
-    JOIN 
-        plan_nodes n ON a.plan_node_id = n.id
-    WHERE 
-        n.plan_id = input_plan_id AND
-        a.name ILIKE '%' || search_query || '%';
 END;
 $$ LANGUAGE plpgsql;
 
@@ -288,7 +253,6 @@ ALTER TABLE plan_nodes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE plan_collaborators ENABLE ROW LEVEL SECURITY;
 ALTER TABLE plan_comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE plan_node_labels ENABLE ROW LEVEL SECURITY;
-ALTER TABLE plan_node_artifacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE plan_node_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api_tokens ENABLE ROW LEVEL SECURITY;
 
@@ -527,70 +491,6 @@ CREATE POLICY plan_node_labels_delete_policy ON plan_node_labels
     )
   );
 
--- Plan node artifacts policies
-CREATE POLICY plan_node_artifacts_select_policy ON plan_node_artifacts
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM plan_nodes 
-      WHERE id = plan_node_artifacts.plan_node_id AND
-      EXISTS (
-        SELECT 1 FROM plans 
-        WHERE id = plan_nodes.plan_id AND (
-          owner_id = auth.uid() OR 
-          EXISTS (
-            SELECT 1 FROM plan_collaborators 
-            WHERE plan_id = plans.id AND user_id = auth.uid()
-          )
-        )
-      )
-    )
-  );
-
-CREATE POLICY plan_node_artifacts_insert_policy ON plan_node_artifacts
-  FOR INSERT WITH CHECK (
-    created_by = auth.uid() AND
-    EXISTS (
-      SELECT 1 FROM plan_nodes 
-      WHERE id = plan_node_artifacts.plan_node_id AND
-      EXISTS (
-        SELECT 1 FROM plans 
-        WHERE id = plan_nodes.plan_id AND (
-          owner_id = auth.uid() OR 
-          EXISTS (
-            SELECT 1 FROM plan_collaborators 
-            WHERE plan_id = plans.id AND user_id = auth.uid() AND role IN ('admin', 'editor')
-          )
-        )
-      )
-    )
-  );
-
-CREATE POLICY plan_node_artifacts_update_policy ON plan_node_artifacts
-  FOR UPDATE USING (
-    created_by = auth.uid() OR
-    EXISTS (
-      SELECT 1 FROM plan_nodes 
-      WHERE id = plan_node_artifacts.plan_node_id AND
-      EXISTS (
-        SELECT 1 FROM plans 
-        WHERE id = plan_nodes.plan_id AND owner_id = auth.uid()
-      )
-    )
-  );
-
-CREATE POLICY plan_node_artifacts_delete_policy ON plan_node_artifacts
-  FOR DELETE USING (
-    created_by = auth.uid() OR
-    EXISTS (
-      SELECT 1 FROM plan_nodes 
-      WHERE id = plan_node_artifacts.plan_node_id AND
-      EXISTS (
-        SELECT 1 FROM plans 
-        WHERE id = plan_nodes.plan_id AND owner_id = auth.uid()
-      )
-    )
-  );
-
 -- Plan node logs policies
 CREATE POLICY plan_node_logs_select_policy ON plan_node_logs
   FOR SELECT USING (
@@ -666,11 +566,10 @@ COMMENT ON TABLE plan_nodes IS 'Hierarchical task/phase structure within plans';
 COMMENT ON TABLE plan_collaborators IS 'Users who have access to specific plans';
 COMMENT ON TABLE plan_comments IS 'Comments on plan nodes by users or AI agents';
 COMMENT ON TABLE plan_node_labels IS 'Tags/labels for categorizing plan nodes';
-COMMENT ON TABLE plan_node_artifacts IS 'File attachments and external resources for nodes';
 COMMENT ON TABLE plan_node_logs IS 'Activity logs and decision records for nodes';
 COMMENT ON TABLE api_tokens IS 'API authentication tokens for external access';
 
-COMMENT ON FUNCTION search_plan IS 'Full-text search across all plan content';
+COMMENT ON FUNCTION search_plan IS 'Full-text search across plan content (nodes, comments, logs)';
 COMMENT ON FUNCTION update_updated_at_column IS 'Automatically updates updated_at timestamp';
 
 -- ============================================================================

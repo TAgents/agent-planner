@@ -339,10 +339,7 @@ router.post('/repos/:owner/:name/issues', authenticate, githubController.createI
  *                       description: Task title (becomes issue title)
  *                     description:
  *                       type: string
- *                       description: Task description
- *                     acceptance_criteria:
- *                       type: string
- *                       description: Acceptance criteria
+ *                       description: Task description (includes acceptance criteria if applicable)
  *                     context:
  *                       type: string
  *                       description: Additional context

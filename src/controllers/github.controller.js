@@ -331,10 +331,6 @@ const createIssuesFromTasks = async (req, res, next) => {
           issueBody += `## Description\n${task.description}\n\n`;
         }
 
-        if (task.acceptance_criteria) {
-          issueBody += `## Acceptance Criteria\n${task.acceptance_criteria}\n\n`;
-        }
-
         if (task.context) {
           issueBody += `## Context\n${task.context}\n\n`;
         }

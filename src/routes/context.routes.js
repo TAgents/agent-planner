@@ -48,7 +48,7 @@ async function getAncestry(nodeId, planId) {
   while (currentId) {
     const { data: node } = await supabaseAdmin
       .from('plan_nodes')
-      .select('id, parent_id, node_type, title, description, status, context, agent_instructions, acceptance_criteria')
+      .select('id, parent_id, node_type, title, description, status, context, agent_instructions')
       .eq('id', currentId)
       .eq('plan_id', planId)
       .single();
@@ -236,8 +236,7 @@ router.get('/', authenticate, async (req, res) => {
         description: node.description,
         status: node.status,
         context: node.context,
-        agent_instructions: node.agent_instructions,
-        acceptance_criteria: node.acceptance_criteria
+        agent_instructions: node.agent_instructions
       },
       ancestry: ancestry.map(n => ({
         id: n.id,

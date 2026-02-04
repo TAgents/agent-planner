@@ -85,14 +85,13 @@ const searchNodes = async (req, res, next) => {
         updated_at, 
         context, 
         agent_instructions, 
-        acceptance_criteria, 
         metadata
       `)
       .eq('plan_id', planId);
 
     // Add full-text search if query param is provided
     if (query) {
-      planNodesQuery = planNodesQuery.or(`title.ilike.%${query}%,description.ilike.%${query}%,context.ilike.%${query}%,agent_instructions.ilike.%${query}%,acceptance_criteria.ilike.%${query}%`);
+      planNodesQuery = planNodesQuery.or(`title.ilike.%${query}%,description.ilike.%${query}%,context.ilike.%${query}%,agent_instructions.ilike.%${query}%`);
     }
 
     // Add status filter if provided
@@ -201,7 +200,7 @@ const globalSearch = async (req, res, next) => {
           created_at
         `)
         .in('plan_id', planIds)
-        .or(`title.ilike.%${query}%,description.ilike.%${query}%,context.ilike.%${query}%,agent_instructions.ilike.%${query}%,acceptance_criteria.ilike.%${query}%`)
+        .or(`title.ilike.%${query}%,description.ilike.%${query}%,context.ilike.%${query}%,agent_instructions.ilike.%${query}%`)
         .order('created_at', { ascending: false });
 
       if (nodesError) {
