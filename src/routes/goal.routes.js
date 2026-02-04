@@ -150,23 +150,34 @@ router.get('/:id', authenticate, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Get linked plans
-    const { data: linkedPlans } = await supabaseAdmin
+    // Get linked plans - fetch plan_goals first, then plans separately
+    const { data: planGoalLinks } = await supabaseAdmin
       .from('plan_goals')
-      .select(`
-        linked_at,
-        plans (id, title, status, progress)
-      `)
+      .select('plan_id, linked_at')
       .eq('goal_id', id);
+
+    let linkedPlans = [];
+    if (planGoalLinks && planGoalLinks.length > 0) {
+      const planIds = planGoalLinks.map(pg => pg.plan_id);
+      const { data: plans } = await supabaseAdmin
+        .from('plans')
+        .select('id, title, status, progress')
+        .in('id', planIds);
+
+      linkedPlans = (plans || []).map(plan => {
+        const link = planGoalLinks.find(pg => pg.plan_id === plan.id);
+        return {
+          ...plan,
+          linked_at: link?.linked_at
+        };
+      });
+    }
 
     return res.json({
       ...goal,
       organization: goal.organizations,
       created_by_user: goal.users,
-      linked_plans: linkedPlans?.map(lp => ({
-        ...lp.plans,
-        linked_at: lp.linked_at
-      })) || [],
+      linked_plans: linkedPlans,
       organizations: undefined,
       users: undefined
     });
