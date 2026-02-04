@@ -1140,6 +1140,120 @@ const getNodeLogs = async (req, res, next) => {
   }
 };
 
+/**
+ * Request agent assistance on a task
+ */
+const requestAgent = async (req, res, next) => {
+  try {
+    const { id: planId, nodeId } = req.params;
+    const { request_type, message } = req.body;
+    const userId = req.user.id;
+
+    // Validate request_type
+    const validTypes = ['start', 'review', 'help', 'continue'];
+    if (!request_type || !validTypes.includes(request_type)) {
+      return res.status(400).json({ 
+        error: `Invalid request_type. Must be one of: ${validTypes.join(', ')}` 
+      });
+    }
+
+    // Check access
+    const hasAccess = await checkPlanAccess(planId, userId);
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'You do not have access to this plan' });
+    }
+
+    // Check node exists and belongs to plan
+    const { data: node, error: nodeError } = await supabase
+      .from('plan_nodes')
+      .select('id, title, node_type')
+      .eq('id', nodeId)
+      .eq('plan_id', planId)
+      .single();
+
+    if (nodeError || !node) {
+      return res.status(404).json({ error: 'Node not found in this plan' });
+    }
+
+    // Update node with agent request
+    const { data: updated, error: updateError } = await supabase
+      .from('plan_nodes')
+      .update({
+        agent_requested: request_type,
+        agent_requested_at: new Date().toISOString(),
+        agent_requested_by: userId,
+        agent_request_message: message || null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', nodeId)
+      .select()
+      .single();
+
+    if (updateError) {
+      return res.status(500).json({ error: updateError.message });
+    }
+
+    // Log the request
+    const userName = req.user.name || req.user.email;
+    await supabase
+      .from('plan_node_logs')
+      .insert({
+        id: uuidv4(),
+        plan_node_id: nodeId,
+        user_id: userId,
+        content: `Requested agent to ${request_type}${message ? `: "${message}"` : ''}`,
+        log_type: 'progress',
+        created_at: new Date().toISOString()
+      });
+
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Clear agent request on a task
+ */
+const clearAgentRequest = async (req, res, next) => {
+  try {
+    const { id: planId, nodeId } = req.params;
+    const userId = req.user.id;
+
+    // Check access
+    const hasAccess = await checkPlanAccess(planId, userId);
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'You do not have access to this plan' });
+    }
+
+    // Clear the agent request fields
+    const { data: updated, error: updateError } = await supabase
+      .from('plan_nodes')
+      .update({
+        agent_requested: null,
+        agent_requested_at: null,
+        agent_requested_by: null,
+        agent_request_message: null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', nodeId)
+      .eq('plan_id', planId)
+      .select()
+      .single();
+
+    if (updateError) {
+      if (updateError.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Node not found in this plan' });
+      }
+      return res.status(500).json({ error: updateError.message });
+    }
+
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getNodes,
   getNode,
@@ -1154,4 +1268,6 @@ module.exports = {
   moveNode,
   addLogEntry,
   getNodeLogs,
+  requestAgent,
+  clearAgentRequest,
 };
