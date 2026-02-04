@@ -19,14 +19,14 @@ async function captureDecisionAsKnowledge(decision, planId, userId) {
   try {
     // Only capture decided decisions
     if (decision.status !== 'decided') {
-      logger.api(`Skipping knowledge capture - decision status is ${decision.status}`);
+      await logger.api(`Skipping knowledge capture - decision status is ${decision.status}`);
       return null;
     }
 
     // Get or create knowledge store for this plan
     const store = await getOrCreatePlanStore(planId, userId);
     if (!store) {
-      logger.error('Failed to get/create knowledge store for plan');
+      await logger.error('Failed to get/create knowledge store for plan');
       return null;
     }
 
@@ -51,7 +51,7 @@ async function captureDecisionAsKnowledge(decision, planId, userId) {
       const searchableText = createSearchableText({ title, content, tags });
       embedding = await generateEmbedding(searchableText);
       if (embedding) {
-        logger.api('Generated embedding for decision knowledge entry');
+        await logger.api('Generated embedding for decision knowledge entry');
       }
     }
 
@@ -72,15 +72,15 @@ async function captureDecisionAsKnowledge(decision, planId, userId) {
       .single();
 
     if (error) {
-      logger.error('Failed to create decision knowledge entry:', error);
+      await logger.error('Failed to create decision knowledge entry:', error);
       return null;
     }
 
-    logger.api(`Decision captured as knowledge entry: ${entry.id} in store ${store.id}`);
+    await logger.api(`Decision captured as knowledge entry: ${entry.id} in store ${store.id}`);
     return entry;
 
   } catch (err) {
-    logger.error('Error in captureDecisionAsKnowledge:', err);
+    await logger.error('Error in captureDecisionAsKnowledge:', err);
     return null;
   }
 }
@@ -109,29 +109,31 @@ async function getOrCreatePlanStore(planId, userId) {
       .eq('id', planId)
       .single();
 
-    // Create new store
+    // Create new store using upsert to handle race conditions
     const { data: newStore, error } = await supabaseAdmin
       .from('knowledge_stores')
-      .insert({
+      .upsert({
         name: `${plan?.title || 'Plan'} Knowledge`,
         description: 'Auto-created knowledge store for plan decisions and learnings',
         scope: 'plan',
-        scope_id: planId,
-        created_by: userId
+        scope_id: planId
+      }, { 
+        onConflict: 'scope,scope_id',
+        ignoreDuplicates: false 
       })
       .select()
       .single();
 
     if (error) {
-      logger.error('Failed to create knowledge store:', error);
+      await logger.error('Failed to create knowledge store:', error);
       return null;
     }
 
-    logger.api(`Created knowledge store for plan: ${newStore.id}`);
+    await logger.api(`Created knowledge store for plan: ${newStore.id}`);
     return newStore;
 
   } catch (err) {
-    logger.error('Error in getOrCreatePlanStore:', err);
+    await logger.error('Error in getOrCreatePlanStore:', err);
     return null;
   }
 }
