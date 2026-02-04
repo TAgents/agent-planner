@@ -151,18 +151,30 @@ router.get('/:id', authenticate, async (req, res) => {
     }
 
     // Get linked plans - fetch plan_goals first, then plans separately
-    const { data: planGoalLinks } = await supabaseAdmin
+    const { data: planGoalLinks, error: linkError } = await supabaseAdmin
       .from('plan_goals')
       .select('plan_id, linked_at')
       .eq('goal_id', id);
 
+    if (linkError) {
+      await logger.error('Error fetching plan_goals:', linkError);
+    }
+    await logger.api(`Goal ${id} has ${planGoalLinks?.length || 0} plan links`);
+
     let linkedPlans = [];
     if (planGoalLinks && planGoalLinks.length > 0) {
       const planIds = planGoalLinks.map(pg => pg.plan_id);
-      const { data: plans } = await supabaseAdmin
+      await logger.api(`Fetching plans: ${planIds.join(', ')}`);
+      
+      const { data: plans, error: plansError } = await supabaseAdmin
         .from('plans')
         .select('id, title, status, progress')
         .in('id', planIds);
+
+      if (plansError) {
+        await logger.error('Error fetching plans:', plansError);
+      }
+      await logger.api(`Found ${plans?.length || 0} plans`);
 
       linkedPlans = (plans || []).map(plan => {
         const link = planGoalLinks.find(pg => pg.plan_id === plan.id);
