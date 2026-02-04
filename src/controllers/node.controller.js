@@ -1120,16 +1120,19 @@ const getNodeLogs = async (req, res, next) => {
       return res.status(500).json({ error: error.message });
     }
 
-    // Transform data to include user info and extract actor_type
-    const logsWithUser = data.map(log => ({
-      ...log,
-      actor_type: log.metadata?.actor_type || 'human', // Default to human for backward compatibility
-      user: {
-        id: log.user_id,
-        name: null,
-        email: null
-      }
-    }));
+    // Transform data to include user info and extract actor_type (remove internal metadata field)
+    const logsWithUser = data.map(log => {
+      const { metadata, ...logWithoutMetadata } = log;
+      return {
+        ...logWithoutMetadata,
+        actor_type: metadata?.actor_type || 'human', // Default to human for backward compatibility
+        user: {
+          id: log.user_id,
+          name: null,
+          email: null
+        }
+      };
+    });
 
     res.json(logsWithUser);
   } catch (error) {
