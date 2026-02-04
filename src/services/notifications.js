@@ -47,6 +47,31 @@ const EVENT_CONFIGS = {
     getMessage: (data, plan, actor) => 
       `✅ Decision made: '${data.title}' in plan '${plan.title}'`,
     defaultEnabled: false
+  },
+  'task.agent_requested': {
+    getMessage: (node, plan, actor) => 
+      `🤖 Agent requested to ${node.agent_requested} task '${node.title}' in plan '${plan.title}'`,
+    defaultEnabled: true
+  },
+  'task.start_requested': {
+    getMessage: (node, plan, actor) => 
+      `🚀 Agent requested to START task '${node.title}' in plan '${plan.title}'`,
+    defaultEnabled: true
+  },
+  'task.review_requested': {
+    getMessage: (node, plan, actor) => 
+      `👀 Agent requested to REVIEW task '${node.title}' in plan '${plan.title}'`,
+    defaultEnabled: true
+  },
+  'task.help_requested': {
+    getMessage: (node, plan, actor) => 
+      `💡 Agent requested to HELP with task '${node.title}' in plan '${plan.title}'`,
+    defaultEnabled: true
+  },
+  'task.continue_requested': {
+    getMessage: (node, plan, actor) => 
+      `▶️ Agent requested to CONTINUE task '${node.title}' in plan '${plan.title}'`,
+    defaultEnabled: true
   }
 };
 
@@ -339,10 +364,106 @@ async function sendDecisionNotification(eventType, { decision, plan, actor, user
   }
 }
 
+/**
+ * Send agent request notification
+ * 
+ * @param {Object} node - The task/node with agent_requested set
+ * @param {Object} plan - The plan object
+ * @param {Object} actor - Who requested the agent
+ * @param {string} planOwnerId - Plan owner to notify
+ */
+async function notifyAgentRequested(node, plan, actor, planOwnerId) {
+  // Map request type to specific event
+  const eventMap = {
+    'start': 'task.start_requested',
+    'review': 'task.review_requested',
+    'help': 'task.help_requested',
+    'continue': 'task.continue_requested'
+  };
+  
+  const eventType = eventMap[node.agent_requested] || 'task.agent_requested';
+  
+  await sendAgentRequestNotification(eventType, { node, plan, actor, userId: planOwnerId });
+}
+
+/**
+ * Send agent request notification with full task context
+ */
+async function sendAgentRequestNotification(eventType, { node, plan, actor, userId }) {
+  try {
+    const eventConfig = EVENT_CONFIGS[eventType] || EVENT_CONFIGS['task.agent_requested'];
+    
+    // Get user's webhook settings
+    const settings = await getUserWebhookSettings(userId);
+    if (!settings || !settings.webhook_enabled || !settings.webhook_url) {
+      return;
+    }
+
+    // Check if user wants this event type (also check base event)
+    const baseEvent = 'task.agent_requested';
+    const wantsEvent = settings.webhook_events && 
+      (settings.webhook_events.includes(eventType) || settings.webhook_events.includes(baseEvent));
+    
+    if (!wantsEvent) {
+      return;
+    }
+
+    // Build payload with full task context for agent
+    const payload = {
+      event: eventType,
+      timestamp: new Date().toISOString(),
+      plan: {
+        id: plan.id,
+        title: plan.title
+      },
+      task: {
+        id: node.id,
+        title: node.title,
+        description: node.description,
+        node_type: node.node_type,
+        status: node.status,
+        agent_instructions: node.agent_instructions,
+        context: node.context
+      },
+      request: {
+        type: node.agent_requested,
+        message: node.agent_request_message,
+        requested_at: node.agent_requested_at,
+        requested_by: actor?.name || 'Unknown'
+      },
+      actor: actor ? {
+        name: actor.name,
+        type: 'user'
+      } : null,
+      message: eventConfig.getMessage(node, plan, actor)
+    };
+
+    // Send webhook
+    logger.api(`Sending ${eventType} webhook to ${settings.webhook_url}`);
+    const result = await sendWebhook(settings.webhook_url, payload);
+
+    // Log delivery
+    await logDelivery(
+      userId,
+      eventType,
+      payload,
+      result.success ? 'success' : 'failed',
+      result.statusCode,
+      result.error
+    );
+
+    if (!result.success) {
+      logger.error(`Agent request webhook delivery failed: ${result.error || `Status ${result.statusCode}`}`);
+    }
+  } catch (err) {
+    logger.error('Error in sendAgentRequestNotification:', err);
+  }
+}
+
 // Available event types for API/UI
 const AVAILABLE_EVENTS = Object.keys(EVENT_CONFIGS).map(key => ({
   type: key,
-  description: EVENT_CONFIGS[key].getMessage({ title: 'Example Task' }, { title: 'Example Plan' }, {}),
+  description: EVENT_CONFIGS[key].getMessage({ title: 'Example Task', agent_requested: 'start' }, { title: 'Example Plan' }, {}),
   defaultEnabled: EVENT_CONFIGS[key].defaultEnabled
 }));
 
@@ -354,5 +475,7 @@ module.exports = {
   notifyDecisionRequested,
   notifyDecisionResolved,
   sendDecisionNotification,
+  notifyAgentRequested,
+  sendAgentRequestNotification,
   AVAILABLE_EVENTS
 };
