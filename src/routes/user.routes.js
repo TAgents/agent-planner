@@ -78,4 +78,44 @@ router.get('/', authenticate, userController.listUsers);
  */
 router.get('/search', authenticate, userController.searchUsers);
 
+/**
+ * @swagger
+ * /users/my-tasks:
+ *   get:
+ *     summary: Get tasks assigned to or requested for the current user/agent
+ *     description: |
+ *       Returns tasks where:
+ *       - User is assigned (via plan_node_assignments)
+ *       - Agent assistance was requested (agent_requested is set)
+ *       
+ *       Use `requested=true` to filter only agent-requested tasks.
+ *       Agents should poll this endpoint during heartbeat.
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: requested
+ *         schema:
+ *           type: boolean
+ *         description: Only return tasks with agent_requested set
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [not_started, in_progress, completed, blocked]
+ *         description: Filter by task status
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *     responses:
+ *       200:
+ *         description: List of tasks
+ *       401:
+ *         description: Authentication required
+ */
+router.get('/my-tasks', authenticate, userController.getMyTasks);
+
 module.exports = router;

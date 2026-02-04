@@ -895,4 +895,91 @@ const activitiesController = require('../controllers/activities.controller');
  */
 router.get('/:id/nodes/:nodeId/activities', authenticate, activitiesController.getNodeActivities);
 
+/**
+ * Agent Request Endpoints
+ */
+
+/**
+ * @swagger
+ * /plans/{id}/nodes/{nodeId}/request-agent:
+ *   post:
+ *     summary: Request agent assistance on a task
+ *     description: Mark a task as needing agent attention. Agent will pick this up during heartbeat polling.
+ *     tags: [Nodes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The plan ID
+ *       - in: path
+ *         name: nodeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The node ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - request_type
+ *             properties:
+ *               request_type:
+ *                 type: string
+ *                 enum: [start, review, help, continue]
+ *                 description: Type of assistance needed
+ *               message:
+ *                 type: string
+ *                 maxLength: 1000
+ *                 description: Optional context for the agent
+ *     responses:
+ *       200:
+ *         description: Agent request created
+ *       400:
+ *         description: Invalid input
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Node not found
+ */
+router.post('/:id/nodes/:nodeId/request-agent', authenticate, nodeController.requestAgent);
+
+/**
+ * @swagger
+ * /plans/{id}/nodes/{nodeId}/request-agent:
+ *   delete:
+ *     summary: Clear agent request on a task
+ *     description: Remove the agent assistance request from a task
+ *     tags: [Nodes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The plan ID
+ *       - in: path
+ *         name: nodeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The node ID
+ *     responses:
+ *       200:
+ *         description: Agent request cleared
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Node not found
+ */
+router.delete('/:id/nodes/:nodeId/request-agent', authenticate, nodeController.clearAgentRequest);
+
 module.exports = router;

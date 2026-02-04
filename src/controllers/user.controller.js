@@ -343,10 +343,122 @@ const searchUsers = async (req, res, next) => {
   }
 };
 
+/**
+ * Get tasks assigned to or requested for the current user/agent
+ */
+const getMyTasks = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { requested, status, limit = 50 } = req.query;
+    const limitNum = parseInt(limit, 10) || 50;
+
+    // Get plans the user has access to (owned or collaborator)
+    const { data: ownedPlans } = await supabaseAdmin
+      .from('plans')
+      .select('id')
+      .eq('owner_id', userId);
+
+    const { data: collabPlans } = await supabaseAdmin
+      .from('plan_collaborators')
+      .select('plan_id')
+      .eq('user_id', userId);
+
+    const planIds = [
+      ...(ownedPlans || []).map(p => p.id),
+      ...(collabPlans || []).map(c => c.plan_id)
+    ];
+
+    if (planIds.length === 0) {
+      return res.json({ tasks: [], total: 0 });
+    }
+
+    // Build query for tasks
+    let query = supabaseAdmin
+      .from('plan_nodes')
+      .select(`
+        id, title, description, node_type, status, 
+        agent_requested, agent_requested_at, agent_requested_by, agent_request_message,
+        plan_id, parent_id, created_at, updated_at,
+        plans!inner(id, title)
+      `)
+      .in('plan_id', planIds)
+      .in('node_type', ['task', 'milestone']); // Only tasks and milestones
+
+    // Filter by agent_requested if requested=true
+    if (requested === 'true') {
+      query = query.not('agent_requested', 'is', null);
+    }
+
+    // Filter by status if provided
+    if (status) {
+      query = query.eq('status', status);
+    }
+
+    // Order by agent_requested_at (most recent first), then by updated_at
+    query = query
+      .order('agent_requested_at', { ascending: false, nullsFirst: false })
+      .order('updated_at', { ascending: false })
+      .limit(limitNum);
+
+    const { data: tasks, error } = await query;
+
+    if (error) {
+      await logger.error('Failed to fetch my-tasks:', error);
+      return res.status(500).json({ error: 'Failed to fetch tasks' });
+    }
+
+    // Get assignments for these tasks to include assigned tasks
+    const taskIds = tasks.map(t => t.id);
+    let assignedTasks = [];
+    
+    if (taskIds.length > 0 && requested !== 'true') {
+      const { data: assignments } = await supabaseAdmin
+        .from('plan_node_assignments')
+        .select('plan_node_id')
+        .eq('user_id', userId)
+        .in('plan_node_id', taskIds);
+
+      if (assignments) {
+        const assignedIds = new Set(assignments.map(a => a.plan_node_id));
+        assignedTasks = tasks.filter(t => assignedIds.has(t.id));
+      }
+    }
+
+    // Format response
+    const formattedTasks = tasks.map(task => ({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      node_type: task.node_type,
+      status: task.status,
+      plan_id: task.plan_id,
+      plan_title: task.plans?.title,
+      parent_id: task.parent_id,
+      agent_request: task.agent_requested ? {
+        type: task.agent_requested,
+        message: task.agent_request_message,
+        requested_at: task.agent_requested_at,
+        requested_by: task.agent_requested_by
+      } : null,
+      created_at: task.created_at,
+      updated_at: task.updated_at
+    }));
+
+    res.json({
+      tasks: formattedTasks,
+      total: formattedTasks.length
+    });
+  } catch (error) {
+    await logger.error('Unexpected error in getMyTasks:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getUserProfile,
   updateUserProfile,
   changePassword,
   listUsers,
-  searchUsers
+  searchUsers,
+  getMyTasks
 };
