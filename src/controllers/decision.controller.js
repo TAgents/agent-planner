@@ -12,6 +12,7 @@ const {
   createDecisionRequestedMessage,
   createDecisionResolvedMessage
 } = require('../websocket/message-schema');
+const { notifyDecisionRequested, notifyDecisionResolved } = require('../services/notifications');
 const { captureDecisionAsKnowledge } = require('../services/decision-knowledge');
 
 /**
@@ -220,6 +221,29 @@ const createDecisionRequest = async (req, res, next) => {
       console.error('Failed to broadcast decision request:', broadcastError);
     }
 
+    // Send webhook notification to plan owner (async, don't block response)
+    (async () => {
+      try {
+        // Fetch plan details for notification
+        const { data: plan } = await supabase
+          .from('plans')
+          .select('id, title, owner_id')
+          .eq('id', planId)
+          .single();
+        
+        if (plan) {
+          const actor = {
+            name: requested_by_agent_name || userName,
+            type: requested_by_agent_name ? 'agent' : 'user',
+            agent_name: requested_by_agent_name || null
+          };
+          await notifyDecisionRequested(data, plan, actor, plan.owner_id);
+        }
+      } catch (notifyError) {
+        console.error('Failed to send decision notification:', notifyError);
+      }
+    })();
+
     res.status(201).json(data);
   } catch (error) {
     next(error);
@@ -358,6 +382,24 @@ const resolveDecisionRequest = async (req, res, next) => {
     } catch (broadcastError) {
       console.error('Failed to broadcast decision resolution:', broadcastError);
     }
+
+    // Send webhook notification to original requester (async, don't block response)
+    (async () => {
+      try {
+        const { data: plan } = await supabase
+          .from('plans')
+          .select('id, title, owner_id')
+          .eq('id', planId)
+          .single();
+        
+        if (plan && data.requested_by_user_id) {
+          const actor = { name: userName, type: 'user' };
+          await notifyDecisionResolved(data, plan, actor, data.requested_by_user_id);
+        }
+      } catch (notifyError) {
+        console.error('Failed to send decision resolution notification:', notifyError);
+      }
+    })();
 
     // Auto-capture decision as knowledge entry (async, don't block response)
     captureDecisionAsKnowledge(data, planId, userId)
