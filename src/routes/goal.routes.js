@@ -9,6 +9,7 @@ const router = express.Router();
 const { authenticate } = require('../middleware/auth.middleware');
 const { supabaseAdmin } = require('../config/supabase');
 const logger = require('../utils/logger');
+const { calculatePlanProgress } = require('../controllers/plan.controller');
 
 /**
  * @swagger
@@ -176,13 +177,16 @@ router.get('/:id', authenticate, async (req, res) => {
       }
       await logger.api(`Found ${plans?.length || 0} plans`);
 
-      linkedPlans = (plans || []).map(plan => {
+      // Calculate progress for each plan
+      linkedPlans = await Promise.all((plans || []).map(async plan => {
         const link = planGoalLinks.find(pg => pg.plan_id === plan.id);
+        const progress = await calculatePlanProgress(plan.id);
         return {
           ...plan,
+          progress,
           linked_at: link?.linked_at
         };
-      });
+      }));
     }
 
     return res.json({

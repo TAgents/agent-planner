@@ -1430,4 +1430,5 @@ module.exports = {
   updatePlanVisibility,
   incrementViewCount,
   linkGitHubRepo,
+  calculatePlanProgress,
 };
