@@ -980,7 +980,7 @@ const moveNode = async (req, res, next) => {
 const addLogEntry = async (req, res, next) => {
   try {
     const { id: planId, nodeId } = req.params;
-    const { content, log_type } = req.body;
+    const { content, log_type, actor_type } = req.body;
     const userId = req.user.id;
 
     // Check if the user has access to this plan
@@ -1022,6 +1022,9 @@ const addLogEntry = async (req, res, next) => {
     const logId = uuidv4();
     const createdAt = new Date();
 
+    // Build metadata with actor_type if provided
+    const metadata = actor_type ? { actor_type } : {};
+
     const { data, error } = await supabase
       .from('plan_node_logs')
       .insert([
@@ -1032,6 +1035,7 @@ const addLogEntry = async (req, res, next) => {
           content,
           log_type: logType,
           created_at: createdAt,
+          metadata,
         },
       ])
       .select(`
@@ -1040,7 +1044,8 @@ const addLogEntry = async (req, res, next) => {
         log_type,
         created_at,
         plan_node_id,
-        user_id
+        user_id,
+        metadata
       `);
 
     if (error) {
@@ -1098,7 +1103,8 @@ const getNodeLogs = async (req, res, next) => {
         content, 
         log_type, 
         created_at,
-        user_id
+        user_id,
+        metadata
       `)
       .eq('plan_node_id', nodeId);
 
@@ -1114,15 +1120,19 @@ const getNodeLogs = async (req, res, next) => {
       return res.status(500).json({ error: error.message });
     }
 
-    // Transform data to include user info (simplified)
-    const logsWithUser = data.map(log => ({
-      ...log,
-      user: {
-        id: log.user_id,
-        name: null,
-        email: null
-      }
-    }));
+    // Transform data to include user info and extract actor_type (remove internal metadata field)
+    const logsWithUser = data.map(log => {
+      const { metadata, ...logWithoutMetadata } = log;
+      return {
+        ...logWithoutMetadata,
+        actor_type: metadata?.actor_type || 'human', // Default to human for backward compatibility
+        user: {
+          id: log.user_id,
+          name: null,
+          email: null
+        }
+      };
+    });
 
     res.json(logsWithUser);
   } catch (error) {

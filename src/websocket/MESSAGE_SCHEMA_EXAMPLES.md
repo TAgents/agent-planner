@@ -470,7 +470,10 @@ const { createLogAddedMessage } = require('../websocket/message-schema');
 
 async function addLog(req, res) {
   const { plan_id, node_id } = req.params;
-  const { content, log_type, tags } = req.body;
+  const { content, log_type, tags, actor_type } = req.body;
+
+  // Build metadata with actor_type if provided
+  const metadata = actor_type ? { actor_type } : {};
 
   const { data: log, error } = await supabase
     .from('plan_node_logs')
@@ -479,12 +482,14 @@ async function addLog(req, res) {
       user_id: req.user.id,
       content,
       log_type,
-      tags: tags || []
+      tags: tags || [],
+      metadata
     })
     .select()
     .single();
 
   if (!error) {
+    // createLogAddedMessage extracts actor_type from log.metadata
     const message = createLogAddedMessage(log, plan_id, req.user.name);
     req.app.collaborationServer.broadcastToPlan(plan_id, message);
   }

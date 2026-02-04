@@ -737,4 +737,293 @@ describe('Node Controller', () => {
       expect(res.status).toHaveBeenCalledWith(403);
     });
   });
+
+  describe('addLogEntry', () => {
+    const setupAddLogMocks = (nodeId, planId, ownerId = mockUser.id) => {
+      supabase.from.mockImplementation((table) => {
+        // Plan access check
+        if (table === 'plans') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            single: jest.fn().mockResolvedValue({
+              data: { owner_id: ownerId },
+              error: null
+            })
+          };
+        }
+        
+        // Collaborators check
+        if (table === 'plan_collaborators') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            single: jest.fn().mockResolvedValue({
+              data: null,
+              error: { code: 'PGRST116' }
+            })
+          };
+        }
+        
+        // Node exists check
+        if (table === 'plan_nodes') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnThis(),
+              single: jest.fn().mockResolvedValue({
+                data: { id: nodeId },
+                error: null
+              })
+            })
+          };
+        }
+        
+        // Insert log entry
+        if (table === 'plan_node_logs') {
+          return {
+            insert: jest.fn().mockReturnThis(),
+            select: jest.fn().mockResolvedValue({
+              data: [{
+                id: uuidv4(),
+                plan_node_id: nodeId,
+                user_id: mockUser.id,
+                content: 'Test log content',
+                log_type: 'progress',
+                metadata: {},
+                created_at: new Date().toISOString()
+              }],
+              error: null
+            })
+          };
+        }
+        
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          single: jest.fn().mockResolvedValue({ data: null, error: null })
+        };
+      });
+    };
+
+    it('should create log entry with actor_type agent', async () => {
+      const nodeId = uuidv4();
+      const planId = mockPlan.id;
+      
+      const req = createMockRequest({
+        user: mockUser,
+        params: { id: planId, nodeId },
+        body: {
+          content: 'Agent performed task',
+          log_type: 'progress',
+          actor_type: 'agent'
+        }
+      });
+      const res = createMockResponse();
+      const next = createMockNext();
+
+      setupAddLogMocks(nodeId, planId);
+
+      await nodeController.addLogEntry(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(res.json).toHaveBeenCalled();
+    });
+
+    it('should create log entry with actor_type human', async () => {
+      const nodeId = uuidv4();
+      const planId = mockPlan.id;
+      
+      const req = createMockRequest({
+        user: mockUser,
+        params: { id: planId, nodeId },
+        body: {
+          content: 'Human added note',
+          log_type: 'decision',
+          actor_type: 'human'
+        }
+      });
+      const res = createMockResponse();
+      const next = createMockNext();
+
+      setupAddLogMocks(nodeId, planId);
+
+      await nodeController.addLogEntry(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    it('should create log entry without actor_type (defaults on read)', async () => {
+      const nodeId = uuidv4();
+      const planId = mockPlan.id;
+      
+      const req = createMockRequest({
+        user: mockUser,
+        params: { id: planId, nodeId },
+        body: {
+          content: 'Log without explicit actor',
+          log_type: 'progress'
+        }
+      });
+      const res = createMockResponse();
+      const next = createMockNext();
+
+      setupAddLogMocks(nodeId, planId);
+
+      await nodeController.addLogEntry(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    // Note: Invalid actor_type values are rejected by Zod validation middleware
+    // before reaching the controller, so we don't test that here
+  });
+
+  describe('getNodeLogs', () => {
+    const setupGetLogsMocks = (nodeId, planId, mockLogs, ownerId = mockUser.id) => {
+      supabase.from.mockImplementation((table) => {
+        // Plan access check
+        if (table === 'plans') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            single: jest.fn().mockResolvedValue({
+              data: { owner_id: ownerId },
+              error: null
+            })
+          };
+        }
+        
+        // Collaborators check
+        if (table === 'plan_collaborators') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            single: jest.fn().mockResolvedValue({
+              data: null,
+              error: { code: 'PGRST116' }
+            })
+          };
+        }
+        
+        // Get logs
+        if (table === 'plan_node_logs') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnThis(),
+              order: jest.fn().mockResolvedValue({
+                data: mockLogs,
+                error: null
+              })
+            })
+          };
+        }
+        
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          single: jest.fn().mockResolvedValue({ data: null, error: null })
+        };
+      });
+    };
+
+    it('should return logs with actor_type field', async () => {
+      const nodeId = uuidv4();
+      const planId = mockPlan.id;
+      
+      const mockLogs = [
+        {
+          id: uuidv4(),
+          plan_node_id: nodeId,
+          user_id: mockUser.id,
+          content: 'Agent log',
+          log_type: 'progress',
+          tags: [],
+          metadata: { actor_type: 'agent' },
+          created_at: new Date().toISOString()
+        },
+        {
+          id: uuidv4(),
+          plan_node_id: nodeId,
+          user_id: mockUser.id,
+          content: 'Human log',
+          log_type: 'decision',
+          tags: [],
+          metadata: { actor_type: 'human' },
+          created_at: new Date().toISOString()
+        }
+      ];
+
+      setupGetLogsMocks(nodeId, planId, mockLogs);
+
+      const req = createMockRequest({
+        user: mockUser,
+        params: { id: planId, nodeId },
+        query: {}
+      });
+      const res = createMockResponse();
+      const next = createMockNext();
+
+      await nodeController.getNodeLogs(req, res, next);
+
+      expect(res.json).toHaveBeenCalled();
+      const responseData = res.json.mock.calls[0][0];
+      
+      // Verify actor_type is extracted from metadata
+      expect(responseData[0].actor_type).toBe('agent');
+      expect(responseData[1].actor_type).toBe('human');
+      
+      // Verify metadata field is NOT exposed in response
+      expect(responseData[0].metadata).toBeUndefined();
+      expect(responseData[1].metadata).toBeUndefined();
+    });
+
+    it('should default actor_type to human for legacy logs without metadata', async () => {
+      const nodeId = uuidv4();
+      const planId = mockPlan.id;
+      
+      const mockLogs = [
+        {
+          id: uuidv4(),
+          plan_node_id: nodeId,
+          user_id: mockUser.id,
+          content: 'Legacy log without actor_type',
+          log_type: 'progress',
+          tags: [],
+          metadata: {}, // No actor_type
+          created_at: new Date().toISOString()
+        },
+        {
+          id: uuidv4(),
+          plan_node_id: nodeId,
+          user_id: mockUser.id,
+          content: 'Legacy log with null metadata',
+          log_type: 'progress',
+          tags: [],
+          metadata: null,
+          created_at: new Date().toISOString()
+        }
+      ];
+
+      setupGetLogsMocks(nodeId, planId, mockLogs);
+
+      const req = createMockRequest({
+        user: mockUser,
+        params: { id: planId, nodeId },
+        query: {}
+      });
+      const res = createMockResponse();
+      const next = createMockNext();
+
+      await nodeController.getNodeLogs(req, res, next);
+
+      expect(res.json).toHaveBeenCalled();
+      const responseData = res.json.mock.calls[0][0];
+      
+      // Both should default to 'human'
+      expect(responseData[0].actor_type).toBe('human');
+      expect(responseData[1].actor_type).toBe('human');
+    });
+  });
 });

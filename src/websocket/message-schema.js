@@ -191,6 +191,7 @@ const EVENT_TYPES = {
  * @property {string} content - Log content
  * @property {string} logType - Log type (progress, reasoning, challenge, decision)
  * @property {string[]} [tags] - Log tags
+ * @property {string} actorType - Actor type (human or agent)
  * @property {string} createdAt - ISO 8601 timestamp
  */
 
@@ -560,6 +561,7 @@ function createLogAddedMessage(log, planId, userName = null) {
     content: log.content,
     logType: log.log_type,
     tags: log.tags,
+    actorType: log.metadata?.actor_type || 'human',
     createdAt: log.created_at
   };
   return createMessage(COLLABORATION_EVENTS.LOG_ADDED, payload, metadata);
