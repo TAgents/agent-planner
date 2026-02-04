@@ -168,7 +168,7 @@ router.get('/:id', authenticate, async (req, res) => {
       
       const { data: plans, error: plansError } = await supabaseAdmin
         .from('plans')
-        .select('id, title, status, progress')
+        .select('id, title, status')
         .in('id', planIds);
 
       if (plansError) {
