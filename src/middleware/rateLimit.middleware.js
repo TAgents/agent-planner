@@ -82,7 +82,8 @@ const generalLimiter = rateLimit({
   message: {
     error: 'Too many requests',
     message: 'You have exceeded the rate limit. Please try again later.'
-  }
+  },
+  validate: { xForwardedForHeader: false, ipKeyGenerator: false }
 });
 
 /**
@@ -105,7 +106,8 @@ const authLimiter = rateLimit({
   message: {
     error: 'Too many authentication attempts',
     message: 'You have exceeded the authentication rate limit. Please try again later.'
-  }
+  },
+  validate: { xForwardedForHeader: false, ipKeyGenerator: false }
 });
 
 /**
@@ -124,7 +126,8 @@ const searchLimiter = rateLimit({
   message: {
     error: 'Too many search requests',
     message: 'You have exceeded the search rate limit. Please try again later.'
-  }
+  },
+  validate: { xForwardedForHeader: false, ipKeyGenerator: false }
 });
 
 /**
@@ -143,7 +146,8 @@ const tokenLimiter = rateLimit({
   message: {
     error: 'Too many token requests',
     message: 'You have exceeded the token generation rate limit. Please try again later.'
-  }
+  },
+  validate: { xForwardedForHeader: false, ipKeyGenerator: false }
 });
 
 /**
@@ -162,7 +166,8 @@ const webhookLimiter = rateLimit({
   message: {
     error: 'Too many webhook requests',
     message: 'You have exceeded the webhook rate limit. Please try again later.'
-  }
+  },
+  validate: { xForwardedForHeader: false, ipKeyGenerator: false }
 });
 
 module.exports = {

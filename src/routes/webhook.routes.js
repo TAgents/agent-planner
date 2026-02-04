@@ -6,7 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const { supabaseAdmin } = require('../config/supabase');
-const { authMiddleware } = require('../middleware/auth');
+const { authenticate: authMiddleware } = require('../middleware/auth.middleware');
 const { AVAILABLE_EVENTS } = require('../services/notifications');
 
 /**
