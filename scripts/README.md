@@ -49,10 +49,6 @@ This directory contains shell scripts to test various endpoints of the agent-pla
 - `add_log_entry.sh` - Add a log entry to a node
 - `get_logs.sh` - Get all logs for a node
 
-### Artifacts
-- `add_artifact.sh` - Add an artifact to a node
-- `get_artifacts.sh` - Get all artifacts for a node
-
 ### API Tokens
 - `create_api_token.sh` - Create a new API token
 - `list_api_tokens.sh` - List all API tokens
@@ -66,7 +62,6 @@ The scripts create and use the following files to store IDs for subsequent opera
 - `root_node_id.txt` - ID of the plan's root node
 - `node_id.txt` - ID of the created node
 - `comment_id.txt` - ID of the created comment
-- `artifact_id.txt` - ID of the created artifact
 - `api_token_id.txt` - ID of the created API token
 
 ## Running All Tests

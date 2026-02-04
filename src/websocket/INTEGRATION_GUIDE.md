@@ -170,42 +170,21 @@ async function reorderNodes(req, res) {
 
 ### Pattern 4: Nested Operations
 
-For operations that affect multiple tables:
+For operations that affect multiple tables (e.g., deleting a node with children):
 
 ```javascript
-const {
-  createNodeDeletedMessage,
-  createArtifactDeletedMessage
-} = require('../websocket/message-schema');
+const { createNodeDeletedMessage } = require('../websocket/message-schema');
 
-async function deleteNodeWithArtifacts(req, res) {
+async function deleteNode(req, res) {
   const { plan_id, node_id } = req.params;
 
-  // 1. Get artifacts before deletion (cascade will remove them)
-  const { data: artifacts } = await supabase
-    .from('plan_node_artifacts')
-    .select('id')
-    .eq('plan_node_id', node_id);
-
-  // 2. Delete node (cascade will delete artifacts)
+  // Delete node (cascade will delete child nodes, logs, etc.)
   await supabase
     .from('plan_nodes')
     .delete()
     .eq('id', node_id);
 
-  // 3. Emit artifact deletion events first
-  for (const artifact of artifacts) {
-    const message = createArtifactDeletedMessage(
-      artifact.id,
-      node_id,
-      plan_id,
-      req.user.id,
-      req.user.name
-    );
-    req.app.collaborationServer.broadcastToPlan(plan_id, message);
-  }
-
-  // 4. Emit node deletion event
+  // Emit node deletion event
   const message = createNodeDeletedMessage(
     node_id,
     plan_id,

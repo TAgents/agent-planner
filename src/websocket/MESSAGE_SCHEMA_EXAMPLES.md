@@ -493,42 +493,6 @@ async function addLog(req, res) {
 }
 ```
 
-### collaboration.artifact_added
-
-**When to emit:** When an artifact (file/resource) is added to a node.
-
-```javascript
-const { createArtifactAddedMessage } = require('../websocket/message-schema');
-
-async function addArtifact(req, res) {
-  const { plan_id, node_id } = req.params;
-  const { name, content_type, url } = req.body;
-
-  const { data: artifact, error } = await supabase
-    .from('plan_node_artifacts')
-    .insert({
-      plan_node_id: node_id,
-      name,
-      content_type,
-      url,
-      created_by: req.user.id
-    })
-    .select()
-    .single();
-
-  if (!error) {
-    const message = createArtifactAddedMessage(
-      artifact,
-      plan_id,
-      req.user.name
-    );
-    req.app.collaborationServer.broadcastToPlan(plan_id, message);
-  }
-
-  return res.status(201).json(artifact);
-}
-```
-
 ### collaboration.label_added
 
 **When to emit:** When a label/tag is added to a node.
