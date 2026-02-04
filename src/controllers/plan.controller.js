@@ -112,11 +112,27 @@ const listPlans = async (req, res, next) => {
  */
 const createPlan = async (req, res, next) => {
   try {
-    const { title, description, status, metadata } = req.body;
+    const { title, description, status, metadata, organization_id } = req.body;
     const userId = req.user.id;
 
     if (!title) {
       return res.status(400).json({ error: 'Title is required' });
+    }
+
+    // Validate organization membership if organization_id provided
+    let validOrgId = null;
+    if (organization_id) {
+      const { data: membership } = await supabase
+        .from('organization_members')
+        .select('role')
+        .eq('organization_id', organization_id)
+        .eq('user_id', userId)
+        .single();
+      
+      if (!membership) {
+        return res.status(403).json({ error: 'You must be a member of the organization to create plans in it' });
+      }
+      validOrgId = organization_id;
     }
 
     const planId = uuidv4();
@@ -135,6 +151,7 @@ const createPlan = async (req, res, next) => {
           updated_at: now,
           status: status || 'draft',
           metadata: metadata || {},
+          organization_id: validOrgId,
         },
       ]);
 
@@ -255,7 +272,7 @@ const getPlan = async (req, res, next) => {
 const updatePlan = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { title, description, status, metadata } = req.body;
+    const { title, description, status, metadata, organization_id } = req.body;
     const userId = req.user.id;
 
     // Check if the user has access to this plan
@@ -270,6 +287,27 @@ const updatePlan = async (req, res, next) => {
     if (description !== undefined) updates.description = description;
     if (status !== undefined) updates.status = status;
     if (metadata !== undefined) updates.metadata = metadata;
+    
+    // Handle organization assignment
+    if (organization_id !== undefined) {
+      if (organization_id === null) {
+        // Allow removing org assignment
+        updates.organization_id = null;
+      } else {
+        // Verify user is member of the target organization
+        const { data: membership } = await supabase
+          .from('organization_members')
+          .select('role')
+          .eq('organization_id', organization_id)
+          .eq('user_id', userId)
+          .single();
+        
+        if (!membership) {
+          return res.status(403).json({ error: 'You must be a member of the organization to assign plans to it' });
+        }
+        updates.organization_id = organization_id;
+      }
+    }
 
     // Update the plan
     const { data, error } = await supabase
