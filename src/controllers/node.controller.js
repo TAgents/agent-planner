@@ -9,7 +9,7 @@ const {
   createNodeStatusChangedMessage,
   createLogAddedMessage
 } = require('../websocket/message-schema');
-const { notifyStatusChange } = require('../services/notifications');
+const { notifyStatusChange, notifyAgentRequested } = require('../services/notifications');
 
 /**
  * Helper function to check if a user has access to a plan with specified roles
@@ -1205,6 +1205,24 @@ const requestAgent = async (req, res, next) => {
         log_type: 'progress',
         created_at: new Date().toISOString()
       });
+
+    // Send webhook notification (async, don't block response)
+    (async () => {
+      try {
+        const { data: plan } = await supabase
+          .from('plans')
+          .select('id, title, owner_id')
+          .eq('id', planId)
+          .single();
+        
+        if (plan) {
+          const actor = { name: userName };
+          await notifyAgentRequested(updated, plan, actor, plan.owner_id);
+        }
+      } catch (notifyError) {
+        console.error('Failed to send agent request notification:', notifyError);
+      }
+    })();
 
     res.json(updated);
   } catch (error) {
