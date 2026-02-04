@@ -232,8 +232,9 @@ const createDecisionRequest = async (req, res, next) => {
         
         if (plan) {
           const actor = {
-            name: userName,
-            type: requested_by_agent_name ? 'agent' : 'user'
+            name: requested_by_agent_name || userName,
+            type: requested_by_agent_name ? 'agent' : 'user',
+            agent_name: requested_by_agent_name || null
           };
           await notifyDecisionRequested(data, plan, actor, plan.owner_id);
         }

@@ -272,7 +272,9 @@ async function sendDecisionNotification(eventType, { decision, plan, actor, user
       return;
     }
 
-    // Check if user wants this event type (also check base event for blocking)
+    // Check if user wants this event type
+    // For sub-events like 'decision.requested.blocking', also check if they subscribed
+    // to the base event 'decision.requested' (subscribing to base includes all variants)
     const baseEvent = eventType.replace('.blocking', '');
     const wantsEvent = settings.webhook_events && 
       (settings.webhook_events.includes(eventType) || settings.webhook_events.includes(baseEvent));
@@ -299,9 +301,9 @@ async function sendDecisionNotification(eventType, { decision, plan, actor, user
         node_id: decision.node_id
       },
       actor: actor ? {
-        name: actor.name || actor.email || decision.requested_by_agent_name || 'Unknown',
-        type: decision.requested_by_agent_name ? 'agent' : 'user',
-        agent_name: decision.requested_by_agent_name
+        name: actor.name || 'Unknown',
+        type: actor.type || 'user',
+        agent_name: actor.agent_name || null
       } : null,
       message: eventConfig.getMessage(decision, plan, actor)
     };
