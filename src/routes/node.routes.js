@@ -590,6 +590,10 @@ router.post('/:id/nodes/:nodeId/move', authenticate, ...validate({ params: schem
  *                 type: string
  *                 enum: [progress, reasoning, challenge, decision]
  *                 default: progress
+ *               actor_type:
+ *                 type: string
+ *                 enum: [human, agent]
+ *                 description: Whether this action was performed by a human or an AI agent
  *     responses:
  *       201:
  *         description: Log entry added successfully

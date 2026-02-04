@@ -74,12 +74,18 @@ const batchUpdateNodes = z.object({
   ).min(1, 'At least one update is required').max(100, 'Cannot update more than 100 nodes at once')
 }).strict();
 
+// Actor type enum
+const actorType = z.enum(['human', 'agent'], {
+  errorMap: () => ({ message: 'Actor type must be one of: human, agent' })
+});
+
 /**
  * Add log entry request body
  */
 const addLog = z.object({
   content: nonEmptyString(50000).describe('Log content'),
-  log_type: logType.optional().default('comment')
+  log_type: logType.optional().default('comment'),
+  actor_type: actorType.optional().describe('Whether this action was by a human or agent')
 }).strict();
 
 /**
