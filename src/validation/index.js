@@ -8,6 +8,7 @@ const { validate, validateBody, validateParams, validateQuery, formatZodError } 
 const planSchemas = require('./schemas/plan.schemas');
 const nodeSchemas = require('./schemas/node.schemas');
 const commonSchemas = require('./schemas/common');
+const decisionSchemas = require('./schemas/decision.schemas');
 
 module.exports = {
   // Middleware
@@ -21,11 +22,13 @@ module.exports = {
   schemas: {
     plan: planSchemas,
     node: nodeSchemas,
-    common: commonSchemas
+    common: commonSchemas,
+    decision: decisionSchemas
   },
   
   // Direct schema exports for convenience
   ...planSchemas,
   ...nodeSchemas,
-  ...commonSchemas
+  ...commonSchemas,
+  ...decisionSchemas
 };

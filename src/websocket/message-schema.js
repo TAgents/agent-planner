@@ -63,7 +63,9 @@ const COLLABORATION_EVENTS = {
   COMMENT_DELETED: 'collaboration.comment_deleted',
   LOG_ADDED: 'collaboration.log_added',
   LABEL_ADDED: 'collaboration.label_added',
-  LABEL_REMOVED: 'collaboration.label_removed'
+  LABEL_REMOVED: 'collaboration.label_removed',
+  DECISION_REQUESTED: 'collaboration.decision_requested',
+  DECISION_RESOLVED: 'collaboration.decision_resolved'
 };
 
 /**
@@ -603,6 +605,53 @@ function createLabelRemovedMessage(labelId, nodeId, planId, userId, userName = n
   return createMessage(COLLABORATION_EVENTS.LABEL_REMOVED, payload, metadata);
 }
 
+/**
+ * Creates a collaboration.decision_requested event message
+ * @param {Object} decision - Decision request object from database
+ * @param {string} planId - Plan UUID
+ * @param {string} [userName] - Optional user display name
+ * @returns {BaseMessage}
+ */
+function createDecisionRequestedMessage(decision, planId, userName = null) {
+  const metadata = createMetadata(decision.requested_by_user_id, planId, userName);
+  const payload = {
+    id: decision.id,
+    planId: decision.plan_id,
+    nodeId: decision.node_id,
+    title: decision.title,
+    context: decision.context,
+    options: decision.options,
+    urgency: decision.urgency,
+    requestedByAgentName: decision.requested_by_agent_name,
+    expiresAt: decision.expires_at,
+    status: decision.status,
+    createdAt: decision.created_at
+  };
+  return createMessage(COLLABORATION_EVENTS.DECISION_REQUESTED, payload, metadata);
+}
+
+/**
+ * Creates a collaboration.decision_resolved event message
+ * @param {Object} decision - Resolved decision request object
+ * @param {string} planId - Plan UUID
+ * @param {string} [userName] - Optional user display name
+ * @returns {BaseMessage}
+ */
+function createDecisionResolvedMessage(decision, planId, userName = null) {
+  const metadata = createMetadata(decision.decided_by_user_id, planId, userName);
+  const payload = {
+    id: decision.id,
+    planId: decision.plan_id,
+    nodeId: decision.node_id,
+    title: decision.title,
+    decision: decision.decision,
+    rationale: decision.rationale,
+    status: decision.status,
+    decidedAt: decision.decided_at
+  };
+  return createMessage(COLLABORATION_EVENTS.DECISION_RESOLVED, payload, metadata);
+}
+
 // ----------------------------------------------------------------------------
 // Collaborator Event Factories
 // ----------------------------------------------------------------------------
@@ -706,6 +755,8 @@ module.exports = {
   createLogAddedMessage,
   createLabelAddedMessage,
   createLabelRemovedMessage,
+  createDecisionRequestedMessage,
+  createDecisionResolvedMessage,
 
   // Collaborator event factories
   createCollaboratorAddedMessage,
