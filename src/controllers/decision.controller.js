@@ -67,54 +67,42 @@ const listDecisionRequests = async (req, res, next) => {
       return res.status(403).json({ error: 'You do not have access to this plan' });
     }
 
-    // Build query
-    let query = supabase
+    // Build base query for filtering
+    let baseQuery = supabase
       .from('decision_requests')
-      .select(`
-        id,
-        plan_id,
-        node_id,
-        requested_by_user_id,
-        requested_by_agent_name,
-        title,
-        context,
-        options,
-        urgency,
-        expires_at,
-        status,
-        decided_by_user_id,
-        decision,
-        rationale,
-        decided_at,
-        metadata,
-        created_at,
-        updated_at
-      `)
+      .select('*', { count: 'exact' })
       .eq('plan_id', planId);
 
-    // Apply filters
+    // Apply filters to both count and data queries
     if (status) {
-      query = query.eq('status', status);
+      baseQuery = baseQuery.eq('status', status);
     }
     if (urgency) {
-      query = query.eq('urgency', urgency);
+      baseQuery = baseQuery.eq('urgency', urgency);
     }
     if (node_id) {
-      query = query.eq('node_id', node_id);
+      baseQuery = baseQuery.eq('node_id', node_id);
     }
 
-    // Apply pagination and ordering
-    query = query
+    // Execute query with pagination
+    const { data, error, count } = await baseQuery
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
-
-    const { data, error } = await query;
 
     if (error) {
       return res.status(500).json({ error: error.message });
     }
 
-    res.json(data);
+    // Return with pagination metadata
+    res.json({
+      data,
+      pagination: {
+        total: count || 0,
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        has_more: (offset + data.length) < (count || 0)
+      }
+    });
   } catch (error) {
     next(error);
   }
@@ -305,7 +293,7 @@ const resolveDecisionRequest = async (req, res, next) => {
       return res.status(403).json({ error: 'You do not have edit access to this plan' });
     }
 
-    // Check the decision exists and is pending
+    // Check the decision exists first (for better error messages)
     const { data: existing, error: existingError } = await supabase
       .from('decision_requests')
       .select('status, title, expires_at')
@@ -321,14 +309,11 @@ const resolveDecisionRequest = async (req, res, next) => {
       return res.status(400).json({ error: 'Decision request has already been resolved' });
     }
 
-    // Check if expired
-    if (existing.expires_at && new Date(existing.expires_at) < new Date()) {
-      return res.status(400).json({ error: 'Decision request has expired' });
-    }
-
     const now = new Date().toISOString();
 
-    // Resolve the decision with optimistic locking (status must still be pending)
+    // Resolve the decision with atomic optimistic locking:
+    // - status must be 'pending' (prevents race with other resolvers)
+    // - expires_at must be NULL or in the future (prevents TOCTOU on expiration)
     const { data, error } = await supabase
       .from('decision_requests')
       .update({
@@ -341,13 +326,24 @@ const resolveDecisionRequest = async (req, res, next) => {
       })
       .eq('id', decisionId)
       .eq('plan_id', planId)
-      .eq('status', 'pending') // Optimistic lock: prevent race condition
+      .eq('status', 'pending')
+      .or(`expires_at.is.null,expires_at.gt.${now}`) // Atomic expiration check
       .select()
       .single();
 
     if (error) {
-      // PGRST116 means no rows matched - someone else resolved it first
+      // PGRST116 means no rows matched - could be resolved, cancelled, or expired
       if (error.code === 'PGRST116') {
+        // Re-check to give specific error message
+        const { data: current } = await supabase
+          .from('decision_requests')
+          .select('status, expires_at')
+          .eq('id', decisionId)
+          .single();
+        
+        if (current?.expires_at && new Date(current.expires_at) < new Date()) {
+          return res.status(400).json({ error: 'Decision request has expired' });
+        }
         return res.status(409).json({ error: 'Decision was already resolved by another user' });
       }
       return res.status(400).json({ error: error.message });

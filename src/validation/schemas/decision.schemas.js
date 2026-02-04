@@ -36,6 +36,14 @@ const decisionIdParam = z.object({
   decisionId: uuid.describe('Decision request UUID')
 });
 
+// Metadata with size limit (max 10KB when stringified)
+const metadataWithSizeLimit = z.record(z.any()).optional()
+  .refine(
+    (val) => !val || JSON.stringify(val).length <= 10240,
+    { message: 'Metadata must be less than 10KB' }
+  )
+  .describe('Additional metadata (max 10KB)');
+
 // Create decision request
 const createDecisionRequest = z.object({
   node_id: uuid.optional().describe('Optional node UUID this decision relates to'),
@@ -45,7 +53,7 @@ const createDecisionRequest = z.object({
   urgency: urgency.optional().default('can_continue').describe('How urgent is this decision'),
   expires_at: z.string().datetime().optional().describe('Optional expiration timestamp'),
   requested_by_agent_name: z.string().max(100).optional().describe('Name of the agent requesting'),
-  metadata: z.record(z.any()).optional().describe('Additional metadata')
+  metadata: metadataWithSizeLimit
 }).strict();
 
 // Update decision request (for adding more context)
