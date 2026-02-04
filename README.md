@@ -9,12 +9,12 @@ The Planning System API stores plan data in a Supabase database and provides a R
 ## Core Features
 
 - 🏗️ **Hierarchical plan structures** with phases, tasks, and milestones
-- 🤖 **Rich context for AI agent collaboration** with detailed instructions and acceptance criteria
+- 🤖 **Rich context for AI agent collaboration** with detailed descriptions and instructions
 - 👥 **Equal status for human and AI collaborators** in the system architecture
 - 📊 **Detailed progress tracking and logging** with activity feeds
-- 📁 **Artifact management** for tracking outputs and references
-- 🔍 **Advanced search capabilities** across plans, nodes, and artifacts
+- 🔍 **Advanced search capabilities** across plans and nodes
 - 🔐 **Secure authentication** using Supabase Auth with API token support
+- 📚 **Knowledge stores** for capturing decisions and learnings
 
 ## Getting Started
 
@@ -197,7 +197,6 @@ The system uses PostgreSQL (via Supabase) with the following main tables:
 - `plan_collaborators` - User access to plans
 - `plan_comments` - Comments on nodes
 - `plan_node_logs` - Activity tracking
-- `plan_node_artifacts` - File/resource attachments
 - `plan_node_labels` - Tags for nodes
 - `api_tokens` - API authentication tokens
 - `node_assignments` - User assignments to nodes

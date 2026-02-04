@@ -1,8 +1,30 @@
 # Agent Planner API
 
-Version: 1.0.0
+Version: 1.1.0
 
 A collaborative planning system for humans and AI agents
+
+> **Note (v1.1.0):** Artifact endpoints have been removed as part of the Phase 0 simplification. Use node descriptions and logs for task documentation. The `acceptance_criteria` field has been merged into `description`.
+
+## Endpoint Tiers
+
+### 🟢 Core (Essential for basic workflows)
+- `GET/POST /plans` - List and create plans
+- `GET/POST/PUT /plans/{id}/nodes` - Manage plan structure
+- `PUT /plans/{id}/nodes/{nodeId}/status` - Update task status
+- `POST /plans/{id}/nodes/{nodeId}/log` - Add progress logs
+
+### 🔵 Important (Enhanced functionality)
+- `GET /plans/{id}/context` - Get compiled plan context
+- `GET /plans/{id}/nodes/{nodeId}/context` - Get detailed node context
+- `GET /search` - Global search
+- `GET /plans/{id}/progress` - Progress statistics
+
+### ⚪ Advanced (Specialized use cases)
+- Collaboration endpoints (presence, active users)
+- Assignment endpoints (assign/unassign users)
+- Activity feed endpoints
+- Knowledge store endpoints (organizations, goals)
 
 ## Base URL
 
@@ -35,33 +57,6 @@ Get recent activity for a specific node
 
 #### POST /activity/plans/{id}/nodes/{nodeId}/detailed-log
 Add a detailed activity log entry with metadata and tags
-
-
-### Artifacts
-
-#### POST /plans/{id}/nodes/{nodeId}/artifacts
-Add an artifact to a node
-
-#### GET /plans/{id}/nodes/{nodeId}/artifacts
-List artifacts for a node
-
-#### GET /plans/{id}/nodes/{nodeId}/artifacts/{artifactId}
-Get a specific artifact
-
-#### PUT /plans/{id}/nodes/{nodeId}/artifacts/{artifactId}
-Update an artifact
-
-#### DELETE /plans/{id}/nodes/{nodeId}/artifacts/{artifactId}
-Delete an artifact
-
-#### GET /plans/{id}/artifacts
-List all artifacts across the plan
-
-#### GET /api/artifacts/download
-Download an artifact file
-
-#### GET /download
-Download an artifact file
 
 
 ### Authentication
@@ -223,9 +218,6 @@ Global search across all accessible resources
 
 #### GET /plans/{id}/nodes/search
 Search for nodes in a specific plan with filtering
-
-#### GET /artifacts/search
-Search for artifacts across all accessible plans
 
 #### GET /search/plan/{plan_id}
 Search within a plan using the database search function

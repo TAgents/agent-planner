@@ -121,8 +121,6 @@ All messages follow this format:
 - `collaboration.comment_updated` - Comment updated
 - `collaboration.comment_deleted` - Comment deleted
 - `collaboration.log_added` - Log entry added to node
-- `collaboration.artifact_added` - Artifact added to node
-- `collaboration.artifact_deleted` - Artifact deleted
 - `collaboration.label_added` - Label added to node
 - `collaboration.label_removed` - Label removed from node
 
@@ -228,8 +226,6 @@ The schema provides 24 factory functions for creating properly formatted message
 - `createCommentUpdatedMessage(comment, planId, userName)`
 - `createCommentDeletedMessage(commentId, nodeId, planId, userId, userName)`
 - `createLogAddedMessage(log, planId, userName)`
-- `createArtifactAddedMessage(artifact, planId, userName)`
-- `createArtifactDeletedMessage(artifactId, nodeId, planId, userId, userName)`
 - `createLabelAddedMessage(label, planId, userId, userName)`
 - `createLabelRemovedMessage(labelId, nodeId, planId, userId, userName)`
 
