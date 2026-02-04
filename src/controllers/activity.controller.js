@@ -620,8 +620,7 @@ const getPlanTimeline = async (req, res, next) => {
         .filter(log => 
           log.content.includes('Updated status to') || 
           log.log_type === 'decision' || 
-          log.content.includes('Moved "') ||
-          log.content.includes('Added artifact "')
+          log.content.includes('Moved "')
         )
         .map(log => ({
           id: log.id,

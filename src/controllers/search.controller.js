@@ -130,108 +130,16 @@ const searchNodes = async (req, res, next) => {
 };
 
 /**
- * Search for artifacts across plans
+ * Search for artifacts (deprecated - returns empty array)
+ * @deprecated Artifacts have been removed (Phase 0 simplification)
  */
 const searchArtifacts = async (req, res, next) => {
-  try {
-    const { query, content_type: contentType } = req.query;
-    const userId = req.user.id;
-
-    // Get all plans the user has access to (either as owner or collaborator)
-    const { data: ownedPlans, error: ownedPlansError } = await supabase
-      .from('plans')
-      .select('id')
-      .eq('owner_id', userId);
-
-    if (ownedPlansError) {
-      return res.status(500).json({ error: ownedPlansError.message });
-    }
-
-    const { data: collabPlans, error: collabPlansError } = await supabase
-      .from('plan_collaborators')
-      .select('plan_id')
-      .eq('user_id', userId);
-
-    if (collabPlansError) {
-      return res.status(500).json({ error: collabPlansError.message });
-    }
-
-    // Combine plan IDs into a single array
-    const planIds = [
-      ...ownedPlans.map(plan => plan.id),
-      ...collabPlans.map(collab => collab.plan_id)
-    ];
-
-    // If user has no plans, return empty results
-    if (planIds.length === 0) {
-      return res.json([]);
-    }
-
-    // Get all nodes for these plans
-    const { data: nodes, error: nodesError } = await supabase
-      .from('plan_nodes')
-      .select('id, plan_id, title, node_type')
-      .in('plan_id', planIds);
-
-    if (nodesError) {
-      return res.status(500).json({ error: nodesError.message });
-    }
-
-    const nodeIds = nodes.map(node => node.id);
-    const nodesMap = nodes.reduce((acc, node) => {
-      acc[node.id] = node;
-      return acc;
-    }, {});
-
-    // Build the artifact search query
-    let artifactsQuery = supabase
-      .from('plan_node_artifacts')
-      .select(`
-        id, 
-        plan_node_id,
-        name, 
-        content_type, 
-        url, 
-        created_at,
-        created_by,
-        user:created_by (id, name, email),
-        metadata
-      `)
-      .in('plan_node_id', nodeIds);
-
-    // Add full-text search if query param is provided
-    if (query) {
-      artifactsQuery = artifactsQuery.or(`name.ilike.%${query}%,url.ilike.%${query}%`);
-    }
-
-    // Add content type filter if provided
-    if (contentType) {
-      const contentTypes = contentType.split(',');
-      artifactsQuery = artifactsQuery.in('content_type', contentTypes);
-    }
-
-    // Execute the query
-    const { data: artifacts, error } = await artifactsQuery.order('created_at', { ascending: false });
-
-    if (error) {
-      return res.status(500).json({ error: error.message });
-    }
-
-    // Enhance artifacts with node info
-    const enhancedArtifacts = artifacts.map(artifact => ({
-      ...artifact,
-      node: nodesMap[artifact.plan_node_id]
-    }));
-
-    // Return the results
-    res.json(enhancedArtifacts);
-  } catch (error) {
-    next(error);
-  }
+  // Artifacts have been removed
+  res.json([]);
 };
 
 /**
- * Search across all resources (plans, nodes, comments, logs, artifacts)
+ * Search across all resources (plans, nodes, comments, logs)
  */
 const globalSearch = async (req, res, next) => {
   try {
@@ -278,7 +186,6 @@ const globalSearch = async (req, res, next) => {
     let matchingNodes = [];
     let matchingComments = [];
     let matchingLogs = [];
-    let matchingArtifacts = [];
 
     if (planIds.length > 0) {
       // Search for nodes
@@ -347,27 +254,7 @@ const globalSearch = async (req, res, next) => {
         
         matchingLogs = logs;
         
-        // Search for artifacts
-        const { data: artifacts, error: artifactsError } = await supabase
-          .from('plan_node_artifacts')
-          .select(`
-            id, 
-            plan_node_id,
-            name, 
-            content_type, 
-            url, 
-            created_at,
-            user:created_by (id, name, email)
-          `)
-          .in('plan_node_id', nodeIds)
-          .ilike('name', `%${query}%`)
-          .order('created_at', { ascending: false });
-
-        if (artifactsError) {
-          return res.status(500).json({ error: artifactsError.message });
-        }
-        
-        matchingArtifacts = artifacts;
+        // Removed: artifact search (Phase 0 simplification)
       }
     }
 
@@ -377,7 +264,7 @@ const globalSearch = async (req, res, next) => {
       return acc;
     }, {});
 
-    // Map comments, logs, and artifacts to their parent nodes
+    // Map comments and logs to their parent nodes
     const mappedComments = matchingComments.map(comment => ({
       id: comment.id,
       type: 'comment',
@@ -394,16 +281,6 @@ const globalSearch = async (req, res, next) => {
       created_at: log.created_at,
       user: log.user,
       node: nodesMap[log.plan_node_id]
-    }));
-
-    const mappedArtifacts = matchingArtifacts.map(artifact => ({
-      id: artifact.id,
-      type: 'artifact',
-      name: artifact.name,
-      content_type: artifact.content_type,
-      created_at: artifact.created_at,
-      user: artifact.user,
-      node: nodesMap[artifact.plan_node_id]
     }));
 
     // Format plans results
@@ -436,17 +313,14 @@ const globalSearch = async (req, res, next) => {
         plans: mappedPlans,
         nodes: mappedNodes,
         comments: mappedComments,
-        logs: mappedLogs,
-        artifacts: mappedArtifacts
+        logs: mappedLogs
       },
       counts: {
         plans: mappedPlans.length,
         nodes: mappedNodes.length,
         comments: mappedComments.length,
         logs: mappedLogs.length,
-        artifacts: mappedArtifacts.length,
-        total: mappedPlans.length + mappedNodes.length + mappedComments.length + 
-               mappedLogs.length + mappedArtifacts.length
+        total: mappedPlans.length + mappedNodes.length + mappedComments.length + mappedLogs.length
       }
     });
   } catch (error) {

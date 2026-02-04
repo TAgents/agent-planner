@@ -62,8 +62,6 @@ const COLLABORATION_EVENTS = {
   COMMENT_UPDATED: 'collaboration.comment_updated',
   COMMENT_DELETED: 'collaboration.comment_deleted',
   LOG_ADDED: 'collaboration.log_added',
-  ARTIFACT_ADDED: 'collaboration.artifact_added',
-  ARTIFACT_DELETED: 'collaboration.artifact_deleted',
   LABEL_ADDED: 'collaboration.label_added',
   LABEL_REMOVED: 'collaboration.label_removed'
 };
@@ -193,17 +191,6 @@ const EVENT_TYPES = {
  * @property {string} content - Log content
  * @property {string} logType - Log type (progress, reasoning, challenge, decision)
  * @property {string[]} [tags] - Log tags
- * @property {string} createdAt - ISO 8601 timestamp
- */
-
-/**
- * @typedef {Object} ArtifactPayload
- * @property {string} id - Artifact UUID
- * @property {string} nodeId - Parent node UUID
- * @property {string} name - Artifact name
- * @property {string} contentType - MIME type
- * @property {string} url - Artifact URL
- * @property {string} createdBy - Creator user UUID
  * @property {string} createdAt - ISO 8601 timestamp
  */
 
@@ -579,45 +566,6 @@ function createLogAddedMessage(log, planId, userName = null) {
 }
 
 /**
- * Creates a collaboration.artifact_added event message
- * @param {Object} artifact - Artifact object from database
- * @param {string} planId - Parent plan UUID
- * @param {string} [userName] - Optional user display name
- * @returns {BaseMessage}
- */
-function createArtifactAddedMessage(artifact, planId, userName = null) {
-  const metadata = createMetadata(artifact.created_by, planId, userName);
-  const payload = {
-    id: artifact.id,
-    nodeId: artifact.plan_node_id,
-    name: artifact.name,
-    contentType: artifact.content_type,
-    url: artifact.url,
-    createdBy: artifact.created_by,
-    createdAt: artifact.created_at
-  };
-  return createMessage(COLLABORATION_EVENTS.ARTIFACT_ADDED, payload, metadata);
-}
-
-/**
- * Creates a collaboration.artifact_deleted event message
- * @param {string} artifactId - Deleted artifact UUID
- * @param {string} nodeId - Parent node UUID
- * @param {string} planId - Parent plan UUID
- * @param {string} userId - User who deleted the artifact
- * @param {string} [userName] - Optional user display name
- * @returns {BaseMessage}
- */
-function createArtifactDeletedMessage(artifactId, nodeId, planId, userId, userName = null) {
-  const metadata = createMetadata(userId, planId, userName);
-  const payload = {
-    id: artifactId,
-    nodeId
-  };
-  return createMessage(COLLABORATION_EVENTS.ARTIFACT_DELETED, payload, metadata);
-}
-
-/**
  * Creates a collaboration.label_added event message
  * @param {Object} label - Label object from database
  * @param {string} planId - Parent plan UUID
@@ -754,8 +702,6 @@ module.exports = {
   createCommentUpdatedMessage,
   createCommentDeletedMessage,
   createLogAddedMessage,
-  createArtifactAddedMessage,
-  createArtifactDeletedMessage,
   createLabelAddedMessage,
   createLabelRemovedMessage,
 

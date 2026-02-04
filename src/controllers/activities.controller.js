@@ -6,7 +6,7 @@ const { supabaseAdmin: supabase } = require('../config/supabase');
  */
 const activitiesController = {
   /**
-   * Get all activities for a node (logs, comments, artifacts, assignments)
+   * Get all activities for a node (logs, comments, assignments)
    */
   async getNodeActivities(req, res) {
     console.log('=== Activities endpoint hit ===');
@@ -142,39 +142,7 @@ const activitiesController = {
         });
       }
 
-      // Get artifacts
-      console.log('Fetching artifacts...');
-      const { data: artifacts, error: artifactsError } = await supabase
-        .from('plan_node_artifacts')
-        .select('*')
-        .eq('plan_node_id', nodeId)
-        .order('created_at', { ascending: false })
-        .limit(limit);
-
-      if (!artifactsError && artifacts && artifacts.length > 0) {
-        console.log(`Found ${artifacts.length} artifacts`);
-        artifacts.forEach(artifact => {
-          activities.push({
-            id: `artifact_${artifact.id}`,
-            type: 'artifact',
-            subtype: 'upload',
-            content: `Uploaded ${artifact.name}`,
-            timestamp: artifact.created_at,
-            user: {
-              id: artifact.created_by,
-              email: null,
-              name: 'User',
-              avatar_url: null
-            },
-            metadata: {
-              name: artifact.name,
-              content_type: artifact.content_type,
-              url: artifact.url,
-              ...artifact.metadata
-            }
-          });
-        });
-      }
+      // Removed: artifact activities (Phase 0 simplification)
 
       // Get assignments
       console.log('Fetching assignments...');

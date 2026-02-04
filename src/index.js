@@ -16,7 +16,7 @@ const { checkDatabaseConnection, getDatabaseInfo, checkExistingUsers } = require
 const authRoutes = require('./routes/auth.routes');
 const planRoutes = require('./routes/plan.routes');
 const nodeRoutes = require('./routes/node.routes');
-const artifactRoutes = require('./routes/artifact.routes');
+// Removed: artifact routes (Phase 0 simplification)
 const activityRoutes = require('./routes/activity.routes');
 const searchRoutes = require('./routes/search.routes');
 const tokenRoutes = require('./routes/token.routes');
@@ -36,7 +36,7 @@ const organizationRoutes = require('./routes/organization.routes');
 const goalRoutes = require('./routes/goal.routes');
 const knowledgeRoutes = require('./routes/knowledge.routes');
 const contextRoutes = require('./routes/context.routes');
-const artifactController = require('./controllers/artifact.controller');
+// Removed: artifact controller (Phase 0 simplification)
 
 // Import WebSocket collaboration server
 const CollaborationServer = require('./websocket/collaboration');
@@ -114,7 +114,7 @@ app.use('/webhooks', webhookLimiter, webhookRoutes);
 // General routes with standard rate limiting
 app.use('/plans', generalLimiter, planRoutes);
 app.use('/plans', generalLimiter, nodeRoutes);
-app.use('/plans', generalLimiter, artifactRoutes);
+// Removed: artifact routes (Phase 0 simplification)
 app.use('/activity', generalLimiter, activityRoutes);
 app.use('/debug', generalLimiter, debugRoutes);
 app.use('/upload', generalLimiter, uploadRoutes);
@@ -150,9 +150,8 @@ app.use('/knowledge', generalLimiter, knowledgeRoutes);
 // Agent context routes (leaf-up context loading)
 app.use('/context', generalLimiter, contextRoutes);
 
-// File download endpoint
+// Removed: artifact download endpoint (Phase 0 simplification)
 const { authenticate } = require('./middleware/auth.middleware');
-app.get('/download', authenticate, artifactController.downloadArtifact);
 
 // Direct file access endpoint for development
 if (process.env.NODE_ENV === 'development') {

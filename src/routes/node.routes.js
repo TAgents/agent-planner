@@ -862,7 +862,7 @@ const activitiesController = require('../controllers/activities.controller');
  *                         type: string
  *                       type:
  *                         type: string
- *                         enum: [log, comment, artifact, assignment, status_change]
+ *                         enum: [log, comment, assignment, status_change]
  *                       subtype:
  *                         type: string
  *                       content:

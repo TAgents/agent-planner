@@ -54,10 +54,6 @@ const { authenticate } = require('../middleware/auth.middleware');
  *                       type: array
  *                       items:
  *                         type: object
- *                     artifacts:
- *                       type: array
- *                       items:
- *                         type: object
  *                 counts:
  *                   type: object
  *                   properties:
@@ -68,8 +64,6 @@ const { authenticate } = require('../middleware/auth.middleware');
  *                     comments:
  *                       type: integer
  *                     logs:
- *                       type: integer
- *                     artifacts:
  *                       type: integer
  *                     total:
  *                       type: integer
@@ -134,32 +128,7 @@ router.get('/', authenticate, searchController.globalSearch);
  */
 router.get('/plans/:id/nodes/search', authenticate, searchController.searchNodes);
 
-/**
- * @swagger
- * /artifacts/search:
- *   get:
- *     summary: Search for artifacts across all accessible plans
- *     tags: [Search]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: query
- *         schema:
- *           type: string
- *         description: Search term
- *       - in: query
- *         name: content_type
- *         schema:
- *           type: string
- *         description: Filter by content type (comma-separated for multiple values)
- *     responses:
- *       200:
- *         description: Search results for artifacts
- *       401:
- *         description: Authentication required
- */
-router.get('/artifacts/search', authenticate, searchController.searchArtifacts);
+// Removed: /artifacts/search route (Phase 0 simplification)
 
 /**
  * @swagger
@@ -204,7 +173,7 @@ router.get('/artifacts/search', authenticate, searchController.searchArtifacts);
  *                         format: uuid
  *                       type:
  *                         type: string
- *                         enum: [node, comment, log, artifact]
+ *                         enum: [node, comment, log]
  *                       title:
  *                         type: string
  *                       content:

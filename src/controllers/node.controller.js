@@ -516,11 +516,7 @@ const deleteNode = async (req, res, next) => {
         .delete()
         .eq('plan_node_id', id);
 
-      // Delete artifacts for this node
-      await supabase
-        .from('plan_node_artifacts')
-        .delete()
-        .eq('plan_node_id', id);
+      // Removed: artifact deletion (Phase 0 simplification - table will be dropped)
 
       // Delete logs for this node
       await supabase
@@ -653,25 +649,7 @@ const getNodeContext = async (req, res, next) => {
       return res.status(500).json({ error: childrenError.message });
     }
 
-    // Get artifacts
-    const { data: artifacts, error: artifactsError } = await supabase
-      .from('plan_node_artifacts')
-      .select(`
-        id, 
-        name, 
-        content_type, 
-        url, 
-        created_at,
-        created_by,
-        metadata
-      `)
-      .eq('plan_node_id', nodeId)
-      .order('created_at', { ascending: false })
-      .limit(10);
-
-    if (artifactsError) {
-      return res.status(500).json({ error: artifactsError.message });
-    }
+    // Removed: artifact retrieval (Phase 0 simplification)
 
     // Get the plan
     const { data: plan, error: planError } = await supabase
@@ -694,9 +672,7 @@ const getNodeContext = async (req, res, next) => {
       },
       node,
       children,
-      // comments, // Removed - use logs instead
       logs,
-      artifacts,
     };
 
     res.json(context);

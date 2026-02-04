@@ -428,11 +428,7 @@ const deletePlan = async (req, res, next) => {
       .delete()
       .match({ 'plan_id': id });
     
-    // Delete plan node artifacts
-    await supabase
-      .from('plan_node_artifacts')
-      .delete()
-      .match({ 'plan_id': id });
+    // Removed: artifact deletion (Phase 0 simplification)
     
     // Delete plan node logs
     await supabase

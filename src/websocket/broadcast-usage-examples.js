@@ -243,31 +243,6 @@ async function exampleLogAdded(req, res) {
   res.json({ log: newLog });
 }
 
-/**
- * Example: Broadcasting when an artifact is added
- */
-async function exampleArtifactAdded(req, res) {
-  const { broadcastPlanUpdate } = require('../websocket/broadcast');
-  const { createArtifactAddedMessage } = require('../websocket/message-schema');
-
-  // ... create artifact in database ...
-  const newArtifact = {
-    id: 'artifact-uuid',
-    plan_node_id: req.params.nodeId,
-    name: req.body.name,
-    content_type: req.body.content_type,
-    url: req.body.url,
-    created_by: req.user.id,
-    created_at: new Date().toISOString()
-  };
-
-  // Broadcast to all users viewing this plan
-  const message = createArtifactAddedMessage(newArtifact, req.params.planId, req.user.name);
-  await broadcastPlanUpdate(req.params.planId, message);
-
-  res.json({ artifact: newArtifact });
-}
-
 // ============================================================================
 // EXAMPLE 4: Broadcasting collaborator events
 // ============================================================================

@@ -55,38 +55,17 @@
  *                   example: agent-planner-api
  */
 
+// Removed: /download artifact endpoint (Phase 0 simplification)
+
 /**
  * @swagger
- * /download:
+ * /placeholder:
  *   get:
- *     summary: Download an artifact file
- *     tags: [Artifacts]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: path
- *         required: true
- *         schema:
- *           type: string
- *         description: The file path to download
- *         example: uploads/artifacts/document.pdf
- *       - in: query
- *         name: filename
- *         required: false
- *         schema:
- *           type: string
- *         description: The filename to use for the download (defaults to original filename)
- *         example: my-document.pdf
+ *     deprecated: true
+ *     summary: Placeholder (artifacts removed)
+ *     tags: [Deprecated]
  *     responses:
- *       200:
- *         description: File stream for download
- *         content:
- *           application/octet-stream:
- *             schema:
- *               type: string
- *               format: binary
- *       400:
+ *       410:
  *         description: Invalid path or not a file
  *         content:
  *           application/json:
