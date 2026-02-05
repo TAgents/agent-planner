@@ -140,14 +140,14 @@ router.get('/summary', authenticate, async (req, res) => {
     const { count: activeGoalsCount } = await supabaseAdmin
       .from('goals')
       .select('*', { count: 'exact', head: true })
-      .eq('owner_id', userId)
+      .eq('created_by', userId)
       .eq('status', 'active');
 
     // Knowledge entries count
     const { count: knowledgeEntriesCount } = await supabaseAdmin
       .from('knowledge_entries')
       .select('*', { count: 'exact', head: true })
-      .eq('owner_id', userId);
+      .eq('created_by', userId);
 
     res.json({
       pending_decisions_count: pendingDecisionsCount || 0,
@@ -367,25 +367,30 @@ router.get('/active-goals', authenticate, async (req, res) => {
         title,
         description,
         status,
-        target_date,
-        current_value,
-        target_value,
-        metric_type,
+        time_horizon,
+        success_metrics,
         created_at,
         updated_at
       `)
-      .eq('owner_id', userId)
+      .eq('created_by', userId)
       .eq('status', 'active')
       .order('updated_at', { ascending: false })
       .limit(limit);
 
     if (error) throw error;
 
-    // Calculate progress for each goal
+    // Calculate progress from success_metrics
     const goalsWithProgress = (goals || []).map(goal => {
       let progress = 0;
-      if (goal.target_value && goal.target_value > 0 && goal.current_value !== null) {
-        progress = Math.min(100, Math.round((goal.current_value / goal.target_value) * 100));
+      const metrics = goal.success_metrics || [];
+      if (metrics.length > 0) {
+        const totalProgress = metrics.reduce((sum, m) => {
+          const target = parseFloat(m.target) || 0;
+          const current = parseFloat(m.current) || 0;
+          const metricProgress = target > 0 ? Math.min(100, (current / target) * 100) : 0;
+          return sum + metricProgress;
+        }, 0);
+        progress = Math.round(totalProgress / metrics.length);
       }
       return {
         ...goal,
