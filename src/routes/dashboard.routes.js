@@ -312,7 +312,6 @@ router.get('/recent-plans', authenticate, async (req, res) => {
         status,
         created_at,
         updated_at,
-        progress,
         owner_id
       `)
       .in('id', planIds)
@@ -322,13 +321,31 @@ router.get('/recent-plans', authenticate, async (req, res) => {
 
     if (error) throw error;
 
-    // Mark which plans are owned vs collaborated
-    const plansWithOwnership = (plans || []).map(plan => ({
-      ...plan,
-      is_owner: plan.owner_id === userId
+    // Calculate progress for each plan (completed tasks / total tasks)
+    const plansWithProgress = await Promise.all((plans || []).map(async (plan) => {
+      const { count: totalTasks } = await supabaseAdmin
+        .from('plan_nodes')
+        .select('*', { count: 'exact', head: true })
+        .eq('plan_id', plan.id)
+        .eq('node_type', 'task');
+      
+      const { count: completedTasks } = await supabaseAdmin
+        .from('plan_nodes')
+        .select('*', { count: 'exact', head: true })
+        .eq('plan_id', plan.id)
+        .eq('node_type', 'task')
+        .eq('status', 'completed');
+      
+      const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+      
+      return {
+        ...plan,
+        progress,
+        is_owner: plan.owner_id === userId
+      };
     }));
 
-    res.json({ plans: plansWithOwnership });
+    res.json({ plans: plansWithProgress });
   } catch (error) {
     await logger.error('Dashboard recent plans error:', error);
     res.status(500).json({ error: 'Failed to fetch recent plans' });
