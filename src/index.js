@@ -37,6 +37,7 @@ const goalRoutes = require('./routes/goal.routes');
 const knowledgeRoutes = require('./routes/knowledge.routes');
 const contextRoutes = require('./routes/context.routes');
 const decisionRoutes = require('./routes/decision.routes');
+const dashboardRoutes = require('./routes/dashboard.routes');
 // Removed: artifact controller (Phase 0 simplification)
 
 // Import WebSocket collaboration server
@@ -153,6 +154,9 @@ app.use('/context', generalLimiter, contextRoutes);
 
 // Decision request routes (human-in-the-loop)
 app.use('/plans', generalLimiter, decisionRoutes);
+
+// Dashboard routes (home page data)
+app.use('/dashboard', generalLimiter, dashboardRoutes);
 
 // Removed: artifact download endpoint (Phase 0 simplification)
 const { authenticate } = require('./middleware/auth.middleware');
