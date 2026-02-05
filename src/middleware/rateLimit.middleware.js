@@ -9,13 +9,14 @@ const rateLimit = require('express-rate-limit');
 const logger = require('../utils/logger');
 
 // Default configuration from environment variables
-const DEFAULT_GENERAL_LIMIT = parseInt(process.env.RATE_LIMIT_GENERAL) || 100;
+// Increased general limit to 300/min to support SPAs with multiple concurrent fetches
+const DEFAULT_GENERAL_LIMIT = parseInt(process.env.RATE_LIMIT_GENERAL) || 300;
 const DEFAULT_GENERAL_WINDOW_MS = parseInt(process.env.RATE_LIMIT_GENERAL_WINDOW_MS) || 60 * 1000; // 1 minute
 
 const DEFAULT_AUTH_LIMIT = parseInt(process.env.RATE_LIMIT_AUTH) || 10;
 const DEFAULT_AUTH_WINDOW_MS = parseInt(process.env.RATE_LIMIT_AUTH_WINDOW_MS) || 60 * 1000; // 1 minute
 
-const DEFAULT_SEARCH_LIMIT = parseInt(process.env.RATE_LIMIT_SEARCH) || 30;
+const DEFAULT_SEARCH_LIMIT = parseInt(process.env.RATE_LIMIT_SEARCH) || 60;
 const DEFAULT_SEARCH_WINDOW_MS = parseInt(process.env.RATE_LIMIT_SEARCH_WINDOW_MS) || 60 * 1000; // 1 minute
 
 /**
@@ -132,12 +133,12 @@ const searchLimiter = rateLimit({
 
 /**
  * Token generation rate limiter
- * Strict limits to prevent token abuse
- * Default: 5 requests per minute
+ * Moderate limits to prevent token abuse
+ * Default: 10 requests per minute
  */
 const tokenLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: parseInt(process.env.RATE_LIMIT_TOKEN) || 5,
+  max: parseInt(process.env.RATE_LIMIT_TOKEN) || 10,
   standardHeaders: true,
   legacyHeaders: false,
   skip: createSkipFunction(),
@@ -153,11 +154,11 @@ const tokenLimiter = rateLimit({
 /**
  * Webhook endpoints rate limiter
  * Moderate limits for webhook operations
- * Default: 20 requests per minute
+ * Default: 30 requests per minute
  */
 const webhookLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: parseInt(process.env.RATE_LIMIT_WEBHOOK) || 20,
+  max: parseInt(process.env.RATE_LIMIT_WEBHOOK) || 30,
   standardHeaders: true,
   legacyHeaders: false,
   skip: createSkipFunction(),
