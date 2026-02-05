@@ -11,6 +11,31 @@ const { supabaseAdmin } = require('../config/supabase');
 const logger = require('../utils/logger');
 
 /**
+ * Helper to get all plan IDs a user has access to (owned + collaborated)
+ */
+async function getUserPlanIds(userId) {
+  // Get owned plans
+  const { data: ownedPlans } = await supabaseAdmin
+    .from('plans')
+    .select('id')
+    .eq('owner_id', userId);
+
+  // Get collaborated plans
+  const { data: collabPlans } = await supabaseAdmin
+    .from('plan_collaborators')
+    .select('plan_id')
+    .eq('user_id', userId);
+
+  const planIds = [
+    ...(ownedPlans?.map(p => p.id) || []),
+    ...(collabPlans?.map(c => c.plan_id) || [])
+  ];
+
+  // Return unique IDs
+  return [...new Set(planIds)];
+}
+
+/**
  * @swagger
  * tags:
  *   name: Dashboard
@@ -22,7 +47,7 @@ const logger = require('../utils/logger');
  * /dashboard/summary:
  *   get:
  *     summary: Get dashboard summary stats
- *     description: Returns quick stats for the user's dashboard
+ *     description: Returns quick stats for the user's dashboard including owned and collaborated plans
  *     tags: [Dashboard]
  *     security:
  *       - bearerAuth: []
@@ -36,16 +61,22 @@ const logger = require('../utils/logger');
  *               properties:
  *                 pending_decisions_count:
  *                   type: integer
+ *                   example: 3
  *                 pending_agent_requests_count:
  *                   type: integer
+ *                   example: 2
  *                 active_plans_count:
  *                   type: integer
+ *                   example: 5
  *                 tasks_completed_this_week:
  *                   type: integer
+ *                   example: 12
  *                 active_goals_count:
  *                   type: integer
+ *                   example: 3
  *                 knowledge_entries_count:
  *                   type: integer
+ *                   example: 47
  */
 router.get('/summary', authenticate, async (req, res) => {
   try {
@@ -58,35 +89,41 @@ router.get('/summary', authenticate, async (req, res) => {
     weekStart.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
     weekStart.setHours(0, 0, 0, 0);
 
-    // Active plans count (owned or collaborating, status active/draft)
-    const { count: activePlansCount } = await supabaseAdmin
-      .from('plans')
-      .select('*', { count: 'exact', head: true })
-      .eq('owner_id', userId)
-      .in('status', ['active', 'draft']);
+    // Get all plan IDs user has access to (owned + collaborated)
+    const planIds = await getUserPlanIds(userId);
 
-    // Pending decisions count
+    // Active plans count (from user's accessible plans)
+    let activePlansCount = 0;
+    if (planIds.length > 0) {
+      const { count } = await supabaseAdmin
+        .from('plans')
+        .select('*', { count: 'exact', head: true })
+        .in('id', planIds)
+        .in('status', ['active', 'draft']);
+      activePlansCount = count || 0;
+    }
+
+    // Pending decisions count (where user is requested_of)
     const { count: pendingDecisionsCount } = await supabaseAdmin
       .from('decision_requests')
       .select('*', { count: 'exact', head: true })
       .eq('requested_of_user_id', userId)
       .eq('status', 'pending');
 
-    // Pending agent requests count
-    const { count: pendingAgentRequestsCount } = await supabaseAdmin
-      .from('agent_task_requests')
-      .select('*', { count: 'exact', head: true })
-      .eq('owner_id', userId)
-      .eq('status', 'completed'); // Completed means agent responded, waiting for user to acknowledge
+    // Pending agent requests count - tasks with agent_requested set in user's plans
+    // (agent_requested is set but agent hasn't responded yet, or response needs review)
+    let pendingAgentRequestsCount = 0;
+    if (planIds.length > 0) {
+      const { count } = await supabaseAdmin
+        .from('plan_nodes')
+        .select('*', { count: 'exact', head: true })
+        .in('plan_id', planIds)
+        .not('agent_requested', 'is', null)
+        .eq('agent_requested_by', userId);
+      pendingAgentRequestsCount = count || 0;
+    }
 
-    // Tasks completed this week - get user's plans first
-    const { data: userPlans } = await supabaseAdmin
-      .from('plans')
-      .select('id')
-      .eq('owner_id', userId);
-    
-    const planIds = userPlans?.map(p => p.id) || [];
-    
+    // Tasks completed this week - optimized single query with join
     let tasksCompletedThisWeek = 0;
     if (planIds.length > 0) {
       const { count } = await supabaseAdmin
@@ -114,8 +151,8 @@ router.get('/summary', authenticate, async (req, res) => {
 
     res.json({
       pending_decisions_count: pendingDecisionsCount || 0,
-      pending_agent_requests_count: pendingAgentRequestsCount || 0,
-      active_plans_count: activePlansCount || 0,
+      pending_agent_requests_count: pendingAgentRequestsCount,
+      active_plans_count: activePlansCount,
       tasks_completed_this_week: tasksCompletedThisWeek,
       active_goals_count: activeGoalsCount || 0,
       knowledge_entries_count: knowledgeEntriesCount || 0
@@ -131,7 +168,7 @@ router.get('/summary', authenticate, async (req, res) => {
  * /dashboard/pending:
  *   get:
  *     summary: Get pending items requiring attention
- *     description: Returns pending decisions and agent requests
+ *     description: Returns pending decisions and tasks with agent requests
  *     tags: [Dashboard]
  *     security:
  *       - bearerAuth: []
@@ -173,51 +210,60 @@ router.get('/pending', authenticate, async (req, res) => {
       .order('created_at', { ascending: false })
       .limit(limit);
 
-    // Agent requests that are completed (ready for review)
-    const { data: agentRequests } = await supabaseAdmin
-      .from('agent_task_requests')
-      .select(`
-        id,
-        request_type,
-        status,
-        completed_at,
-        plan_id,
-        task_id,
-        plans:plan_id (
+    // Get plan IDs for agent request query
+    const planIds = await getUserPlanIds(userId);
+
+    // Tasks with agent requests (from plan_nodes table)
+    let agentRequests = [];
+    if (planIds.length > 0) {
+      const { data } = await supabaseAdmin
+        .from('plan_nodes')
+        .select(`
           id,
-          title
-        ),
-        plan_nodes:task_id (
-          id,
-          title
-        )
-      `)
-      .eq('owner_id', userId)
-      .eq('status', 'completed')
-      .order('completed_at', { ascending: false })
-      .limit(limit);
+          title,
+          agent_requested,
+          agent_requested_at,
+          agent_request_message,
+          plan_id,
+          plans:plan_id (
+            id,
+            title
+          )
+        `)
+        .in('plan_id', planIds)
+        .not('agent_requested', 'is', null)
+        .eq('agent_requested_by', userId)
+        .order('agent_requested_at', { ascending: false })
+        .limit(limit);
+      agentRequests = data || [];
+    }
 
     res.json({
-      decisions: (decisions || []).map(d => ({
-        id: d.id,
-        title: d.title,
-        description: d.description,
-        urgency: d.urgency,
-        created_at: d.created_at,
-        plan_id: d.plan_id,
-        plan_title: d.plans?.title,
-        node_id: d.node_id
-      })),
-      agent_requests: (agentRequests || []).map(r => ({
-        id: r.id,
-        request_type: r.request_type,
-        completed_at: r.completed_at,
-        plan_id: r.plan_id,
-        plan_title: r.plans?.title,
-        task_id: r.task_id,
-        task_title: r.plan_nodes?.title
-      })),
-      total: (decisions?.length || 0) + (agentRequests?.length || 0)
+      decisions: (decisions || [])
+        .filter(d => d.plans) // Only include if plan exists
+        .map(d => ({
+          id: d.id,
+          title: d.title,
+          description: d.description,
+          urgency: d.urgency,
+          created_at: d.created_at,
+          plan_id: d.plan_id,
+          plan_title: d.plans?.title || 'Unknown Plan',
+          node_id: d.node_id
+        })),
+      agent_requests: agentRequests
+        .filter(r => r.plans) // Only include if plan exists
+        .map(r => ({
+          id: r.id,
+          task_title: r.title,
+          request_type: r.agent_requested,
+          requested_at: r.agent_requested_at,
+          message: r.agent_request_message,
+          plan_id: r.plan_id,
+          plan_title: r.plans?.title || 'Unknown Plan'
+        })),
+      total: ((decisions || []).filter(d => d.plans).length) + 
+             (agentRequests.filter(r => r.plans).length)
     });
   } catch (error) {
     await logger.error('Dashboard pending error:', error);
@@ -230,7 +276,7 @@ router.get('/pending', authenticate, async (req, res) => {
  * /dashboard/recent-plans:
  *   get:
  *     summary: Get recently accessed plans
- *     description: Returns the user's most recently updated plans
+ *     description: Returns the user's most recently updated plans (owned and collaborated)
  *     tags: [Dashboard]
  *     security:
  *       - bearerAuth: []
@@ -250,6 +296,13 @@ router.get('/recent-plans', authenticate, async (req, res) => {
     const userId = req.user.id;
     const limit = Math.min(parseInt(req.query.limit) || 6, 20);
 
+    // Get all plan IDs user has access to
+    const planIds = await getUserPlanIds(userId);
+
+    if (planIds.length === 0) {
+      return res.json({ plans: [] });
+    }
+
     const { data: plans, error } = await supabaseAdmin
       .from('plans')
       .select(`
@@ -259,16 +312,23 @@ router.get('/recent-plans', authenticate, async (req, res) => {
         status,
         created_at,
         updated_at,
-        progress
+        progress,
+        owner_id
       `)
-      .eq('owner_id', userId)
+      .in('id', planIds)
       .in('status', ['active', 'draft'])
       .order('updated_at', { ascending: false })
       .limit(limit);
 
     if (error) throw error;
 
-    res.json({ plans: plans || [] });
+    // Mark which plans are owned vs collaborated
+    const plansWithOwnership = (plans || []).map(plan => ({
+      ...plan,
+      is_owner: plan.owner_id === userId
+    }));
+
+    res.json({ plans: plansWithOwnership });
   } catch (error) {
     await logger.error('Dashboard recent plans error:', error);
     res.status(500).json({ error: 'Failed to fetch recent plans' });
@@ -324,7 +384,7 @@ router.get('/active-goals', authenticate, async (req, res) => {
     // Calculate progress for each goal
     const goalsWithProgress = (goals || []).map(goal => {
       let progress = 0;
-      if (goal.target_value && goal.current_value !== null) {
+      if (goal.target_value && goal.target_value > 0 && goal.current_value !== null) {
         progress = Math.min(100, Math.round((goal.current_value / goal.target_value) * 100));
       }
       return {
