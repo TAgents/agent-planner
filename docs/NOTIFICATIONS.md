@@ -1,234 +1,302 @@
-# AgentPlanner Notifications - Simple Design
+# AgentPlanner Webhook Notifications
 
-## Overview
-
-Webhook notifications that integrate with OpenClaw agents. One webhook URL per user, simple payloads, minimal config.
+Webhook notifications that integrate with AI agents like OpenClaw. One webhook URL per user, structured payloads.
 
 ---
 
 ## User Flow
 
 1. User goes to **Settings → Notifications**
-2. Enters webhook URL: `https://gateway.openclaw.ai/webhook/abc123`
+2. Enters webhook URL: `https://your-gateway/hooks/agentplanner`
 3. Selects which events to receive (checkboxes)
 4. Done ✓
 
 ---
 
-## Events (Keep it minimal)
+## API Endpoints
 
-| Event | When | Why it matters |
-|-------|------|----------------|
-| `task.blocked` | Task status → blocked | Needs attention |
-| `task.assigned` | Task assigned to user | Work to do |
-| `task.completed` | Task marked done | Progress update |
-| `plan.shared` | Plan visibility changed | Collaboration |
+```bash
+# Get available event types
+GET /webhooks/events
+Authorization: Bearer <token>
+
+# Get current settings
+GET /webhooks/settings
+Authorization: Bearer <token>
+
+# Update settings
+PUT /webhooks/settings
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "url": "https://your-gateway/hooks/agentplanner",
+  "events": ["task.blocked", "task.start_requested", "decision.requested.blocking"],
+  "enabled": true
+}
+
+# Test webhook delivery
+POST /webhooks/test
+Authorization: Bearer <token>
+
+# View delivery history
+GET /webhooks/history?limit=20
+Authorization: Bearer <token>
+```
 
 ---
 
-## Webhook Payload
+## Event Types
+
+### Task Events
+
+| Event | When | Default |
+|-------|------|---------|
+| `task.blocked` | Task status changed to blocked | ✅ On |
+| `task.unblocked` | Task status changed from blocked | ❌ Off |
+| `task.completed` | Task marked complete | ❌ Off |
+| `task.assigned` | Task assigned to user | ✅ On |
+
+### Agent Request Events
+
+| Event | When | Default |
+|-------|------|---------|
+| `task.start_requested` | Human requests agent to START a task | ✅ On |
+| `task.review_requested` | Human requests agent to REVIEW work | ✅ On |
+| `task.help_requested` | Human requests agent assistance | ✅ On |
+| `task.continue_requested` | Human requests agent to CONTINUE work | ✅ On |
+| `task.agent_requested` | Generic agent request (fallback) | ✅ On |
+
+### Decision Events
+
+| Event | When | Default |
+|-------|------|---------|
+| `decision.requested` | Decision needed from human | ✅ On |
+| `decision.requested.blocking` | URGENT: Agent blocked waiting for decision | ✅ On |
+| `decision.resolved` | Decision was made | ❌ Off |
+
+### Plan Events
+
+| Event | When | Default |
+|-------|------|---------|
+| `plan.shared` | Plan visibility changed | ❌ Off |
+
+---
+
+## Webhook Payload Schemas
+
+### Task Events
 
 ```json
 {
   "event": "task.blocked",
-  "timestamp": "2026-02-02T00:45:00Z",
+  "timestamp": "2026-02-06T10:00:00Z",
   "plan": {
-    "id": "uuid",
-    "title": "AgentPlanner Roadmap"
+    "id": "plan-uuid",
+    "title": "Project Roadmap"
   },
   "task": {
-    "id": "uuid", 
-    "title": "Implement Rate Limiting",
+    "id": "task-uuid",
+    "title": "Implement Authentication",
     "status": "blocked"
   },
   "actor": {
-    "name": "Feynman",
-    "type": "agent"
+    "name": "John Doe",
+    "type": "user"
   },
-  "message": "🚫 Task 'Implement Rate Limiting' is now blocked in plan 'AgentPlanner Roadmap'"
+  "message": "🚫 Task 'Implement Authentication' is now blocked in plan 'Project Roadmap'"
 }
 ```
 
-The `message` field is pre-formatted for easy display - agents can use it directly.
+### Agent Request Events
+
+```json
+{
+  "event": "task.start_requested",
+  "timestamp": "2026-02-06T10:00:00Z",
+  "plan": {
+    "id": "plan-uuid",
+    "title": "Project Roadmap"
+  },
+  "task": {
+    "id": "task-uuid",
+    "title": "Setup React Project",
+    "description": "Initialize the project with React 18 and TypeScript",
+    "node_type": "task",
+    "status": "not_started",
+    "agent_instructions": "Use Vite as the build tool. Configure ESLint and Prettier.",
+    "context": "This is part of the frontend development phase"
+  },
+  "request": {
+    "type": "start",
+    "message": "Please begin working on this task. Use TypeScript strict mode.",
+    "requested_at": "2026-02-06T10:00:00Z",
+    "requested_by": "John Doe"
+  },
+  "actor": {
+    "name": "John Doe",
+    "type": "user"
+  },
+  "message": "🚀 Agent requested to START task 'Setup React Project' in plan 'Project Roadmap'"
+}
+```
+
+### Decision Events
+
+```json
+{
+  "event": "decision.requested.blocking",
+  "timestamp": "2026-02-06T10:00:00Z",
+  "plan": {
+    "id": "plan-uuid",
+    "title": "Project Roadmap"
+  },
+  "decision": {
+    "id": "decision-uuid",
+    "title": "Which database to use?",
+    "context": "We need to store user data and sessions. Expected 10k users initially.",
+    "options": [
+      {"option": "PostgreSQL", "pros": "ACID, mature ecosystem", "cons": "More complex setup"},
+      {"option": "MongoDB", "pros": "Flexible schema", "cons": "Less consistency guarantees"}
+    ],
+    "urgency": "blocking",
+    "status": "pending",
+    "node_id": "task-uuid"
+  },
+  "actor": {
+    "name": "AI Agent",
+    "type": "agent",
+    "agent_name": "Planner"
+  },
+  "message": "🚨 URGENT: Decision needed: 'Which database to use?' in plan 'Project Roadmap' - Agent is blocked!"
+}
+```
+
+For resolved decisions:
+```json
+{
+  "event": "decision.resolved",
+  "resolution": {
+    "decision": "We will use PostgreSQL",
+    "rationale": "ACID compliance is critical for financial data",
+    "decided_at": "2026-02-06T11:00:00Z"
+  }
+}
+```
 
 ---
 
-## Database
+## Database Schema
 
-Add to `users` table:
+User webhook settings are stored in the `users` table:
+
 ```sql
 ALTER TABLE users ADD COLUMN webhook_url TEXT;
-ALTER TABLE users ADD COLUMN webhook_events TEXT[] DEFAULT '{"task.blocked", "task.assigned"}';
+ALTER TABLE users ADD COLUMN webhook_events TEXT[] DEFAULT '{"task.blocked", "task.assigned", "task.start_requested", "decision.requested.blocking"}';
 ALTER TABLE users ADD COLUMN webhook_enabled BOOLEAN DEFAULT false;
 ```
 
----
+Delivery tracking in `webhook_deliveries`:
 
-## API
-
-### Update webhook settings
-```
-PUT /api/user/webhook
-{
-  "url": "https://gateway.openclaw.ai/webhook/abc123",
-  "events": ["task.blocked", "task.assigned", "task.completed"],
-  "enabled": true
-}
-```
-
-### Get current settings
-```
-GET /api/user/webhook
+```sql
+CREATE TABLE webhook_deliveries (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id),
+  event_type TEXT NOT NULL,
+  payload JSONB NOT NULL,
+  status TEXT NOT NULL,  -- 'success', 'failed'
+  status_code INTEGER,
+  error_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  delivered_at TIMESTAMPTZ
+);
 ```
 
 ---
 
-## Backend Implementation
+## Authentication
 
-```javascript
-// services/notifications.js
+Webhooks can authenticate with the receiving server using:
 
-const EVENTS = {
-  'task.blocked': (node, plan, actor) => ({
-    message: `🚫 Task '${node.title}' is now blocked in plan '${plan.title}'`
-  }),
-  'task.assigned': (node, plan, actor) => ({
-    message: `📋 You were assigned '${node.title}' in plan '${plan.title}'`
-  }),
-  'task.completed': (node, plan, actor) => ({
-    message: `✅ Task '${node.title}' completed in plan '${plan.title}'`
-  }),
-  'plan.shared': (node, plan, actor) => ({
-    message: `🔗 Plan '${plan.title}' is now ${plan.visibility}`
-  })
-};
+1. **Authorization header** (recommended):
+   ```
+   Authorization: Bearer your-secret-token
+   ```
 
-async function sendNotification(eventType, { node, plan, actor, userId }) {
-  const user = await getUser(userId);
-  
-  if (!user.webhook_enabled || !user.webhook_url) return;
-  if (!user.webhook_events.includes(eventType)) return;
-  
-  const eventData = EVENTS[eventType](node, plan, actor);
-  
-  const payload = {
-    event: eventType,
-    timestamp: new Date().toISOString(),
-    plan: { id: plan.id, title: plan.title },
-    task: node ? { id: node.id, title: node.title, status: node.status } : null,
-    actor: { name: actor.name, type: actor.type || 'user' },
-    message: eventData.message
-  };
-  
-  try {
-    await fetch(user.webhook_url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      timeout: 5000
-    });
-  } catch (err) {
-    console.error('Webhook delivery failed:', err.message);
-    // Don't retry for MVP - just log it
-  }
-}
-```
+2. **Custom header**:
+   ```
+   X-OpenClaw-Token: your-secret-token
+   ```
+
+3. **Query parameter** (deprecated):
+   ```
+   https://gateway/hooks/agentplanner?token=your-secret-token
+   ```
 
 ---
 
-## Trigger Points
+## Delivery
 
-Add notification calls to existing endpoints:
-
-```javascript
-// In node controller - updateNode()
-if (oldStatus !== newStatus) {
-  if (newStatus === 'blocked') {
-    await sendNotification('task.blocked', { node, plan, actor, userId: plan.owner_id });
-  }
-  if (newStatus === 'completed') {
-    await sendNotification('task.completed', { node, plan, actor, userId: plan.owner_id });
-  }
-}
-
-// In node controller - assignNode()
-await sendNotification('task.assigned', { node, plan, actor, userId: assignee_id });
-
-// In plan controller - updatePlan() 
-if (oldVisibility !== newVisibility) {
-  await sendNotification('plan.shared', { plan, actor, userId: plan.owner_id });
-}
-```
-
----
-
-## UI (Settings Page)
-
-```
-┌─────────────────────────────────────────────────────┐
-│ Notifications                                        │
-├─────────────────────────────────────────────────────┤
-│                                                      │
-│ Webhook URL                                          │
-│ ┌─────────────────────────────────────────────────┐ │
-│ │ https://gateway.openclaw.ai/webhook/abc123      │ │
-│ └─────────────────────────────────────────────────┘ │
-│                                                      │
-│ Events to receive:                                   │
-│ ☑ Task blocked                                       │
-│ ☑ Task assigned to me                                │
-│ ☐ Task completed                                     │
-│ ☐ Plan sharing changed                               │
-│                                                      │
-│ ┌──────────────────┐                                 │
-│ │ ● Enabled        │  [Test Webhook] [Save]          │
-│ └──────────────────┘                                 │
-│                                                      │
-└─────────────────────────────────────────────────────┘
-```
+- Webhooks are sent immediately when events occur
+- Timeout: 5 seconds
+- No automatic retries (check delivery history for failures)
+- Payload size limit: 100KB
 
 ---
 
 ## OpenClaw Integration
 
-In OpenClaw config, user adds a webhook channel:
+See [OPENCLAW_INTEGRATION.md](./OPENCLAW_INTEGRATION.md) for complete setup guide.
 
-```yaml
-# openclaw.yaml
-webhooks:
-  agentplanner:
-    path: /webhook/agentplanner
-    inject: session  # Injects as system message
-```
+Quick config for `~/.openclaw/openclaw.json`:
 
-When AgentPlanner sends `task.blocked`, agent sees:
+```json5
+{
+  hooks: {
+    enabled: true,
+    token: "your-secret",
+    mappings: [{
+      match: { path: "agentplanner" },
+      action: "agent",
+      sessionKey: "hook:agentplanner:{{task.id}}",
+      messageTemplate: "{{message}}\n\n**Task:** {{task.title}}\n**Plan:** {{plan.title}}",
+      deliver: true,
+      channel: "slack",
+      to: "#your-channel"
+    }]
+  }
+}
 ```
-🚫 Task 'Implement Rate Limiting' is now blocked in plan 'AgentPlanner Roadmap'
-```
-
-Agent can then respond naturally, use MCP tools to investigate, etc.
 
 ---
 
-## Files to Create/Modify
+## Testing
 
-### Backend (agent-planner)
-- [ ] `src/services/notifications.js` - Core notification logic
-- [ ] `src/routes/webhook.js` - API endpoints  
-- [ ] `src/controllers/nodeController.js` - Add trigger points
-- [ ] `src/controllers/planController.js` - Add trigger points
-- [ ] Migration for user webhook columns
+Use the test endpoint to verify your webhook setup:
 
-### Frontend (agent-planner-ui)
-- [ ] `src/pages/Settings.tsx` - Add Notifications section
-- [ ] `src/services/webhookService.ts` - API calls
+```bash
+curl -X POST "https://api.agentplanner.io/webhooks/test" \
+  -H "Authorization: Bearer $AGENTPLANNER_TOKEN"
+```
+
+This sends a test payload to your configured webhook URL.
 
 ---
 
-## Future (Not MVP)
+## Troubleshooting
 
-- Webhook signing (HMAC)
-- Retry with backoff
-- Event log/history
-- Team notifications (notify all collaborators)
-- More event types (comments, logs, deadlines)
+### Webhooks not receiving events
+
+1. Check `GET /webhooks/settings` - is `enabled: true`?
+2. Verify the event type is in your `events` array
+3. Check `GET /webhooks/history` for delivery attempts
+4. Ensure webhook URL is publicly accessible
+
+### Common errors
+
+| Status | Meaning |
+|--------|---------|
+| 401 | Auth token missing or invalid |
+| 404 | Webhook URL not found |
+| 408 | Request timeout (>5s) |
+| 5xx | Server error at webhook receiver |

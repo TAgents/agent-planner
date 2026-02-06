@@ -247,6 +247,30 @@ All authentication emails are handled automatically by Supabase:
 - (Optional) Add custom SMTP settings if you want to use your own email provider
 - Default: Supabase uses their own email service
 
+## Documentation
+
+### Integration Guides
+
+- **[OpenClaw Integration](docs/OPENCLAW_INTEGRATION.md)** - Complete guide for AI agent integration
+- **[Webhook Notifications](docs/NOTIFICATIONS.md)** - Configure webhooks for real-time events
+- **[API Reference](docs/API.md)** - REST API documentation
+- **[Rate Limiting](docs/RATE_LIMITING.md)** - API rate limits and best practices
+
+### For AI Agents
+
+AgentPlanner supports three integration methods:
+
+1. **REST API** - Direct HTTP calls (simplest)
+2. **MCP Tools** - Model Context Protocol for richer integration
+3. **Webhooks** - Receive real-time notifications
+
+Key features for agents:
+- **Agent Request System** - Humans can request agent assistance on tasks (`POST /plans/{id}/nodes/{nodeId}/request-agent`)
+- **Decision Requests** - Agents can request human decisions when blocked (`POST /plans/{id}/decisions`)
+- **Webhook Events** - `task.start_requested`, `task.blocked`, `decision.requested.blocking`, etc.
+
+See [OpenClaw Integration Guide](docs/OPENCLAW_INTEGRATION.md) for complete setup instructions.
+
 ## Related Projects
 
 - **[Planning System MCP Server](https://github.com/talkingagents/agent-planner-mcp)** - Model Context Protocol interface for AI agents
