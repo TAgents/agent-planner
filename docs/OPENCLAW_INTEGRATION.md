@@ -4,16 +4,17 @@ Complete guide for integrating AgentPlanner with OpenClaw AI agents.
 
 ## Overview
 
-AgentPlanner provides three ways for OpenClaw agents to interact:
+AgentPlanner provides multiple ways for OpenClaw agents to interact:
 
 1. **REST API** - Direct API calls via curl (simplest)
 2. **MCP Tools** - Model Context Protocol tools for richer integration
-3. **Webhook Notifications** - AgentPlanner pushes events to agents
+3. **Polling** - Agent periodically checks for pending requests (no webhook URL needed)
+4. **Webhook Notifications** - AgentPlanner pushes events to agents (real-time)
 
 ```
 ┌─────────────────┐                    ┌─────────────────┐
 │    OpenClaw     │◄──── Webhooks ────│  AgentPlanner   │
-│     Agent       │                    │      API        │
+│     Agent       │──── Polling ─────►│      API        │
 │                 │───── REST API ───►│                 │
 │                 │───── MCP Tools ──►│                 │
 └─────────────────┘                    └─────────────────┘
@@ -112,7 +113,97 @@ Add AgentPlanner MCP server to OpenClaw:
 
 ---
 
-## 3. Webhook Notifications
+## 3. Polling for Agent Requests (No Webhook URL Needed)
+
+Poll for pending agent requests using OpenClaw's heartbeat or cron system. This is simpler than webhooks because it doesn't require a public URL.
+
+### Endpoint
+
+```bash
+GET /users/my-tasks?requested=true
+Authorization: Bearer <token>
+```
+
+Returns tasks where a human has requested agent assistance:
+
+```json
+{
+  "tasks": [{
+    "id": "task-uuid",
+    "title": "Setup React project",
+    "description": "Initialize React with TypeScript",
+    "status": "not_started",
+    "plan_id": "plan-uuid",
+    "plan_title": "Website Redesign",
+    "agent_request": {
+      "type": "start",
+      "message": "Please start working on this task...",
+      "requested_at": "2026-02-06T17:21:47.059Z",
+      "requested_by": "user-uuid"
+    }
+  }],
+  "total": 1
+}
+```
+
+### Setup with HEARTBEAT.md
+
+Add to your OpenClaw `HEARTBEAT.md`:
+
+```markdown
+## AgentPlanner Polling
+Check for pending agent requests:
+1. Call `GET https://api.agentplanner.io/users/my-tasks?requested=true`
+2. For each task with a pending request:
+   - Read the task context and agent_request.message
+   - Do the requested work (start/review/help/continue)
+   - Log progress: `POST /plans/{plan_id}/nodes/{node_id}/log`
+   - Update status if needed: `PUT /plans/{plan_id}/nodes/{node_id}`
+   - Clear the request: `DELETE /plans/{plan_id}/nodes/{node_id}/request-agent`
+```
+
+### Setup with Cron Job
+
+For more control over polling frequency:
+
+```json5
+// Poll every 5 minutes
+{
+  schedule: { kind: "every", everyMs: 300000 },
+  payload: { 
+    kind: "agentTurn",
+    message: "Check AgentPlanner for pending agent requests. Call GET /users/my-tasks?requested=true and process any found."
+  },
+  sessionTarget: "isolated"
+}
+```
+
+### Polling Workflow
+
+```
+1. Human clicks "Request Agent" in AgentPlanner UI
+2. Sets agent_requested field on the task
+3. OpenClaw polls /users/my-tasks?requested=true (via heartbeat/cron)
+4. Agent finds pending request, processes the task
+5. Agent clears request: DELETE /plans/{plan_id}/nodes/{node_id}/request-agent
+6. Response delivered to chat
+```
+
+### Polling vs Webhooks
+
+| Polling | Webhooks |
+|---------|----------|
+| ✅ No public URL needed | ❌ Requires public endpoint |
+| ✅ Works behind firewalls/NAT | ❌ Needs port forwarding or tunnel |
+| ✅ Agent controls frequency | ✅ Real-time notifications |
+| ❌ Slight delay (poll interval) | ✅ Instant response |
+| ✅ Simpler setup | ❌ More configuration |
+
+**Recommendation:** Start with polling. Switch to webhooks if you need real-time response.
+
+---
+
+## 4. Webhook Notifications (Real-Time)
 
 AgentPlanner can push events to OpenClaw when things happen.
 
@@ -220,7 +311,7 @@ https://your-host:18789/hooks/agentplanner?token=your-webhook-secret
 
 ---
 
-## 4. Agent Request System
+## 5. Agent Request System
 
 Humans can explicitly request AI agent assistance on tasks.
 
@@ -261,7 +352,7 @@ curl -X DELETE "https://api.agentplanner.io/plans/{plan_id}/nodes/{node_id}/requ
 
 ---
 
-## 5. Decision Request System
+## 6. Decision Request System
 
 Agents can request human decisions when they hit choice points.
 
@@ -309,7 +400,7 @@ curl -X PUT "https://api.agentplanner.io/plans/{plan_id}/decisions/{decision_id}
 
 ---
 
-## 6. Best Practices
+## 7. Best Practices
 
 ### For Planning Agents
 
@@ -333,7 +424,7 @@ curl -X PUT "https://api.agentplanner.io/plans/{plan_id}/decisions/{decision_id}
 
 ---
 
-## 7. Example Workflows
+## 8. Example Workflows
 
 ### Autonomous Task Execution (webhook → agent → task complete)
 
@@ -364,7 +455,7 @@ curl -X PUT "https://api.agentplanner.io/plans/{plan_id}/decisions/{decision_id}
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 ### Webhooks not receiving events
 
