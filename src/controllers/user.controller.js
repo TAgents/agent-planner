@@ -349,24 +349,38 @@ const searchUsers = async (req, res, next) => {
 const getMyTasks = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { requested, status, limit = 50 } = req.query;
+    const { requested, status, limit = 50, debug } = req.query;
     const limitNum = parseInt(limit, 10) || 50;
 
     // Get plans the user has access to (owned or collaborator)
-    const { data: ownedPlans } = await supabaseAdmin
+    const { data: ownedPlans, error: ownedError } = await supabaseAdmin
       .from('plans')
       .select('id')
       .eq('owner_id', userId);
 
-    const { data: collabPlans } = await supabaseAdmin
+    if (ownedError) {
+      await logger.error('Failed to fetch owned plans:', ownedError);
+      if (debug) return res.status(500).json({ error: 'owned_plans_failed', details: ownedError });
+    }
+
+    const { data: collabPlans, error: collabError } = await supabaseAdmin
       .from('plan_collaborators')
       .select('plan_id')
       .eq('user_id', userId);
+
+    if (collabError) {
+      await logger.error('Failed to fetch collab plans:', collabError);
+      if (debug) return res.status(500).json({ error: 'collab_plans_failed', details: collabError });
+    }
 
     const planIds = [
       ...(ownedPlans || []).map(p => p.id),
       ...(collabPlans || []).map(c => c.plan_id)
     ];
+
+    if (debug) {
+      await logger.api('my-tasks debug:', { userId, planIdsCount: planIds.length, requested, status });
+    }
 
     if (planIds.length === 0) {
       return res.json({ tasks: [], total: 0 });
@@ -417,7 +431,14 @@ const getMyTasks = async (req, res, next) => {
 
     if (error) {
       await logger.error('Failed to fetch my-tasks:', error);
-      return res.status(500).json({ error: 'Failed to fetch tasks' });
+      await logger.error('Query context:', { planIdsCount: planIds.length, requested, status, limitNum });
+      return res.status(500).json({ 
+        error: 'Failed to fetch tasks',
+        code: error.code,
+        message: debug ? error.message : undefined,
+        hint: debug ? error.hint : undefined,
+        details: debug ? error.details : undefined
+      });
     }
 
     // Get assignments for these tasks to include assigned tasks
