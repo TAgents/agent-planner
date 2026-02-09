@@ -376,10 +376,23 @@ const getMyTasks = async (req, res, next) => {
     let query = supabaseAdmin
       .from('plan_nodes')
       .select(`
-        id, title, description, node_type, status, 
-        agent_requested, agent_requested_at, agent_requested_by, agent_request_message,
-        plan_id, parent_id, created_at, updated_at,
-        plans:plan_id(id, title)
+        id,
+        title,
+        description,
+        node_type,
+        status,
+        agent_requested,
+        agent_requested_at,
+        agent_requested_by,
+        agent_request_message,
+        plan_id,
+        parent_id,
+        created_at,
+        updated_at,
+        plans:plan_id (
+          id,
+          title
+        )
       `)
       .in('plan_id', planIds)
       .in('node_type', ['task', 'milestone']); // Only tasks and milestones
