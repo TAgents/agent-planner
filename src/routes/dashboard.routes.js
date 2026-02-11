@@ -422,4 +422,65 @@ router.get('/active-goals', authenticate, async (req, res) => {
   }
 });
 
+/**
+ * GET /dashboard/agent-activity
+ * Returns agent activity data: assignments, handoffs, recent activity
+ */
+router.get('/agent-activity', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const planIds = await getUserPlanIds(userId);
+
+    if (planIds.length === 0) {
+      return res.json({ agents: [], assignments: [], handoffs: [], recentActivity: [] });
+    }
+
+    // Get all agents with capability tags
+    const { data: agents } = await supabaseAdmin
+      .from('users')
+      .select('id, name, email, avatar_url, capability_tags')
+      .not('capability_tags', 'eq', '{}');
+
+    // Get current agent assignments across user's plans
+    const { data: assignedNodes } = await supabaseAdmin
+      .from('plan_nodes')
+      .select('id, title, status, assigned_agent_id, assigned_agent_at, plan_id, plans:plan_id(title)')
+      .in('plan_id', planIds)
+      .not('assigned_agent_id', 'is', null)
+      .order('assigned_agent_at', { ascending: false })
+      .limit(50);
+
+    // Get recent handoffs
+    const { data: handoffs } = await supabaseAdmin
+      .from('handoffs')
+      .select('id, node_id, from_agent_id, to_agent_id, status, reason, created_at, plan_id, plan_nodes:node_id(title)')
+      .in('plan_id', planIds)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    // Get recent activity logs from agent-assigned nodes
+    const agentNodeIds = (assignedNodes || []).map(n => n.id);
+    let recentActivity = [];
+    if (agentNodeIds.length > 0) {
+      const { data: logs } = await supabaseAdmin
+        .from('plan_node_logs')
+        .select('id, plan_node_id, user_id, content, log_type, created_at')
+        .in('plan_node_id', agentNodeIds.slice(0, 20))
+        .order('created_at', { ascending: false })
+        .limit(30);
+      recentActivity = logs || [];
+    }
+
+    res.json({
+      agents: agents || [],
+      assignments: assignedNodes || [],
+      handoffs: handoffs || [],
+      recentActivity
+    });
+  } catch (error) {
+    await logger.error('Dashboard agent activity error:', error);
+    res.status(500).json({ error: 'Failed to fetch agent activity' });
+  }
+});
+
 module.exports = router;
