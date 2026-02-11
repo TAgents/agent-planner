@@ -41,6 +41,7 @@ const dashboardRoutes = require('./routes/dashboard.routes');
 const handoffRoutes = require('./routes/handoff.routes');
 const chatRoutes = require('./routes/chat.routes');
 const promptRoutes = require('./routes/prompt.routes');
+const heartbeatRoutes = require('./routes/heartbeat.routes');
 // Removed: artifact controller (Phase 0 simplification)
 
 // Import WebSocket collaboration server
@@ -164,6 +165,7 @@ app.use('/plans', generalLimiter, handoffRoutes);
 app.use('/', generalLimiter, handoffRoutes);
 app.use('/plans', generalLimiter, chatRoutes);
 app.use('/prompts', generalLimiter, promptRoutes);
+app.use('/', generalLimiter, heartbeatRoutes);
 
 // Removed: artifact download endpoint (Phase 0 simplification)
 const { authenticate } = require('./middleware/auth.middleware');
