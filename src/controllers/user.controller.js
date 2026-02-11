@@ -37,6 +37,7 @@ const getUserProfile = async (req, res, next) => {
       github_username: dbUser?.github_username || null,
       github_avatar_url: dbUser?.github_avatar_url || null,
       github_profile_url: dbUser?.github_profile_url || null,
+      capability_tags: dbUser?.capability_tags || [],
       created_at: userData.user.created_at,
       updated_at: userData.user.updated_at
     };
@@ -488,11 +489,145 @@ const getMyTasks = async (req, res, next) => {
   }
 };
 
+/**
+ * Get capability tags for a user
+ */
+const getCapabilityTags = async (req, res, next) => {
+  try {
+    const userId = req.params.userId || req.user.id;
+
+    const { data, error } = await supabaseAdmin
+      .from('users')
+      .select('capability_tags')
+      .eq('id', userId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.json({ capability_tags: [] });
+      }
+      await logger.error('Failed to get capability tags', error);
+      return res.status(500).json({ error: 'Failed to get capability tags' });
+    }
+
+    res.json({ capability_tags: data?.capability_tags || [] });
+  } catch (error) {
+    await logger.error('Unexpected error in getCapabilityTags', error);
+    next(error);
+  }
+};
+
+/**
+ * Update capability tags for the current user
+ */
+const updateCapabilityTags = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { capability_tags } = req.body;
+
+    if (!Array.isArray(capability_tags)) {
+      return res.status(400).json({ error: 'capability_tags must be an array of strings' });
+    }
+
+    // Normalize: lowercase, trim, deduplicate
+    const normalized = [...new Set(capability_tags.map(t => String(t).toLowerCase().trim()).filter(Boolean))];
+
+    if (normalized.length > 50) {
+      return res.status(400).json({ error: 'Maximum 50 capability tags allowed' });
+    }
+
+    // Upsert user record
+    const { data: existing } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('id', userId)
+      .single();
+
+    let result;
+    if (existing) {
+      result = await supabaseAdmin
+        .from('users')
+        .update({ capability_tags: normalized, updated_at: new Date().toISOString() })
+        .eq('id', userId)
+        .select('capability_tags')
+        .single();
+    } else {
+      result = await supabaseAdmin
+        .from('users')
+        .insert({ id: userId, email: req.user.email, capability_tags: normalized })
+        .select('capability_tags')
+        .single();
+    }
+
+    if (result.error) {
+      await logger.error('Failed to update capability tags', result.error);
+      return res.status(500).json({ error: 'Failed to update capability tags' });
+    }
+
+    await logger.api(`Updated capability tags for user ${userId}: ${normalized.join(', ')}`);
+    res.json({ capability_tags: result.data.capability_tags });
+  } catch (error) {
+    await logger.error('Unexpected error in updateCapabilityTags', error);
+    next(error);
+  }
+};
+
+/**
+ * Search users by capability tags
+ */
+const searchByCapabilities = async (req, res, next) => {
+  try {
+    const { tags, match = 'any', limit = 20 } = req.query;
+
+    if (!tags) {
+      return res.status(400).json({ error: 'tags query parameter is required' });
+    }
+
+    const tagList = tags.split(',').map(t => t.toLowerCase().trim()).filter(Boolean);
+
+    if (tagList.length === 0) {
+      return res.status(400).json({ error: 'At least one tag is required' });
+    }
+
+    let query = supabaseAdmin
+      .from('users')
+      .select('id, email, name, avatar_url, capability_tags');
+
+    if (match === 'all') {
+      // User must have ALL specified tags
+      query = query.contains('capability_tags', tagList);
+    } else {
+      // User must have ANY of the specified tags (overlap)
+      query = query.overlaps('capability_tags', tagList);
+    }
+
+    const { data, error } = await query.limit(parseInt(limit));
+
+    if (error) {
+      await logger.error('Failed to search by capabilities', error);
+      return res.status(500).json({ error: 'Failed to search by capabilities' });
+    }
+
+    res.json({
+      results: data || [],
+      count: (data || []).length,
+      tags: tagList,
+      match
+    });
+  } catch (error) {
+    await logger.error('Unexpected error in searchByCapabilities', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getUserProfile,
   updateUserProfile,
   changePassword,
   listUsers,
   searchUsers,
-  getMyTasks
+  getMyTasks,
+  getCapabilityTags,
+  updateCapabilityTags,
+  searchByCapabilities
 };
