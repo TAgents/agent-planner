@@ -1272,6 +1272,200 @@ const clearAgentRequest = async (req, res, next) => {
   }
 };
 
+/**
+ * Assign an agent to a task node
+ */
+const assignAgent = async (req, res, next) => {
+  try {
+    const { id: planId, nodeId } = req.params;
+    const { agent_id } = req.body;
+    const userId = req.user.id;
+
+    if (!agent_id) {
+      return res.status(400).json({ error: 'agent_id is required' });
+    }
+
+    // Verify node exists and belongs to plan
+    const { data: node, error: nodeError } = await supabase
+      .from('plan_nodes')
+      .select('id, plan_id')
+      .eq('id', nodeId)
+      .eq('plan_id', planId)
+      .single();
+
+    if (nodeError || !node) {
+      return res.status(404).json({ error: 'Node not found in this plan' });
+    }
+
+    // Verify user has write access to the plan
+    const { data: plan } = await supabase
+      .from('plans')
+      .select('owner_id')
+      .eq('id', planId)
+      .single();
+
+    if (!plan) {
+      return res.status(404).json({ error: 'Plan not found' });
+    }
+
+    const isOwner = plan.owner_id === userId;
+    if (!isOwner) {
+      const { data: collab } = await supabase
+        .from('plan_collaborators')
+        .select('role')
+        .eq('plan_id', planId)
+        .eq('user_id', userId)
+        .single();
+
+      if (!collab || !['admin', 'editor'].includes(collab.role)) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+    }
+
+    // Verify agent exists
+    const { data: agent } = await supabase
+      .from('users')
+      .select('id, name, email, capability_tags')
+      .eq('id', agent_id)
+      .single();
+
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    // Update node with agent assignment
+    const { data: updated, error: updateError } = await supabase
+      .from('plan_nodes')
+      .update({
+        assigned_agent_id: agent_id,
+        assigned_agent_at: new Date().toISOString(),
+        assigned_agent_by: userId,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', nodeId)
+      .select('id, assigned_agent_id, assigned_agent_at, assigned_agent_by')
+      .single();
+
+    if (updateError) {
+      await logger.error('Failed to assign agent', updateError);
+      return res.status(500).json({ error: 'Failed to assign agent' });
+    }
+
+    await logger.api(`Agent ${agent_id} assigned to node ${nodeId} by ${userId}`);
+    res.json({
+      ...updated,
+      agent: { id: agent.id, name: agent.name, email: agent.email, capability_tags: agent.capability_tags }
+    });
+  } catch (error) {
+    await logger.error('Unexpected error in assignAgent', error);
+    next(error);
+  }
+};
+
+/**
+ * Unassign an agent from a task node
+ */
+const unassignAgent = async (req, res, next) => {
+  try {
+    const { id: planId, nodeId } = req.params;
+    const userId = req.user.id;
+
+    // Verify node exists and belongs to plan
+    const { data: node, error: nodeError } = await supabase
+      .from('plan_nodes')
+      .select('id, plan_id')
+      .eq('id', nodeId)
+      .eq('plan_id', planId)
+      .single();
+
+    if (nodeError || !node) {
+      return res.status(404).json({ error: 'Node not found in this plan' });
+    }
+
+    // Verify user has write access
+    const { data: plan } = await supabase
+      .from('plans')
+      .select('owner_id')
+      .eq('id', planId)
+      .single();
+
+    if (!plan) {
+      return res.status(404).json({ error: 'Plan not found' });
+    }
+
+    const isOwner = plan.owner_id === userId;
+    if (!isOwner) {
+      const { data: collab } = await supabase
+        .from('plan_collaborators')
+        .select('role')
+        .eq('plan_id', planId)
+        .eq('user_id', userId)
+        .single();
+
+      if (!collab || !['admin', 'editor'].includes(collab.role)) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+    }
+
+    const { error: updateError } = await supabase
+      .from('plan_nodes')
+      .update({
+        assigned_agent_id: null,
+        assigned_agent_at: null,
+        assigned_agent_by: null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', nodeId);
+
+    if (updateError) {
+      await logger.error('Failed to unassign agent', updateError);
+      return res.status(500).json({ error: 'Failed to unassign agent' });
+    }
+
+    await logger.api(`Agent unassigned from node ${nodeId} by ${userId}`);
+    res.status(204).send();
+  } catch (error) {
+    await logger.error('Unexpected error in unassignAgent', error);
+    next(error);
+  }
+};
+
+/**
+ * Get suggested agents for a task based on capability tags
+ */
+const getSuggestedAgents = async (req, res, next) => {
+  try {
+    const { nodeId } = req.params;
+    const { tags } = req.query;
+
+    let tagList = [];
+    if (tags) {
+      tagList = tags.split(',').map(t => t.toLowerCase().trim()).filter(Boolean);
+    }
+
+    let query = supabase
+      .from('users')
+      .select('id, name, email, avatar_url, capability_tags')
+      .not('capability_tags', 'eq', '{}');
+
+    if (tagList.length > 0) {
+      query = query.overlaps('capability_tags', tagList);
+    }
+
+    const { data, error } = await query.limit(20);
+
+    if (error) {
+      await logger.error('Failed to get suggested agents', error);
+      return res.status(500).json({ error: 'Failed to get suggested agents' });
+    }
+
+    res.json({ agents: data || [] });
+  } catch (error) {
+    await logger.error('Unexpected error in getSuggestedAgents', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getNodes,
   getNode,
@@ -1288,4 +1482,7 @@ module.exports = {
   getNodeLogs,
   requestAgent,
   clearAgentRequest,
+  assignAgent,
+  unassignAgent,
+  getSuggestedAgents,
 };

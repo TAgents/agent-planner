@@ -982,4 +982,72 @@ router.post('/:id/nodes/:nodeId/request-agent', authenticate, nodeController.req
  */
 router.delete('/:id/nodes/:nodeId/request-agent', authenticate, nodeController.clearAgentRequest);
 
+/**
+ * @swagger
+ * /{id}/nodes/{nodeId}/assign-agent:
+ *   post:
+ *     summary: Assign an agent to a task
+ *     tags: [Nodes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: nodeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               agent_id:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Agent assigned
+ */
+router.post('/:id/nodes/:nodeId/assign-agent', authenticate, nodeController.assignAgent);
+
+/**
+ * @swagger
+ * /{id}/nodes/{nodeId}/assign-agent:
+ *   delete:
+ *     summary: Unassign an agent from a task
+ *     tags: [Nodes]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       204:
+ *         description: Agent unassigned
+ */
+router.delete('/:id/nodes/:nodeId/assign-agent', authenticate, nodeController.unassignAgent);
+
+/**
+ * @swagger
+ * /{id}/nodes/{nodeId}/suggested-agents:
+ *   get:
+ *     summary: Get suggested agents for a task based on capability tags
+ *     tags: [Nodes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: tags
+ *         schema:
+ *           type: string
+ *         description: Comma-separated capability tags to match
+ *     responses:
+ *       200:
+ *         description: List of suggested agents
+ */
+router.get('/:id/nodes/:nodeId/suggested-agents', authenticate, nodeController.getSuggestedAgents);
+
 module.exports = router;
