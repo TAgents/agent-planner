@@ -118,4 +118,95 @@ router.get('/search', authenticate, userController.searchUsers);
  */
 router.get('/my-tasks', authenticate, userController.getMyTasks);
 
+/**
+ * @swagger
+ * /users/capabilities:
+ *   get:
+ *     summary: Get capability tags for the current user
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Capability tags
+ */
+router.get('/capabilities', authenticate, userController.getCapabilityTags);
+
+/**
+ * @swagger
+ * /users/capabilities:
+ *   put:
+ *     summary: Update capability tags for the current user
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               capability_tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Updated capability tags
+ */
+router.put('/capabilities', authenticate, userController.updateCapabilityTags);
+
+/**
+ * @swagger
+ * /users/capabilities/search:
+ *   get:
+ *     summary: Search users by capability tags
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: tags
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Comma-separated capability tags
+ *       - in: query
+ *         name: match
+ *         schema:
+ *           type: string
+ *           enum: [any, all]
+ *           default: any
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *     responses:
+ *       200:
+ *         description: Users matching capability tags
+ */
+router.get('/capabilities/search', authenticate, userController.searchByCapabilities);
+
+/**
+ * @swagger
+ * /users/{userId}/capabilities:
+ *   get:
+ *     summary: Get capability tags for a specific user
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Capability tags for the user
+ */
+router.get('/:userId/capabilities', authenticate, userController.getCapabilityTags);
+
 module.exports = router;
