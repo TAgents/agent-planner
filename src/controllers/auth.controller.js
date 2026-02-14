@@ -1,7 +1,8 @@
 const { supabase, supabaseAdmin } = require('../config/supabase');
 const logger = require('../utils/logger');
 const { convertPendingInvites } = require('../services/invites');
-const { createPersonalOrganization } = require('../routes/organization.routes');
+// Organization routes removed in pre-v2 cleanup
+const createPersonalOrganization = async () => null;
 require('dotenv').config();
 
 /**
