@@ -37,6 +37,7 @@ const dashboardRoutes = require('./routes/dashboard.routes');
 // Removed: handoff routes (pre-v2 cleanup)
 // Removed: chat, prompt routes (pre-v2 cleanup)
 const heartbeatRoutes = require('./routes/heartbeat.routes');
+const slackRoutes = require('./routes/slack.routes');
 // Removed: artifact controller (Phase 0 simplification)
 
 // Import WebSocket collaboration server
@@ -145,6 +146,9 @@ app.use('/dashboard', generalLimiter, dashboardRoutes);
 // Removed: handoff routes (pre-v2 cleanup)
 // Removed: chat, prompt routes (pre-v2 cleanup)
 app.use('/', generalLimiter, heartbeatRoutes);
+
+// Slack integration routes
+app.use('/integrations/slack', generalLimiter, slackRoutes);
 
 // Removed: artifact download endpoint (Phase 0 simplification)
 const { authenticate } = require('./middleware/auth.middleware');
