@@ -5,9 +5,12 @@
 
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const { authenticateToken } = require('../middleware/auth.middleware');
 const slackService = require('../services/slack');
 const logger = require('../utils/logger');
+
+const STATE_SECRET = process.env.SLACK_STATE_SECRET || process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
 
 /**
  * GET /integrations/slack/status
@@ -45,7 +48,10 @@ router.get('/install', authenticateToken, async (req, res) => {
 
   const redirectUri = `${process.env.API_BASE_URL || req.protocol + '://' + req.get('host')}/integrations/slack/callback`;
   const scopes = 'chat:write,channels:read,groups:read';
-  const state = Buffer.from(JSON.stringify({ userId: req.user.id })).toString('base64');
+  const nonce = crypto.randomBytes(16).toString('hex');
+  const payload = JSON.stringify({ userId: req.user.id, nonce });
+  const signature = crypto.createHmac('sha256', STATE_SECRET).update(payload).digest('hex');
+  const state = Buffer.from(JSON.stringify({ payload, signature })).toString('base64');
 
   const installUrl = `https://slack.com/oauth/v2/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
 
@@ -64,7 +70,13 @@ router.get('/callback', async (req, res) => {
   }
 
   try {
-    const { userId } = JSON.parse(Buffer.from(state, 'base64').toString());
+    const stateData = JSON.parse(Buffer.from(state, 'base64').toString());
+    const { payload, signature } = stateData;
+    const expectedSignature = crypto.createHmac('sha256', STATE_SECRET).update(payload).digest('hex');
+    if (!crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expectedSignature, 'hex'))) {
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3001'}/app/settings/integrations?slack=error&reason=invalid_state`);
+    }
+    const { userId } = JSON.parse(payload);
 
     const clientId = process.env.SLACK_CLIENT_ID;
     const clientSecret = process.env.SLACK_CLIENT_SECRET;
@@ -122,6 +134,10 @@ router.put('/channel', authenticateToken, async (req, res) => {
     const { channelId, channelName } = req.body;
     if (!channelId) {
       return res.status(400).json({ error: 'channelId is required' });
+    }
+    // Slack channel IDs are alphanumeric, typically starting with C, G, or D
+    if (!/^[A-Z0-9]{1,20}$/i.test(channelId)) {
+      return res.status(400).json({ error: 'Invalid channelId format' });
     }
 
     const integration = await slackService.updateChannel(req.user.id, channelId, channelName);

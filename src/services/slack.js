@@ -9,7 +9,13 @@ const logger = require('../utils/logger');
 const crypto = require('crypto');
 
 // Encryption for bot tokens
-const ENCRYPTION_KEY = process.env.SLACK_ENCRYPTION_KEY || process.env.JWT_SECRET || 'default-dev-key-change-in-prod';
+const ENCRYPTION_KEY = process.env.SLACK_ENCRYPTION_KEY || process.env.JWT_SECRET;
+if (!ENCRYPTION_KEY) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SLACK_ENCRYPTION_KEY or JWT_SECRET must be set in production');
+  }
+  logger.warn('No SLACK_ENCRYPTION_KEY or JWT_SECRET set - Slack token encryption will fail. Set one of these environment variables.');
+}
 const ALGORITHM = 'aes-256-gcm';
 
 function getEncryptionKey() {
@@ -45,12 +51,16 @@ function decrypt(encryptedText) {
 async function getIntegration(userId) {
   const { data, error } = await supabaseAdmin
     .from('slack_integrations')
-    .select('*')
+    .select('id, user_id, team_id, team_name, bot_token, channel_id, channel_name, is_active, installed_at, updated_at')
     .eq('user_id', userId)
     .eq('is_active', true)
     .single();
 
-  if (error || !data) return null;
+  if (error) {
+    logger.error('Error fetching Slack integration:', error);
+    return null;
+  }
+  if (!data) return null;
   return data;
 }
 
