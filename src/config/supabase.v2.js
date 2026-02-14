@@ -25,12 +25,69 @@ class QueryBuilder {
     this._overlapsFilters = [];
     this._notFilters = [];
     this._returning = false;
+    this._upsertMode = false;
+    this._upsertConflict = null;
+    this._countMode = false;
+    this._headMode = false;
+    this._ilike = [];
+    this._or = null;
+    this._gte = [];
+    this._lte = [];
+    this._is = [];
+    this._rangeFrom = null;
+    this._rangeTo = null;
   }
 
-  select(fields) {
+  select(fields, opts) {
     this._select = fields || '*';
     this._returning = true;
+    if (opts && opts.count === 'exact') this._countMode = true;
+    if (opts && opts.head) this._headMode = true;
+    // Strip Supabase relation syntax: "alias:fk_col (col1, col2)" → "fk_col"
+    // Also handle "table (col1, col2)" → remove entirely
+    if (typeof this._select === 'string' && this._select !== '*') {
+      this._select = this._parseSelectFields(this._select);
+    }
     return this;
+  }
+
+  _parseSelectFields(fields) {
+    // Split on commas that are NOT inside parentheses
+    const parts = [];
+    let depth = 0, current = '';
+    for (const ch of fields) {
+      if (ch === '(') depth++;
+      else if (ch === ')') depth--;
+      else if (ch === ',' && depth === 0) {
+        parts.push(current.trim());
+        current = '';
+        continue;
+      }
+      current += ch;
+    }
+    if (current.trim()) parts.push(current.trim());
+
+    const cleaned = [];
+    for (const part of parts) {
+      // Skip embedded relation: "table (col1, col2)" or "alias:fk (col1, col2)"
+      if (part.includes('(')) {
+        // Extract the FK column: "alias:fk_col (...)" → fk_col
+        const match = part.match(/^(\w+):(\w+)\s*\(/);
+        if (match) {
+          cleaned.push(match[2]); // just the FK column
+        }
+        // "table (...)" with no colon — skip entirely (it's a join)
+        continue;
+      }
+      // "alias:col" → "col as alias" (but often alias IS the col)
+      if (part.includes(':')) {
+        const [alias, col] = part.split(':').map(s => s.trim());
+        cleaned.push(col);
+      } else {
+        cleaned.push(part);
+      }
+    }
+    return cleaned.join(', ');
   }
 
   eq(col, val) {
@@ -58,6 +115,39 @@ class QueryBuilder {
     return this;
   }
 
+  ilike(col, pattern) {
+    this._ilike.push({ col, pattern });
+    return this;
+  }
+
+  or(expr) {
+    this._or = expr;
+    return this;
+  }
+
+  gte(col, val) {
+    this._gte.push({ col, val });
+    return this;
+  }
+
+  lte(col, val) {
+    this._lte.push({ col, val });
+    return this;
+  }
+
+  is(col, val) {
+    this._is.push({ col, val });
+    return this;
+  }
+
+  range(from, to) {
+    this._rangeFrom = from;
+    this._rangeTo = to - from + 1; // Convert to offset/limit
+    this._offsetVal = from;
+    this._limitVal = to - from + 1;
+    return this;
+  }
+
   order(col, opts = {}) {
     this._orderBy = { col, ascending: opts.ascending !== false };
     return this;
@@ -76,6 +166,13 @@ class QueryBuilder {
 
   insert(data) {
     this._insertData = Array.isArray(data) ? data : [data];
+    return this;
+  }
+
+  upsert(data, opts = {}) {
+    this._insertData = Array.isArray(data) ? data : [data];
+    this._upsertMode = true;
+    this._upsertConflict = opts.onConflict || null;
     return this;
   }
 
@@ -121,15 +218,51 @@ class QueryBuilder {
   }
 
   async _executeSelect(sql, table) {
-    let query = `SELECT ${this._select === '*' ? '*' : this._select} FROM "${table}"`;
     const params = [];
     const where = this._buildWhere(params);
+
+    // Count mode with head: just return count
+    if (this._countMode && this._headMode) {
+      let countQuery = `SELECT COUNT(*)::int as count FROM "${table}"`;
+      if (where) countQuery += ` WHERE ${where}`;
+      const rows = await sql.unsafe(countQuery, params);
+      const count = rows[0]?.count || 0;
+      return { data: null, error: null, count };
+    }
+
+    // Count mode without head: return both data and count
+    if (this._countMode) {
+      // Get count first
+      const countParams = [];
+      const countWhere = this._buildWhere(countParams);
+      let countQuery = `SELECT COUNT(*)::int as count FROM "${table}"`;
+      if (countWhere) countQuery += ` WHERE ${countWhere}`;
+      const countRows = await sql.unsafe(countQuery, countParams);
+      const count = countRows[0]?.count || 0;
+
+      // Then get data (fall through to normal select below, attach count)
+      let dataQuery = `SELECT ${this._select === '*' ? '*' : this._select} FROM "${table}"`;
+      if (where) dataQuery += ` WHERE ${where}`;
+      if (this._orderBy) {
+        dataQuery += ` ORDER BY "${this._orderBy.col}" ${this._orderBy.ascending ? 'ASC' : 'DESC'}`;
+      }
+      if (this._limitVal) dataQuery += ` LIMIT ${this._limitVal}`;
+      if (this._offsetVal) dataQuery += ` OFFSET ${this._offsetVal}`;
+
+      const rows = await sql.unsafe(dataQuery, params);
+      return { data: rows, error: null, count };
+    }
+
+    let query = `SELECT ${this._select === '*' ? '*' : this._select} FROM "${table}"`;
     if (where) query += ` WHERE ${where}`;
     if (this._orderBy) {
       query += ` ORDER BY "${this._orderBy.col}" ${this._orderBy.ascending ? 'ASC' : 'DESC'}`;
     }
     if (this._limitVal) {
       query += ` LIMIT ${this._limitVal}`;
+    }
+    if (this._offsetVal) {
+      query += ` OFFSET ${this._offsetVal}`;
     }
 
     const rows = await sql.unsafe(query, params);
@@ -152,9 +285,18 @@ class QueryBuilder {
       const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
       const colNames = cols.map(c => `"${c}"`).join(', ');
 
-      const query = this._returning
-        ? `INSERT INTO "${table}" (${colNames}) VALUES (${placeholders}) RETURNING *`
-        : `INSERT INTO "${table}" (${colNames}) VALUES (${placeholders})`;
+      let query;
+      if (this._upsertMode) {
+        const conflictCols = this._upsertConflict 
+          ? this._upsertConflict.split(',').map(c => `"${c.trim()}"`).join(', ')
+          : colNames; // default: all columns as conflict target
+        const updateSet = cols.map(c => `"${c}" = EXCLUDED."${c}"`).join(', ');
+        query = `INSERT INTO "${table}" (${colNames}) VALUES (${placeholders}) ON CONFLICT (${conflictCols}) DO UPDATE SET ${updateSet}`;
+      } else {
+        query = `INSERT INTO "${table}" (${colNames}) VALUES (${placeholders})`;
+      }
+
+      if (this._returning) query += ' RETURNING *';
 
       const rows = await sql.unsafe(query, vals);
       results.push(...rows);
@@ -224,6 +366,52 @@ class QueryBuilder {
       conditions.push(`"${f.col}" && $${params.length}`);
     }
 
+    for (const f of this._ilike) {
+      params.push(f.pattern);
+      conditions.push(`"${f.col}" ILIKE $${params.length}`);
+    }
+
+    for (const f of this._gte) {
+      params.push(f.val);
+      conditions.push(`"${f.col}" >= $${params.length}`);
+    }
+
+    for (const f of this._lte) {
+      params.push(f.val);
+      conditions.push(`"${f.col}" <= $${params.length}`);
+    }
+
+    for (const f of this._is) {
+      if (f.val === null) {
+        conditions.push(`"${f.col}" IS NULL`);
+      } else {
+        params.push(f.val);
+        conditions.push(`"${f.col}" IS $${params.length}`);
+      }
+    }
+
+    if (this._or) {
+      // Parse simple Supabase OR syntax: "col1.eq.val1,col2.eq.val2"
+      const orParts = this._or.split(',').map(part => {
+        const match = part.match(/^(\w+)\.(\w+)\.(.+)$/);
+        if (match) {
+          const [, col, op, val] = match;
+          if (op === 'eq') {
+            params.push(val);
+            return `"${col}" = $${params.length}`;
+          }
+          if (op === 'ilike') {
+            params.push(val);
+            return `"${col}" ILIKE $${params.length}`;
+          }
+        }
+        return null;
+      }).filter(Boolean);
+      if (orParts.length) {
+        conditions.push(`(${orParts.join(' OR ')})`);
+      }
+    }
+
     return conditions.length ? conditions.join(' AND ') : '';
   }
 }
@@ -237,6 +425,25 @@ const supabaseShim = {
     // Stubs — auth is handled by the v2 middleware
     getUser: async () => ({ data: null, error: { message: 'Use v2 auth' } }),
     setSession: async () => ({ data: null, error: { message: 'Use v2 auth' } }),
+    getSession: async () => ({ data: null, error: { message: 'Use v2 auth' } }),
+  },
+  async rpc(fnName, params = {}) {
+    // Handle common RPC functions
+    try {
+      if (fnName === 'search_plans' || fnName === 'search_nodes') {
+        // Full-text search — simple ILIKE fallback
+        const table = fnName === 'search_plans' ? 'plans' : 'plan_nodes';
+        const query = params.search_query || params.query || '';
+        const rows = await db.unsafe(
+          `SELECT * FROM "${table}" WHERE title ILIKE $1 OR description ILIKE $1 LIMIT 20`,
+          [`%${query}%`]
+        );
+        return { data: rows, error: null };
+      }
+      return { data: null, error: { message: `RPC function ${fnName} not implemented in shim` } };
+    } catch (err) {
+      return { data: null, error: { message: err.message } };
+    }
   },
 };
 
