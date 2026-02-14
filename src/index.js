@@ -138,6 +138,7 @@ app.use('/goals', generalLimiter, goalRoutes);
 app.use('/api/goals', generalLimiter, goalsV2Routes);
 
 app.use('/api/knowledge', generalLimiter, knowledgeV2Routes);
+app.use('/api/knowledge/search', searchLimiter);  // stricter limit for semantic search
 app.use('/api/workflows', generalLimiter, workflowsV2Routes);
 app.use('/api/v2/openclaw', generalLimiter, openclawV2Routes);
 

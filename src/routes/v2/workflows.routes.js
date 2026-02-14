@@ -83,5 +83,21 @@ router.get('/events', authenticate, async (req, res) => {
   }
 });
 
+// POST /api/workflows/trigger — manually trigger a workflow
+router.post('/trigger', authenticate, async (req, res) => {
+  try {
+    const hatchet = await getHatchet();
+    const { workflowName, input } = req.body;
+    if (!workflowName) {
+      return res.status(400).json({ error: 'workflowName is required' });
+    }
+    const result = await hatchet.triggerWorkflow(workflowName, input || {});
+    res.status(201).json(result);
+  } catch (err) {
+    await logger.error('Trigger workflow error:', err);
+    res.status(500).json({ error: 'Failed to trigger workflow' });
+  }
+});
+
 router._setHatchetModule = _setHatchetModule;
 module.exports = router;

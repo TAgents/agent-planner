@@ -85,6 +85,18 @@ export async function listEvents(opts = {}) {
   }
 }
 
+export async function triggerWorkflow(workflowName, input = {}) {
+  try {
+    const c = await getClient();
+    if (!c) return { triggered: false, message: 'Hatchet not configured' };
+    const result = await c.admin.runWorkflow(workflowName, input);
+    return { triggered: true, workflowRunId: result?.workflowRunId || null };
+  } catch (err) {
+    await logger.error('Hatchet triggerWorkflow error:', err);
+    return { triggered: false, error: err.message };
+  }
+}
+
 // For testing — allow resetting the client
 export function _resetClient() {
   client = null;
