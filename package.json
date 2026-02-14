@@ -27,7 +27,7 @@
     "docs:all": "npm run docs:generate && npm run docs:validate"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.71.2",
+    "@slack/web-api": "^7.14.1",
     "@supabase/supabase-js": "^2.95.1",
     "axios": "^1.13.2",
     "cors": "^2.8.5",

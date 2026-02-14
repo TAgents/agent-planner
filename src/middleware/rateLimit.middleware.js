@@ -151,30 +151,9 @@ const tokenLimiter = rateLimit({
   validate: false
 });
 
-/**
- * Webhook endpoints rate limiter
- * Moderate limits for webhook operations
- * Default: 30 requests per minute
- */
-const webhookLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: parseInt(process.env.RATE_LIMIT_WEBHOOK) || 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: createSkipFunction(),
-  keyGenerator: keyGenerator,
-  handler: createRateLimitHandler('webhook'),
-  message: {
-    error: 'Too many webhook requests',
-    message: 'You have exceeded the webhook rate limit. Please try again later.'
-  },
-  validate: false
-});
-
 module.exports = {
   generalLimiter,
   authLimiter,
   searchLimiter,
-  tokenLimiter,
-  webhookLimiter
+  tokenLimiter
 };

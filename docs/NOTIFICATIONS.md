@@ -1,5 +1,7 @@
 # AgentPlanner Webhook Notifications
 
+> **⚠️ DEPRECATED (pre-v2 cleanup):** Webhook notifications have been removed in favor of polling-based integration. This document is retained for historical reference only. See the polling approach in `OPENCLAW_INTEGRATION.md`.
+
 Webhook notifications that integrate with AI agents like OpenClaw. One webhook URL per user, structured payloads.
 
 ---

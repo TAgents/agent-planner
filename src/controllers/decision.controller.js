@@ -13,7 +13,7 @@ const {
   createDecisionResolvedMessage
 } = require('../websocket/message-schema');
 const { notifyDecisionRequested, notifyDecisionResolved } = require('../services/notifications');
-const { captureDecisionAsKnowledge } = require('../services/decision-knowledge');
+// Removed: decision-knowledge auto-capture (knowledge hub removed in pre-v2 cleanup)
 
 /**
  * Helper to check if user has access to a plan
@@ -401,16 +401,7 @@ const resolveDecisionRequest = async (req, res, next) => {
       }
     })();
 
-    // Auto-capture decision as knowledge entry (async, don't block response)
-    captureDecisionAsKnowledge(data, planId, userId)
-      .then(entry => {
-        if (entry) {
-          console.log(`Decision captured as knowledge entry: ${entry.id}`);
-        }
-      })
-      .catch(err => {
-        console.error('Failed to capture decision as knowledge:', err);
-      });
+    // Removed: auto-capture decision as knowledge entry (knowledge hub removed in pre-v2 cleanup)
 
     res.json(data);
   } catch (error) {

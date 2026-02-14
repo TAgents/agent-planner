@@ -5,6 +5,7 @@
 
 const { supabaseAdmin } = require('../config/supabase');
 const logger = require('../utils/logger');
+const slackService = require('./slack');
 
 // Event type configurations with message templates
 const EVENT_CONFIGS = {
@@ -266,6 +267,13 @@ async function notifyDecisionRequested(decision, plan, actor, planOwnerId) {
     : 'decision.requested';
   
   await sendDecisionNotification(eventType, { decision, plan, actor, userId: planOwnerId });
+
+  // Also send to Slack if configured
+  try {
+    await slackService.postDecisionRequest(planOwnerId, { decision, plan });
+  } catch (err) {
+    logger.error('Failed to send Slack decision notification:', err);
+  }
 }
 
 /**
@@ -383,7 +391,20 @@ async function notifyAgentRequested(node, plan, actor, planOwnerId) {
   
   const eventType = eventMap[node.agent_requested] || 'task.agent_requested';
   
+  // Send webhook notification
   await sendAgentRequestNotification(eventType, { node, plan, actor, userId: planOwnerId });
+
+  // Also send to Slack if configured
+  try {
+    await slackService.postAgentRequest(planOwnerId, {
+      node,
+      plan,
+      requestType: node.agent_requested,
+      message: node.agent_request_message
+    });
+  } catch (err) {
+    logger.error('Failed to send Slack agent request notification:', err);
+  }
 }
 
 /**

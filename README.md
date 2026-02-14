@@ -252,7 +252,7 @@ All authentication emails are handled automatically by Supabase:
 ### Integration Guides
 
 - **[OpenClaw Integration](docs/OPENCLAW_INTEGRATION.md)** - Complete guide for AI agent integration
-- **[Webhook Notifications](docs/NOTIFICATIONS.md)** - Configure webhooks for real-time events
+- **[Slack Integration](docs/SLACK_INTEGRATION.md)** - Real-time notifications via Slack
 - **[API Reference](docs/API.md)** - REST API documentation
 - **[Rate Limiting](docs/RATE_LIMITING.md)** - API rate limits and best practices
 
@@ -262,12 +262,12 @@ AgentPlanner supports three integration methods:
 
 1. **REST API** - Direct HTTP calls (simplest)
 2. **MCP Tools** - Model Context Protocol for richer integration
-3. **Webhooks** - Receive real-time notifications
+3. **Slack** - Receive real-time notifications in Slack channels
 
 Key features for agents:
 - **Agent Request System** - Humans can request agent assistance on tasks (`POST /plans/{id}/nodes/{nodeId}/request-agent`)
 - **Decision Requests** - Agents can request human decisions when blocked (`POST /plans/{id}/decisions`)
-- **Webhook Events** - `task.start_requested`, `task.blocked`, `decision.requested.blocking`, etc.
+- **Slack Notifications** - Agent requests and decisions posted to configured Slack channels
 
 See [OpenClaw Integration Guide](docs/OPENCLAW_INTEGRATION.md) for complete setup instructions.
 
