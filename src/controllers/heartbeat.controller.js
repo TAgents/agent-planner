@@ -57,7 +57,7 @@ const getPlanAgentStatuses = async (req, res, next) => {
       .eq('plan_id', planId)
       .not('assigned_agent_id', 'is', null);
 
-    const agentIds = new Set<string>();
+    const agentIds = new Set();
     (heartbeats || []).forEach(h => agentIds.add(h.user_id));
     (assignedAgents || []).forEach(a => agentIds.add(a.assigned_agent_id));
 
