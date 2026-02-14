@@ -12,7 +12,9 @@ const {
   createNodeStatusChangedMessage,
   createLogAddedMessage
 } = require('../websocket/message-schema');
-const { notifyStatusChange, notifyAgentRequested } = require('../services/notifications');
+const { notifyStatusChange, notifyAgentRequested } = process.env.AUTH_VERSION === 'v2'
+  ? require('../services/notifications.v2')
+  : require('../services/notifications');
 
 /**
  * Check plan access via DAL
