@@ -8,12 +8,12 @@ AgentPlanner provides multiple ways for OpenClaw agents to interact:
 
 1. **REST API** - Direct API calls via curl (simplest)
 2. **MCP Tools** - Model Context Protocol tools for richer integration
-3. **Polling** - Agent periodically checks for pending requests (no webhook URL needed)
-4. **~~Webhook Notifications~~** - ⚠️ Removed in pre-v2 cleanup. Use polling instead.
+3. **Polling** - Agent periodically checks for pending requests
+4. **Slack Notifications** - Real-time notifications via Slack (see [SLACK_INTEGRATION.md](./SLACK_INTEGRATION.md))
 
 ```
 ┌─────────────────┐                    ┌─────────────────┐
-│    OpenClaw     │◄──── Webhooks ────│  AgentPlanner   │
+│    OpenClaw     │◄── Slack Notify ──│  AgentPlanner   │
 │     Agent       │──── Polling ─────►│      API        │
 │                 │───── REST API ───►│                 │
 │                 │───── MCP Tools ──►│                 │
