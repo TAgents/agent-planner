@@ -1,8 +1,9 @@
 services:
-  # ─── PostgreSQL with pgvector ───────────────────────────────────
+  # ─── Core: PostgreSQL with pgvector ─────────────────────────
   postgres:
     image: pgvector/pgvector:pg17
     restart: unless-stopped
+    profiles: [core]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-agentplanner}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
@@ -18,10 +19,11 @@ services:
       timeout: 3s
       retries: 5
 
-  # ─── Hatchet Postgres (separate DB to avoid schema conflicts) ──
+  # ─── Core: Hatchet Postgres (separate DB) ───────────────────
   hatchet-postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    profiles: [core]
     environment:
       POSTGRES_USER: hatchet
       POSTGRES_PASSWORD: ${HATCHET_DB_PASSWORD:-hatchetdev}
@@ -34,10 +36,11 @@ services:
       timeout: 3s
       retries: 5
 
-  # ─── Hatchet (workflow engine) ──────────────────────────────────
+  # ─── Core: Hatchet (workflow engine) ────────────────────────
   hatchet:
     image: ghcr.io/hatchet-dev/hatchet/hatchet-lite:latest
     restart: unless-stopped
+    profiles: [core]
     depends_on:
       hatchet-postgres:
         condition: service_healthy
@@ -60,12 +63,13 @@ services:
       retries: 10
       start_period: 30s
 
-  # ─── API server (dev mode — host source mounted) ───────────────
+  # ─── Core: API server ──────────────────────────────────────
   api:
     build:
       context: .
       dockerfile: Dockerfile.dev
     restart: unless-stopped
+    profiles: [core]
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,15 +82,82 @@ services:
       HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN:-}
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}
+      OPENCLAW_GATEWAY_URL: ${OPENCLAW_GATEWAY_URL:-http://openclaw:7680}
+      OPENCLAW_API_TOKEN: ${OPENCLAW_API_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
       - "${API_PORT:-3000}:3000"
     volumes:
       - ./src:/app/src:ro
       - ./package.json:/app/package.json:ro
       - ./migrations:/app/migrations:ro
-    profiles:
-      - with-api
+
+  # ─── Core: Frontend ────────────────────────────────────────
+  frontend:
+    build:
+      context: ../agent-planner-ui
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    profiles: [core]
+    depends_on: [api]
+    ports:
+      - "${FRONTEND_PORT:-3001}:80"
+    environment:
+      REACT_APP_API_URL: ${API_BASE_URL:-http://localhost:3000}
+
+  # ─── Messaging Profile: Worker ─────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    profiles: [messaging]
+    depends_on:
+      hatchet:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment:
+      HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN:-}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      DISCORD_TOKEN: ${DISCORD_TOKEN:-}
+      API_BASE_URL: http://api:3000
+
+  # ─── OpenClaw Profile: Agent Runtime ───────────────────────
+  openclaw:
+    image: ghcr.io/openclaw/openclaw:latest
+    restart: unless-stopped
+    profiles: [openclaw]
+    depends_on: [api]
+    ports:
+      - "${OPENCLAW_PORT:-7680}:7680"
+    volumes:
+      - openclaw-workspace:/workspace
+    environment:
+      OPENCLAW_API_URL: http://api:3000
+      OPENCLAW_API_TOKEN: ${OPENCLAW_API_TOKEN:-}
+
+  # ─── Knowledge Profile: Memory Sync Worker ─────────────────
+  knowledge-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    profiles: [knowledge]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      hatchet:
+        condition: service_healthy
+    volumes:
+      - openclaw-workspace:/openclaw/workspace:ro
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-agentplanner}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-agentplanner}?sslmode=disable
+      HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENCLAW_WORKSPACE_MEMORY: /openclaw/workspace/memory
 
 volumes:
   pgdata:
   hatchet_pgdata:
+  openclaw-workspace:

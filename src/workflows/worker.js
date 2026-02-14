@@ -17,13 +17,18 @@ function registerAllWorkflows() {
   const { registerNodeWorkflows } = require('./node.workflows');
   const { registerAgentWorkflows } = require('./agent.workflows');
   const { registerGoalEvaluationWorkflow } = require('./goalEvaluation.workflow');
+  const { createMemorySyncWorkflow } = require('./memorySync.workflow');
 
   const planTasks = registerPlanWorkflows();
   const nodeTasks = registerNodeWorkflows();
   const agentTasks = registerAgentWorkflows();
   const goalTasks = registerGoalEvaluationWorkflow();
 
-  return { ...planTasks, ...nodeTasks, ...agentTasks, ...goalTasks };
+  // Memory sync workflow (may return null if Hatchet not configured)
+  const memorySyncWorkflow = createMemorySyncWorkflow();
+  const memoryTasks = memorySyncWorkflow ? { 'openclaw-memory-sync': memorySyncWorkflow } : {};
+
+  return { ...planTasks, ...nodeTasks, ...agentTasks, ...goalTasks, ...memoryTasks };
 }
 
 /**

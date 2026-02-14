@@ -4,12 +4,14 @@
 const { WebhookAdapter } = require('./webhook.adapter');
 const { SlackAdapter } = require('./slack.adapter');
 const { ConsoleAdapter } = require('./console.adapter');
+const { OpenClawAdapter } = require('./openclaw.adapter');
 const logger = require('../utils/logger');
 
 const adapters = [
   new WebhookAdapter(),
   new SlackAdapter(),
   new ConsoleAdapter(),
+  new OpenClawAdapter(),
 ];
 
 /**
