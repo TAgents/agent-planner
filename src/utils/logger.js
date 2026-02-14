@@ -49,6 +49,11 @@ const logger = {
     await logToFile(API_LOG_FILE, `[API] ${message}`);
   },
   
+  warn: async (message) => {
+    console.warn(`[WARN] ${message}`);
+    await logToFile(API_LOG_FILE, `[WARN] ${message}`);
+  },
+
   // Log for specific components/middlewares
   middleware: async (name, message) => {
     console.log(`[MIDDLEWARE:${name}] ${message}`);
