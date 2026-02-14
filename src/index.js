@@ -31,7 +31,7 @@ const shareRoutes = require('./routes/share.routes');
 // Removed: template, analytics, import-export, organization routes (pre-v2 cleanup)
 const goalRoutes = require('./routes/goal.routes');
 const goalsV2Routes = require('./routes/v2/goals.routes');
-// Removed: knowledge routes (pre-v2 cleanup)
+const knowledgeV2Routes = require('./routes/v2/knowledge.routes');
 const contextRoutes = require('./routes/context.routes');
 const decisionRoutes = require('./routes/decision.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
@@ -135,7 +135,7 @@ app.use('/invites', generalLimiter, shareRoutes);
 app.use('/goals', generalLimiter, goalRoutes);
 app.use('/api/goals', generalLimiter, goalsV2Routes);
 
-// Removed: knowledge routes (pre-v2 cleanup)
+app.use('/api/knowledge', generalLimiter, knowledgeV2Routes);
 
 // Agent context routes (leaf-up context loading)
 app.use('/context', generalLimiter, contextRoutes);
