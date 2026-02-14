@@ -25,11 +25,6 @@ describe('Authentication Middleware', () => {
     mockUser = createMockUser();
     
     // Default mock implementations
-    supabase.auth = {
-      setSession: jest.fn().mockResolvedValue({ data: {}, error: null }),
-      getUser: jest.fn().mockResolvedValue({ data: { user: null }, error: null })
-    };
-    
     supabaseAdmin.auth = {
       getUser: jest.fn().mockResolvedValue({ data: { user: null }, error: null })
     };
@@ -83,11 +78,7 @@ describe('Authentication Middleware', () => {
       await authenticate(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error: expect.stringContaining('Invalid authentication format')
-        })
-      );
+      expect(res.json).toHaveBeenCalledWith({ error: 'Unsupported authentication scheme' });
       expect(next).not.toHaveBeenCalled();
     });
   });
@@ -100,8 +91,7 @@ describe('Authentication Middleware', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      supabase.auth.setSession.mockResolvedValue({ data: {}, error: null });
-      supabase.auth.getUser.mockResolvedValue({
+      supabaseAdmin.auth.getUser.mockResolvedValue({
         data: {
           user: {
             id: mockUser.id,
@@ -128,11 +118,6 @@ describe('Authentication Middleware', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      supabase.auth.setSession.mockResolvedValue({
-        data: null,
-        error: { message: 'Session expired' }
-      });
-      
       supabaseAdmin.auth.getUser.mockResolvedValue({
         data: {
           user: {
@@ -158,11 +143,6 @@ describe('Authentication Middleware', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      supabase.auth.setSession.mockResolvedValue({
-        data: null,
-        error: { message: 'Invalid token' }
-      });
-      
       supabaseAdmin.auth.getUser.mockResolvedValue({
         data: { user: null },
         error: { message: 'Invalid token' }
@@ -195,8 +175,7 @@ describe('Authentication Middleware', () => {
         }
       };
 
-      supabase.auth.setSession.mockResolvedValue({ data: {}, error: null });
-      supabase.auth.getUser.mockResolvedValue({
+      supabaseAdmin.auth.getUser.mockResolvedValue({
         data: { user: githubUser },
         error: null
       });
@@ -220,7 +199,6 @@ describe('Authentication Middleware', () => {
 
   describe('API Token Authentication (ApiKey scheme)', () => {
     const generateMockApiToken = () => {
-      // Generate a 64-char hex token like the real implementation
       return crypto.randomBytes(32).toString('hex');
     };
 
@@ -241,7 +219,6 @@ describe('Authentication Middleware', () => {
         last_used: new Date().toISOString()
       };
 
-      // Create chainable mocks for each table
       const apiTokensMock = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
@@ -295,7 +272,7 @@ describe('Authentication Middleware', () => {
               data: {
                 user_id: mockUser.id,
                 permissions: [],
-                revoked: true,  // Token is revoked
+                revoked: true,
                 id: 'token-id-123'
               },
               error: null
@@ -313,7 +290,7 @@ describe('Authentication Middleware', () => {
       await authenticate(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({ error: 'API token has been revoked' });
+      expect(res.json).toHaveBeenCalledWith({ error: 'Invalid API token' });
       expect(next).not.toHaveBeenCalled();
     });
 
@@ -389,7 +366,7 @@ describe('Authentication Middleware', () => {
       await authenticate(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({ error: 'User not found for API token' });
+      expect(res.json).toHaveBeenCalledWith({ error: 'User not found' });
       expect(next).not.toHaveBeenCalled();
     });
   });
@@ -412,34 +389,44 @@ describe('Authentication Middleware', () => {
         user_id: mockUser.id,
         permissions: ['read'],
         revoked: false,
-        id: 'token-id-456'
+        id: 'token-id-456',
+        last_used: new Date().toISOString()
       };
 
-      // Create chainable mocks for each table
-      const apiTokensMock = {
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: tokenData,
-          error: null
-        }),
-        update: jest.fn().mockReturnThis(),
-        then: jest.fn((resolve) => resolve({ error: null }))
-      };
-      
-      const usersMock = {
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: mockUser,
-          error: null
-        })
-      };
+      // Need separate mock instances for lookup vs update calls
+      const singleMock = jest.fn().mockResolvedValue({
+        data: tokenData,
+        error: null
+      });
 
       supabaseAdmin.from.mockImplementation((table) => {
-        if (table === 'api_tokens') return apiTokensMock;
-        if (table === 'users') return usersMock;
-        return apiTokensMock;
+        if (table === 'api_tokens') {
+          return {
+            select: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnValue({
+                single: singleMock
+              })
+            }),
+            update: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnValue(
+                Promise.resolve({ error: null })
+              )
+            })
+          };
+        }
+        if (table === 'users') {
+          return {
+            select: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnValue({
+                single: jest.fn().mockResolvedValue({
+                  data: mockUser,
+                  error: null
+                })
+              })
+            })
+          };
+        }
+        return { select: jest.fn().mockReturnThis(), eq: jest.fn().mockReturnThis(), single: jest.fn().mockResolvedValue({ data: null, error: null }) };
       });
 
       await authenticate(req, res, next);
@@ -457,7 +444,7 @@ describe('Authentication Middleware', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      // API token lookup fails
+      // API token lookup fails (not found, not revoked)
       supabaseAdmin.from.mockReturnValue({
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
@@ -467,9 +454,8 @@ describe('Authentication Middleware', () => {
         })
       });
 
-      // But Supabase JWT auth succeeds (unlikely for hex string but testing fallback)
-      supabase.auth.setSession.mockResolvedValue({ data: {}, error: null });
-      supabase.auth.getUser.mockResolvedValue({
+      // Supabase JWT auth succeeds via supabaseAdmin
+      supabaseAdmin.auth.getUser.mockResolvedValue({
         data: {
           user: {
             id: mockUser.id,
@@ -482,8 +468,7 @@ describe('Authentication Middleware', () => {
 
       await authenticate(req, res, next);
 
-      // Should have tried JWT auth after API token failed
-      expect(supabase.auth.setSession).toHaveBeenCalled();
+      expect(supabaseAdmin.auth.getUser).toHaveBeenCalled();
     });
   });
 
@@ -495,7 +480,7 @@ describe('Authentication Middleware', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      supabase.auth.setSession.mockRejectedValue(new Error('Database connection failed'));
+      supabaseAdmin.auth.getUser.mockRejectedValue(new Error('Database connection failed'));
 
       await authenticate(req, res, next);
 
@@ -513,7 +498,6 @@ describe('Authentication Middleware', () => {
 
       await authenticate(req, res, next);
 
-      // Should try to verify empty string as token and fail
       expect(res.status).toHaveBeenCalledWith(401);
       expect(next).not.toHaveBeenCalled();
     });
@@ -574,7 +558,6 @@ describe('Authentication Middleware', () => {
       await authenticate(req, res, next);
 
       expect(next).toHaveBeenCalled();
-      // The last_used update happens asynchronously, so we just verify auth succeeded
       expect(req.user).toBeDefined();
     });
   });

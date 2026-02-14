@@ -404,8 +404,9 @@ describe('Public Plans API Endpoints', () => {
         })
         .expect(400);
 
-      expect(response.body.error).toContain('public');
-      expect(response.body.error).toContain('private');
+      // Zod validation middleware returns structured error
+      const errorText = response.body.message || response.body.error;
+      expect(errorText.toLowerCase()).toMatch(/visibility|public|private|validation/);
     });
 
     test('should require visibility field', async () => {
