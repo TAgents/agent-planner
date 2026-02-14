@@ -45,11 +45,51 @@ export const collaboratorsDal = {
     return collab ?? null;
   },
 
+  async listPlanIdsForUser(userId) {
+    const rows = await db.select({ planId: planCollaborators.planId })
+      .from(planCollaborators)
+      .where(eq(planCollaborators.userId, userId));
+    return rows.map(r => r.planId);
+  },
+
   async isCollaborator(planId, userId) {
     const [c] = await db.select({ role: planCollaborators.role })
       .from(planCollaborators)
       .where(and(eq(planCollaborators.planId, planId), eq(planCollaborators.userId, userId)))
       .limit(1);
+    return c ?? null;
+  },
+
+  async findByPlanAndUser(planId, userId) {
+    const [c] = await db.select()
+      .from(planCollaborators)
+      .where(and(eq(planCollaborators.planId, planId), eq(planCollaborators.userId, userId)))
+      .limit(1);
+    return c ?? null;
+  },
+
+  async create(data) {
+    const [c] = await db.insert(planCollaborators).values(data).returning();
+    return c;
+  },
+
+  async update(id, data) {
+    const [c] = await db.update(planCollaborators)
+      .set(data)
+      .where(eq(planCollaborators.id, id))
+      .returning();
+    return c ?? null;
+  },
+
+  async deleteByPlan(planId) {
+    return db.delete(planCollaborators)
+      .where(eq(planCollaborators.planId, planId));
+  },
+
+  async deleteByPlanAndUser(planId, userId) {
+    const [c] = await db.delete(planCollaborators)
+      .where(and(eq(planCollaborators.planId, planId), eq(planCollaborators.userId, userId)))
+      .returning();
     return c ?? null;
   },
 };

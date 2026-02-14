@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const { supabaseAdmin: supabase } = require('../config/supabase');
+const { plansDal, nodesDal, usersDal, logsDal } = require('../db/dal.cjs');
 const { broadcastPlanUpdate } = require('../websocket/broadcast');
 const {
   createNodeCreatedMessage,
@@ -10,52 +10,20 @@ const {
   createLogAddedMessage
 } = require('../websocket/message-schema');
 const { notifyStatusChange, notifyAgentRequested } = require('../services/notifications');
+const logger = require('../utils/logger');
 
 /**
  * Helper function to check if a user has access to a plan with specified roles
- * @param {string} planId - Plan ID
- * @param {string} userId - User ID
- * @param {string[]} [roles] - Optional array of required roles (e.g., ['owner', 'admin', 'editor'])
- * @returns {Promise<boolean>} - Whether the user has access
  */
 const checkPlanAccess = async (planId, userId, roles = []) => {
-  // Check if the user is the owner
-  const { data: plan, error: planError } = await supabase
-    .from('plans')
-    .select('owner_id')
-    .eq('id', planId)
-    .single();
-
-  if (planError) {
-    // Plan not found or other error
+  try {
+    const { hasAccess, role } = await plansDal.userHasAccess(planId, userId);
+    if (!hasAccess) return false;
+    if (roles.length > 0) return roles.includes(role);
+    return true;
+  } catch (error) {
     return false;
   }
-
-  // If user is the owner, they always have access
-  if (plan.owner_id === userId) {
-    return roles.length === 0 || roles.includes('owner');
-  }
-
-  // Otherwise, check if they're a collaborator with appropriate role
-  const { data: collab, error: collabError } = await supabase
-    .from('plan_collaborators')
-    .select('role')
-    .eq('plan_id', planId)
-    .eq('user_id', userId)
-    .single();
-
-  if (collabError) {
-    // Not a collaborator or other error
-    return false;
-  }
-
-  // If roles specified, check if the user's role is included
-  if (roles.length > 0) {
-    return roles.includes(collab.role);
-  }
-
-  // Otherwise, any collaborator role grants access
-  return true;
 };
 
 /**
@@ -64,62 +32,19 @@ const checkPlanAccess = async (planId, userId, roles = []) => {
 const getNodes = async (req, res, next) => {
   try {
     const { id: planId } = req.params;
-    const { include_details } = req.query;
     const userId = req.user.id;
 
-    // Check if the user has access to this plan
     const hasAccess = await checkPlanAccess(planId, userId);
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have access to this plan' });
     }
 
-    // Default: Return minimal fields for efficient structure navigation
-    // The purpose of this endpoint is to get an overview of the plan structure.
-    // For detailed node information, use GET /plans/{id}/nodes/{nodeId}/context
-    const minimalFields = `
-      id,
-      parent_id,
-      node_type,
-      title,
-      status,
-      order_index
-    `;
-
-    // Full details only when explicitly requested
-    const fullFields = `
-      id,
-      plan_id,
-      parent_id,
-      node_type,
-      title,
-      description,
-      status,
-      order_index,
-      due_date,
-      created_at,
-      updated_at,
-      context,
-      agent_instructions,
-      metadata
-    `;
-
-    const fieldsToSelect = include_details === 'true' ? fullFields : minimalFields;
-
-    // Get all nodes for the plan
-    const { data: nodes, error } = await supabase
-      .from('plan_nodes')
-      .select(fieldsToSelect)
-      .eq('plan_id', planId)
-      .order('order_index', { ascending: true });
-
-    if (error) {
-      return res.status(500).json({ error: error.message });
-    }
+    const nodes = await nodesDal.listByPlan(planId);
 
     // Build hierarchical structure
     const buildTree = (parentId = null) => {
       return nodes
-        .filter(node => node.parent_id === parentId)
+        .filter(node => node.parentId === parentId)
         .map(node => ({
           ...node,
           children: buildTree(node.id),
@@ -141,40 +66,14 @@ const getNode = async (req, res, next) => {
     const { id: planId, nodeId } = req.params;
     const userId = req.user.id;
 
-    // Check if the user has access to this plan
     const hasAccess = await checkPlanAccess(planId, userId);
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have access to this plan' });
     }
 
-    // Get the node
-    const { data: node, error } = await supabase
-      .from('plan_nodes')
-      .select(`
-        id, 
-        plan_id, 
-        parent_id, 
-        node_type, 
-        title, 
-        description, 
-        status, 
-        order_index, 
-        due_date, 
-        created_at, 
-        updated_at, 
-        context, 
-        agent_instructions, 
-        metadata
-      `)
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Node not found' });
-      }
-      return res.status(500).json({ error: error.message });
+    const node = await nodesDal.findByIdAndPlan(nodeId, planId);
+    if (!node) {
+      return res.status(404).json({ error: 'Node not found' });
     }
 
     res.json(node);
@@ -203,123 +102,69 @@ const createNode = async (req, res, next) => {
     } = req.body;
     const userId = req.user.id;
 
-    // Check if the user has edit access to this plan
     const hasAccess = await checkPlanAccess(planId, userId, ['owner', 'admin', 'editor']);
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have permission to add nodes to this plan' });
     }
 
-    // Validate required fields
-    if (!nodeType) {
-      return res.status(400).json({ error: 'Node type is required' });
-    }
+    if (!nodeType) return res.status(400).json({ error: 'Node type is required' });
+    if (!title) return res.status(400).json({ error: 'Node title is required' });
+    if (nodeType === 'root') return res.status(400).json({ error: 'Cannot create additional root nodes (only one allowed)' });
 
-    if (!title) {
-      return res.status(400).json({ error: 'Node title is required' });
-    }
-
-    // Don't allow creating root nodes (only one per plan should exist)
-    if (nodeType === 'root') {
-      return res.status(400).json({ error: 'Cannot create additional root nodes (only one allowed)' });
-    }
-
-    // If parentId provided, verify it exists in this plan
+    // Determine parent
     let parentIdToUse = parentId;
     if (parentIdToUse) {
-      const { data: parentNode, error: parentError } = await supabase
-        .from('plan_nodes')
-        .select('id')
-        .eq('id', parentIdToUse)
-        .eq('plan_id', planId)
-        .single();
-
-      if (parentError) {
-        return res.status(400).json({ error: 'Parent node not found in this plan' });
-      }
+      const parentNode = await nodesDal.findByIdAndPlan(parentIdToUse, planId);
+      if (!parentNode) return res.status(400).json({ error: 'Parent node not found in this plan' });
     } else {
-      // If no parentId, assign to root node
-      const { data: rootNode, error: rootError } = await supabase
-        .from('plan_nodes')
-        .select('id')
-        .eq('plan_id', planId)
-        .eq('node_type', 'root')
-        .single();
-
-      if (rootError) {
-        return res.status(500).json({ error: 'Plan structure is invalid (no root node)' });
-      }
-      
-      // Use the root node as parent
-      parentIdToUse = rootNode.id; // Update parent ID to root node
+      const rootNode = await nodesDal.getRoot(planId);
+      if (!rootNode) return res.status(500).json({ error: 'Plan structure is invalid (no root node)' });
+      parentIdToUse = rootNode.id;
     }
 
-    // Determine order index if not provided
+    // Determine order index
     let finalOrderIndex = orderIndex;
     if (finalOrderIndex === undefined) {
-      // Get the highest order index among siblings
-      const { data: siblings, error: siblingsError } = await supabase
-        .from('plan_nodes')
-        .select('order_index')
-        .eq('plan_id', planId)
-        .eq('parent_id', parentIdToUse)
-        .order('order_index', { ascending: false })
-        .limit(1);
-
-      if (siblingsError) {
-        return res.status(500).json({ error: siblingsError.message });
-      }
-
-      finalOrderIndex = siblings.length > 0 ? siblings[0].order_index + 1 : 0;
+      const maxOrder = await nodesDal.getMaxSiblingOrder(planId, parentIdToUse);
+      finalOrderIndex = maxOrder + 1;
     }
 
-    // Create the node
     const now = new Date();
     const nodeId = uuidv4();
 
-    const { data, error } = await supabase
-      .from('plan_nodes')
-      .insert([
-        {
-          id: nodeId,
-          plan_id: planId,
-          parent_id: parentIdToUse,
-          node_type: nodeType,
-          title,
-          description: description || '',
-          status: status || 'not_started',
-          order_index: finalOrderIndex,
-          due_date: dueDate || null,
-          created_at: now,
-          updated_at: now,
-          context: context || description || '',
-          agent_instructions: agentInstructions || null,
-          metadata: metadata || {},
-        },
-      ])
-      .select();
+    const newNode = await nodesDal.create({
+      id: nodeId,
+      planId,
+      parentId: parentIdToUse,
+      nodeType,
+      title,
+      description: description || '',
+      status: status || 'not_started',
+      orderIndex: finalOrderIndex,
+      dueDate: dueDate || null,
+      createdAt: now,
+      updatedAt: now,
+      context: context || description || '',
+      agentInstructions: agentInstructions || null,
+      metadata: metadata || {},
+    });
 
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
+    // Add log entry
+    await logsDal.create({
+      id: uuidv4(),
+      planNodeId: nodeId,
+      userId,
+      content: `Created ${nodeType} "${title}"`,
+      logType: 'progress',
+      createdAt: now,
+    });
 
-    // Add a log entry for this creation
-    await supabase.from('plan_node_logs').insert([
-      {
-        id: uuidv4(),
-        plan_node_id: nodeId,
-        user_id: userId,
-        content: `Created ${nodeType} "${title}"`,
-        log_type: 'progress',
-        created_at: now,
-      },
-    ]);
-
-    // Broadcast node creation event
+    // Broadcast
     const userName = req.user.name || req.user.email;
-    const message = createNodeCreatedMessage(data[0], userId, userName);
+    const message = createNodeCreatedMessage(newNode, userId, userName);
     await broadcastPlanUpdate(planId, message);
 
-    res.status(201).json(data[0]);
+    res.status(201).json(newNode);
   } catch (error) {
     next(error);
   }
@@ -344,97 +189,64 @@ const updateNode = async (req, res, next) => {
     } = req.body;
     const userId = req.user.id;
 
-    // Check if the user has edit access to this plan
     const hasAccess = await checkPlanAccess(planId, userId, ['owner', 'admin', 'editor']);
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have permission to update nodes in this plan' });
     }
 
-    // Check if node exists and belongs to this plan (also get status for notification)
-    const { data: existingNode, error: nodeError } = await supabase
-      .from('plan_nodes')
-      .select('node_type, status, title')
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (nodeError) {
-      if (nodeError.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Node not found in this plan' });
-      }
-      return res.status(500).json({ error: nodeError.message });
+    const existingNode = await nodesDal.findByIdAndPlan(nodeId, planId);
+    if (!existingNode) {
+      return res.status(404).json({ error: 'Node not found in this plan' });
     }
 
-    // Store old status for notification comparison
     const oldStatus = existingNode.status;
 
-    // Don't allow changing root node type
-    if (existingNode.node_type === 'root' && nodeType && nodeType !== 'root') {
+    if (existingNode.nodeType === 'root' && nodeType && nodeType !== 'root') {
       return res.status(400).json({ error: 'Cannot change root node type' });
     }
 
-    // Update only provided fields
-    const updates = { updated_at: new Date() };
-    if (nodeType !== undefined) updates.node_type = nodeType;
+    // Build updates
+    const updates = { updatedAt: new Date() };
+    if (nodeType !== undefined) updates.nodeType = nodeType;
     if (title !== undefined) updates.title = title;
     if (description !== undefined) updates.description = description;
     if (status !== undefined) updates.status = status;
-    if (orderIndex !== undefined) updates.order_index = orderIndex;
-    if (dueDate !== undefined) updates.due_date = dueDate;
+    if (orderIndex !== undefined) updates.orderIndex = orderIndex;
+    if (dueDate !== undefined) updates.dueDate = dueDate;
     if (context !== undefined) updates.context = context;
-    if (agentInstructions !== undefined) updates.agent_instructions = agentInstructions;
+    if (agentInstructions !== undefined) updates.agentInstructions = agentInstructions;
     if (metadata !== undefined) updates.metadata = metadata;
 
-    // Perform the update
-    const { data, error } = await supabase
-      .from('plan_nodes')
-      .update(updates)
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .select();
+    const updatedNode = await nodesDal.update(nodeId, updates);
 
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
-
-    // If status was updated, add a log entry and send notification
+    // Log status change
     if (status !== undefined) {
-      await supabase.from('plan_node_logs').insert([
-        {
-          id: uuidv4(),
-          plan_node_id: nodeId,
-          user_id: userId,
-          content: `Updated status to ${status}`,
-          log_type: 'progress',
-          created_at: new Date(),
-        },
-      ]);
+      await logsDal.create({
+        id: uuidv4(),
+        planNodeId: nodeId,
+        userId,
+        content: `Updated status to ${status}`,
+        logType: 'progress',
+        createdAt: new Date(),
+      });
 
-      // Send webhook notification if status changed
       if (oldStatus !== status) {
-        // Get plan info for notification
-        const { data: planData } = await supabase
-          .from('plans')
-          .select('id, title, owner_id')
-          .eq('id', planId)
-          .single();
-
-        if (planData) {
+        const plan = await plansDal.findById(planId);
+        if (plan) {
           const actor = { name: req.user.name || req.user.email, type: 'user' };
-          // Fire and forget - don't await
-          notifyStatusChange(data[0], planData, actor, oldStatus, status).catch(err => {
+          notifyStatusChange(updatedNode, plan, actor, oldStatus, status).catch(err => {
             console.error('Notification error:', err);
           });
         }
       }
     }
 
-    // Broadcast node update event
+    // Broadcast
     const userName = req.user.name || req.user.email;
-    const message = createNodeUpdatedMessage(data[0], userId, userName);
+    const message = createNodeUpdatedMessage(updatedNode, userId, userName);
     await broadcastPlanUpdate(planId, message);
 
-    res.json(data[0]);
+    res.json(updatedNode);
   } catch (error) {
     next(error);
   }
@@ -448,43 +260,23 @@ const deleteNode = async (req, res, next) => {
     const { id: planId, nodeId } = req.params;
     const userId = req.user.id;
 
-    // Check if the user has edit access to this plan
     const hasAccess = await checkPlanAccess(planId, userId, ['owner', 'admin', 'editor']);
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have permission to delete nodes in this plan' });
     }
 
-    // Check if node exists and belongs to this plan
-    const { data: node, error: nodeError } = await supabase
-      .from('plan_nodes')
-      .select('node_type, title')
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (nodeError) {
-      if (nodeError.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Node not found in this plan' });
-      }
-      return res.status(500).json({ error: nodeError.message });
+    const node = await nodesDal.findByIdAndPlan(nodeId, planId);
+    if (!node) {
+      return res.status(404).json({ error: 'Node not found in this plan' });
     }
 
-    // Don't allow deleting root nodes
-    if (node.node_type === 'root') {
+    if (node.nodeType === 'root') {
       return res.status(400).json({ error: 'Cannot delete root node' });
     }
 
-    // Find all child nodes (recursively)
+    // Collect all descendant IDs recursively
     const getAllChildrenIds = async (parentId) => {
-      const { data: children, error } = await supabase
-        .from('plan_nodes')
-        .select('id')
-        .eq('parent_id', parentId);
-
-      if (error) {
-        throw error;
-      }
-
+      const children = await nodesDal.getChildren(parentId);
       let ids = [parentId];
       for (const child of children) {
         const childIds = await getAllChildrenIds(child.id);
@@ -493,43 +285,12 @@ const deleteNode = async (req, res, next) => {
       return ids;
     };
 
-    // Get all node IDs to delete
     const nodeIdsToDelete = await getAllChildrenIds(nodeId);
 
-    // Delete related data for all affected nodes
-    for (const id of nodeIdsToDelete) {
-      // Delete comments for this node
-      await supabase
-        .from('plan_comments')
-        .delete()
-        .eq('plan_node_id', id);
+    // Delete all nodes (FK cascades handle comments, labels, logs)
+    await nodesDal.deleteByIds(nodeIdsToDelete);
 
-      // Delete labels for this node
-      await supabase
-        .from('plan_node_labels')
-        .delete()
-        .eq('plan_node_id', id);
-
-      // Removed: artifact deletion (Phase 0 simplification - table will be dropped)
-
-      // Delete logs for this node
-      await supabase
-        .from('plan_node_logs')
-        .delete()
-        .eq('plan_node_id', id);
-    }
-
-    // Delete all affected nodes
-    const { error } = await supabase
-      .from('plan_nodes')
-      .delete()
-      .in('id', nodeIdsToDelete);
-
-    if (error) {
-      return res.status(500).json({ error: error.message });
-    }
-
-    // Broadcast node deletion event
+    // Broadcast
     const userName = req.user.name || req.user.email;
     const message = createNodeDeletedMessage(nodeId, planId, userId, userName);
     await broadcastPlanUpdate(planId, message);
@@ -541,20 +302,18 @@ const deleteNode = async (req, res, next) => {
 };
 
 /**
- * Add a comment to a node - DEPRECATED: Use addLogEntry instead
+ * Add a comment to a node - DEPRECATED
  */
 const addComment = async (req, res, next) => {
-  // Comments functionality has been removed - use logs instead
   return res.status(410).json({ 
     error: 'Comments functionality has been removed. Please use logs endpoint instead.' 
   });
 };
 
 /**
- * Get comments for a node - DEPRECATED: Use getNodeLogs instead
+ * Get comments for a node - DEPRECATED
  */
 const getComments = async (req, res, next) => {
-  // Comments functionality has been removed - use logs instead
   return res.status(410).json({ 
     error: 'Comments functionality has been removed. Please use logs endpoint instead.' 
   });
@@ -568,94 +327,28 @@ const getNodeContext = async (req, res, next) => {
     const { id: planId, nodeId } = req.params;
     const userId = req.user.id;
 
-    // Check if the user has access to this plan
     const hasAccess = await checkPlanAccess(planId, userId);
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have access to this plan' });
     }
 
-    // Get the node
-    const { data: node, error: nodeError } = await supabase
-      .from('plan_nodes')
-      .select(`
-        id, 
-        plan_id, 
-        parent_id, 
-        node_type, 
-        title, 
-        description, 
-        status, 
-        order_index, 
-        due_date, 
-        created_at, 
-        updated_at, 
-        context, 
-        agent_instructions, 
-        metadata
-      `)
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (nodeError) {
-      if (nodeError.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Node not found' });
-      }
-      return res.status(500).json({ error: nodeError.message });
+    const node = await nodesDal.findByIdAndPlan(nodeId, planId);
+    if (!node) {
+      return res.status(404).json({ error: 'Node not found' });
     }
-
-    // Comments have been removed - use logs instead
-    const comments = [];
 
     // Get recent logs
-    const { data: logs, error: logsError } = await supabase
-      .from('plan_node_logs')
-      .select(`
-        id, 
-        content, 
-        log_type, 
-        created_at,
-        user:user_id (id, name, email)
-      `)
-      .eq('plan_node_id', nodeId)
-      .order('created_at', { ascending: false })
-      .limit(10);
-
-    if (logsError) {
-      return res.status(500).json({ error: logsError.message });
-    }
+    const logs = await logsDal.listByNode(nodeId, { limit: 10 });
 
     // Get child nodes
-    const { data: children, error: childrenError } = await supabase
-      .from('plan_nodes')
-      .select(`
-        id, 
-        node_type, 
-        title, 
-        description, 
-        status
-      `)
-      .eq('parent_id', nodeId)
-      .order('order_index', { ascending: true });
-
-    if (childrenError) {
-      return res.status(500).json({ error: childrenError.message });
-    }
-
-    // Removed: artifact retrieval (Phase 0 simplification)
+    const children = await nodesDal.getChildren(nodeId);
 
     // Get the plan
-    const { data: plan, error: planError } = await supabase
-      .from('plans')
-      .select('id, title, description, status')
-      .eq('id', planId)
-      .single();
-
-    if (planError) {
-      return res.status(500).json({ error: planError.message });
+    const plan = await plansDal.findById(planId);
+    if (!plan) {
+      return res.status(500).json({ error: 'Plan not found' });
     }
 
-    // Compile rich context
     const context = {
       plan: {
         id: plan.id,
@@ -682,72 +375,29 @@ const getNodeAncestry = async (req, res, next) => {
     const { id: planId, nodeId } = req.params;
     const userId = req.user.id;
 
-    // Check if the user has access to this plan
     const hasAccess = await checkPlanAccess(planId, userId);
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have access to this plan' });
     }
 
-    // Get the current node
-    const { data: currentNode, error: nodeError } = await supabase
-      .from('plan_nodes')
-      .select('id, parent_id, node_type, title, description, status')
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (nodeError) {
-      if (nodeError.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Node not found' });
-      }
-      return res.status(500).json({ error: nodeError.message });
+    const currentNode = await nodesDal.findByIdAndPlan(nodeId, planId);
+    if (!currentNode) {
+      return res.status(404).json({ error: 'Node not found' });
     }
 
-    // Function to get ancestors recursively
     const getAncestors = async (node, ancestry = []) => {
-      // Add current node to ancestry
       ancestry.unshift(node);
+      if (node.nodeType === 'root' || !node.parentId) return ancestry;
 
-      // If this is the root node, we're done
-      if (node.node_type === 'root' || !node.parent_id) {
-        return ancestry;
-      }
-
-      // Get the parent node
-      const { data: parent, error } = await supabase
-        .from('plan_nodes')
-        .select('id, parent_id, node_type, title, description, status')
-        .eq('id', node.parent_id)
-        .eq('plan_id', planId)
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      // Continue up the tree
+      const parent = await nodesDal.findByIdAndPlan(node.parentId, planId);
+      if (!parent) return ancestry;
       return getAncestors(parent, ancestry);
     };
 
-    // Get the ancestry path
     const ancestry = await getAncestors(currentNode);
+    const plan = await plansDal.findById(planId);
 
-    // Get the plan info
-    const { data: plan, error: planError } = await supabase
-      .from('plans')
-      .select('id, title, description, status')
-      .eq('id', planId)
-      .single();
-
-    if (planError) {
-      return res.status(500).json({ error: planError.message });
-    }
-
-    // Return plan info and ancestry path
-    res.json({
-      plan,
-      ancestry,
-    });
+    res.json({ plan, ancestry });
   } catch (error) {
     next(error);
   }
@@ -762,17 +412,13 @@ const updateNodeStatus = async (req, res, next) => {
     const { status } = req.body;
     const userId = req.user.id;
 
-    // Check if the user has edit access to this plan
     const hasAccess = await checkPlanAccess(planId, userId, ['owner', 'admin', 'editor']);
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have permission to update nodes in this plan' });
     }
 
-    if (!status) {
-      return res.status(400).json({ error: 'Status is required' });
-    }
+    if (!status) return res.status(400).json({ error: 'Status is required' });
 
-    // Valid statuses
     const validStatuses = ['not_started', 'in_progress', 'completed', 'blocked'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
@@ -780,67 +426,33 @@ const updateNodeStatus = async (req, res, next) => {
       });
     }
 
-    // Get old status first
-    const { data: oldNode, error: oldNodeError } = await supabase
-      .from('plan_nodes')
-      .select('status')
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (oldNodeError) {
-      if (oldNodeError.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Node not found' });
-      }
-      return res.status(500).json({ error: oldNodeError.message });
-    }
-
-    const oldStatus = oldNode.status;
-
-    // Update the node status
-    const { data, error } = await supabase
-      .from('plan_nodes')
-      .update({
-        status,
-        updated_at: new Date(),
-      })
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .select();
-
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
-
-    if (data.length === 0) {
+    const oldNode = await nodesDal.findByIdAndPlan(nodeId, planId);
+    if (!oldNode) {
       return res.status(404).json({ error: 'Node not found' });
     }
 
-    // Add a log entry
-    await supabase.from('plan_node_logs').insert([
-      {
-        id: uuidv4(),
-        plan_node_id: nodeId,
-        user_id: userId,
-        content: `Updated status to ${status}`,
-        log_type: 'progress',
-        created_at: new Date(),
-      },
-    ]);
+    const oldStatus = oldNode.status;
+    const updatedNode = await nodesDal.update(nodeId, { status, updatedAt: new Date() });
 
-    // Broadcast status change event
-    const userName = req.user.name || req.user.email;
-    const message = createNodeStatusChangedMessage(
-      nodeId,
-      planId,
-      oldStatus,
-      status,
+    if (!updatedNode) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+
+    await logsDal.create({
+      id: uuidv4(),
+      planNodeId: nodeId,
       userId,
-      userName
-    );
+      content: `Updated status to ${status}`,
+      logType: 'progress',
+      createdAt: new Date(),
+    });
+
+    // Broadcast
+    const userName = req.user.name || req.user.email;
+    const message = createNodeStatusChangedMessage(nodeId, planId, oldStatus, status, userId, userName);
     await broadcastPlanUpdate(planId, message);
 
-    res.json(data[0]);
+    res.json(updatedNode);
   } catch (error) {
     next(error);
   }
@@ -855,127 +467,72 @@ const moveNode = async (req, res, next) => {
     const { parent_id: newParentId, order_index: newOrderIndex } = req.body;
     const userId = req.user.id;
 
-    // Check if the user has edit access to this plan
     const hasAccess = await checkPlanAccess(planId, userId, ['owner', 'admin', 'editor']);
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have permission to move nodes in this plan' });
     }
 
-    // Check if the node exists and capture old state
-    const { data: node, error: nodeError } = await supabase
-      .from('plan_nodes')
-      .select('parent_id, node_type, title, order_index')
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (nodeError) {
-      if (nodeError.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Node not found' });
-      }
-      return res.status(500).json({ error: nodeError.message });
+    const node = await nodesDal.findByIdAndPlan(nodeId, planId);
+    if (!node) {
+      return res.status(404).json({ error: 'Node not found' });
     }
 
-    // Store old values for broadcast
-    const oldParentId = node.parent_id;
-    const oldOrderIndex = node.order_index;
+    const oldParentId = node.parentId;
+    const oldOrderIndex = node.orderIndex;
 
-    // Don't allow moving root nodes
-    if (node.node_type === 'root') {
+    if (node.nodeType === 'root') {
       return res.status(400).json({ error: 'Cannot move root nodes' });
     }
 
-    // If no parent ID provided, we're just reordering within the same parent
-    let parentId = newParentId || node.parent_id;
+    let parentId = newParentId || node.parentId;
 
-    // If changing parents, verify the new parent exists and is in the same plan
-    if (newParentId && newParentId !== node.parent_id) {
-      const { data: parent, error: parentError } = await supabase
-        .from('plan_nodes')
-        .select('id')
-        .eq('id', newParentId)
-        .eq('plan_id', planId)
-        .single();
-
-      if (parentError) {
-        if (parentError.code === 'PGRST116') {
-          return res.status(404).json({ error: 'Parent node not found' });
-        }
-        return res.status(500).json({ error: parentError.message });
-      }
+    // Verify new parent exists
+    if (newParentId && newParentId !== node.parentId) {
+      const parent = await nodesDal.findByIdAndPlan(newParentId, planId);
+      if (!parent) return res.status(404).json({ error: 'Parent node not found' });
     }
 
-    // Get the new order index
+    // Determine order index
     let orderIndex = newOrderIndex;
     if (orderIndex === undefined) {
-      // Get the highest order index among the new siblings
-      const { data: siblings, error: siblingsError } = await supabase
-        .from('plan_nodes')
-        .select('order_index')
-        .eq('plan_id', planId)
-        .eq('parent_id', parentId)
-        .neq('id', nodeId) // Exclude the node we're moving
-        .order('order_index', { ascending: false })
-        .limit(1);
-
-      if (siblingsError) {
-        return res.status(500).json({ error: siblingsError.message });
-      }
-
-      orderIndex = siblings.length > 0 ? siblings[0].order_index + 1 : 0;
+      const maxOrder = await nodesDal.getMaxSiblingOrder(planId, parentId, nodeId);
+      orderIndex = maxOrder + 1;
     }
 
-    // Update the node
-    const { data, error } = await supabase
-      .from('plan_nodes')
-      .update({
-        parent_id: parentId,
-        order_index: orderIndex,
-        updated_at: new Date(),
-      })
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .select();
+    const updatedNode = await nodesDal.update(nodeId, {
+      parentId: parentId,
+      orderIndex: orderIndex,
+      updatedAt: new Date(),
+    });
 
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
-
-    // Add a log entry
-    const logMessage = newParentId && newParentId !== node.parent_id
+    // Log
+    const logMessage = newParentId && newParentId !== node.parentId
       ? `Moved "${node.title}" to a different parent`
       : `Reordered "${node.title}"`;
 
-    await supabase.from('plan_node_logs').insert([
-      {
-        id: uuidv4(),
-        plan_node_id: nodeId,
-        user_id: userId,
-        content: logMessage,
-        log_type: 'progress',
-        created_at: new Date(),
-      },
-    ]);
+    await logsDal.create({
+      id: uuidv4(),
+      planNodeId: nodeId,
+      userId,
+      content: logMessage,
+      logType: 'progress',
+      createdAt: new Date(),
+    });
 
-    // Broadcast node moved event
+    // Broadcast
     const userName = req.user.name || req.user.email;
-    const moveData = {
-      oldParentId,
-      newParentId: parentId,
-      oldOrderIndex,
-      newOrderIndex: orderIndex
-    };
+    const moveData = { oldParentId, newParentId: parentId, oldOrderIndex, newOrderIndex: orderIndex };
     const message = createNodeMovedMessage(nodeId, planId, moveData, userId, userName);
     await broadcastPlanUpdate(planId, message);
 
-    res.json(data[0]);
+    res.json(updatedNode);
   } catch (error) {
     next(error);
   }
 };
 
 /**
- * Add a progress log entry (for tracking agent activity)
+ * Add a progress log entry
  */
 const addLogEntry = async (req, res, next) => {
   try {
@@ -983,33 +540,18 @@ const addLogEntry = async (req, res, next) => {
     const { content, log_type, actor_type } = req.body;
     const userId = req.user.id;
 
-    // Check if the user has access to this plan
     const hasAccess = await checkPlanAccess(planId, userId);
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have access to this plan' });
     }
 
-    // Check if node exists and belongs to this plan
-    const { data: node, error: nodeError } = await supabase
-      .from('plan_nodes')
-      .select('id')
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (nodeError) {
-      if (nodeError.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Node not found in this plan' });
-      }
-      return res.status(500).json({ error: nodeError.message });
+    const node = await nodesDal.findByIdAndPlan(nodeId, planId);
+    if (!node) {
+      return res.status(404).json({ error: 'Node not found in this plan' });
     }
 
-    // Validate content
-    if (!content) {
-      return res.status(400).json({ error: 'Log content is required' });
-    }
+    if (!content) return res.status(400).json({ error: 'Log content is required' });
 
-    // Validate log type
     const validLogTypes = ['progress', 'reasoning', 'challenge', 'decision'];
     const logType = log_type || 'progress';
     if (!validLogTypes.includes(logType)) {
@@ -1018,46 +560,26 @@ const addLogEntry = async (req, res, next) => {
       });
     }
 
-    // Create the log entry
     const logId = uuidv4();
     const createdAt = new Date();
-
-    // Build metadata with actor_type if provided
     const metadata = actor_type ? { actor_type } : {};
 
-    const { data, error } = await supabase
-      .from('plan_node_logs')
-      .insert([
-        {
-          id: logId,
-          plan_node_id: nodeId,
-          user_id: userId,
-          content,
-          log_type: logType,
-          created_at: createdAt,
-          metadata,
-        },
-      ])
-      .select(`
-        id,
-        content,
-        log_type,
-        created_at,
-        plan_node_id,
-        user_id,
-        metadata
-      `);
+    const newLog = await logsDal.create({
+      id: logId,
+      planNodeId: nodeId,
+      userId,
+      content,
+      logType,
+      createdAt,
+      metadata,
+    });
 
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
-
-    // Broadcast log creation event
+    // Broadcast
     const userName = req.user.name || req.user.email;
-    const message = createLogAddedMessage(data[0], planId, userName);
+    const message = createLogAddedMessage(newLog, planId, userName);
     await broadcastPlanUpdate(planId, message);
 
-    res.status(201).json(data[0]);
+    res.status(201).json(newLog);
   } catch (error) {
     next(error);
   }
@@ -1071,65 +593,29 @@ const getNodeLogs = async (req, res, next) => {
     const { id: planId, nodeId } = req.params;
     const userId = req.user.id;
 
-    // Check if the user has access to this plan
     const hasAccess = await checkPlanAccess(planId, userId);
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have access to this plan' });
     }
 
-    // Check if node exists and belongs to this plan
-    const { data: node, error: nodeError } = await supabase
-      .from('plan_nodes')
-      .select('id')
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (nodeError) {
-      if (nodeError.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Node not found in this plan' });
-      }
-      return res.status(500).json({ error: nodeError.message });
+    const node = await nodesDal.findByIdAndPlan(nodeId, planId);
+    if (!node) {
+      return res.status(404).json({ error: 'Node not found in this plan' });
     }
 
-    // Check for query parameters
     const { log_type } = req.query;
+    const logs = await logsDal.listByNode(nodeId, { logType: log_type });
 
-    // Build query
-    let query = supabase
-      .from('plan_node_logs')
-      .select(`
-        id, 
-        content, 
-        log_type, 
-        created_at,
-        user_id,
-        metadata
-      `)
-      .eq('plan_node_id', nodeId);
-
-    // Apply log_type filter if provided
-    if (log_type) {
-      query = query.eq('log_type', log_type);
-    }
-
-    // Execute query
-    const { data, error } = await query.order('created_at', { ascending: false });
-
-    if (error) {
-      return res.status(500).json({ error: error.message });
-    }
-
-    // Transform data to include user info and extract actor_type (remove internal metadata field)
-    const logsWithUser = data.map(log => {
+    // Transform to include actor_type
+    const logsWithUser = logs.map(log => {
       const { metadata, ...logWithoutMetadata } = log;
       return {
         ...logWithoutMetadata,
-        actor_type: metadata?.actor_type || 'human', // Default to human for backward compatibility
+        actor_type: metadata?.actor_type || 'human',
         user: {
-          id: log.user_id,
-          name: null,
-          email: null
+          id: log.userId,
+          name: log.userName || null,
+          email: log.userEmail || null
         }
       };
     });
@@ -1149,7 +635,6 @@ const requestAgent = async (req, res, next) => {
     const { request_type, message } = req.body;
     const userId = req.user.id;
 
-    // Validate request_type
     const validTypes = ['start', 'review', 'help', 'continue'];
     if (!request_type || !validTypes.includes(request_type)) {
       return res.status(400).json({ 
@@ -1157,67 +642,40 @@ const requestAgent = async (req, res, next) => {
       });
     }
 
-    // Check access
     const hasAccess = await checkPlanAccess(planId, userId);
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have access to this plan' });
     }
 
-    // Check node exists and belongs to plan
-    const { data: node, error: nodeError } = await supabase
-      .from('plan_nodes')
-      .select('id, title, node_type')
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (nodeError || !node) {
+    const node = await nodesDal.findByIdAndPlan(nodeId, planId);
+    if (!node) {
       return res.status(404).json({ error: 'Node not found in this plan' });
     }
 
-    // Update node with agent request
-    const { data: updated, error: updateError } = await supabase
-      .from('plan_nodes')
-      .update({
-        agent_requested: request_type,
-        agent_requested_at: new Date().toISOString(),
-        agent_requested_by: userId,
-        agent_request_message: message || null,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', nodeId)
-      .select()
-      .single();
+    const updated = await nodesDal.setAgentRequest(nodeId, {
+      type: request_type,
+      message: message || null,
+      requestedBy: userId,
+    });
 
-    if (updateError) {
-      return res.status(500).json({ error: updateError.message });
-    }
-
-    // Log the request
+    // Log
     const userName = req.user.name || req.user.email;
-    await supabase
-      .from('plan_node_logs')
-      .insert({
-        id: uuidv4(),
-        plan_node_id: nodeId,
-        user_id: userId,
-        content: `Requested agent to ${request_type}${message ? `: "${message}"` : ''}`,
-        log_type: 'progress',
-        created_at: new Date().toISOString()
-      });
+    await logsDal.create({
+      id: uuidv4(),
+      planNodeId: nodeId,
+      userId,
+      content: `Requested agent to ${request_type}${message ? `: "${message}"` : ''}`,
+      logType: 'progress',
+      createdAt: new Date(),
+    });
 
-    // Send webhook notification (async, don't block response)
+    // Notify async
     (async () => {
       try {
-        const { data: plan } = await supabase
-          .from('plans')
-          .select('id, title, owner_id')
-          .eq('id', planId)
-          .single();
-        
+        const plan = await plansDal.findById(planId);
         if (plan) {
           const actor = { name: userName };
-          await notifyAgentRequested(updated, plan, actor, plan.owner_id);
+          await notifyAgentRequested(updated, plan, actor, plan.ownerId);
         }
       } catch (notifyError) {
         console.error('Failed to send agent request notification:', notifyError);
@@ -1238,32 +696,14 @@ const clearAgentRequest = async (req, res, next) => {
     const { id: planId, nodeId } = req.params;
     const userId = req.user.id;
 
-    // Check access
     const hasAccess = await checkPlanAccess(planId, userId);
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have access to this plan' });
     }
 
-    // Clear the agent request fields
-    const { data: updated, error: updateError } = await supabase
-      .from('plan_nodes')
-      .update({
-        agent_requested: null,
-        agent_requested_at: null,
-        agent_requested_by: null,
-        agent_request_message: null,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .select()
-      .single();
-
-    if (updateError) {
-      if (updateError.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Node not found in this plan' });
-      }
-      return res.status(500).json({ error: updateError.message });
+    const updated = await nodesDal.clearAgentRequest(nodeId);
+    if (!updated) {
+      return res.status(404).json({ error: 'Node not found in this plan' });
     }
 
     res.json(updated);
@@ -1281,80 +721,27 @@ const assignAgent = async (req, res, next) => {
     const { agent_id } = req.body;
     const userId = req.user.id;
 
-    if (!agent_id) {
-      return res.status(400).json({ error: 'agent_id is required' });
-    }
+    if (!agent_id) return res.status(400).json({ error: 'agent_id is required' });
 
-    // Verify node exists and belongs to plan
-    const { data: node, error: nodeError } = await supabase
-      .from('plan_nodes')
-      .select('id, plan_id')
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .single();
+    const node = await nodesDal.findByIdAndPlan(nodeId, planId);
+    if (!node) return res.status(404).json({ error: 'Node not found in this plan' });
 
-    if (nodeError || !node) {
-      return res.status(404).json({ error: 'Node not found in this plan' });
-    }
-
-    // Verify user has write access to the plan
-    const { data: plan } = await supabase
-      .from('plans')
-      .select('owner_id')
-      .eq('id', planId)
-      .single();
-
-    if (!plan) {
-      return res.status(404).json({ error: 'Plan not found' });
-    }
-
-    const isOwner = plan.owner_id === userId;
-    if (!isOwner) {
-      const { data: collab } = await supabase
-        .from('plan_collaborators')
-        .select('role')
-        .eq('plan_id', planId)
-        .eq('user_id', userId)
-        .single();
-
-      if (!collab || !['admin', 'editor'].includes(collab.role)) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
+    // Check write access
+    const hasAccess = await checkPlanAccess(planId, userId, ['owner', 'admin', 'editor']);
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
     }
 
     // Verify agent exists
-    const { data: agent } = await supabase
-      .from('users')
-      .select('id, name, email, capability_tags')
-      .eq('id', agent_id)
-      .single();
+    const agent = await usersDal.findById(agent_id);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-    if (!agent) {
-      return res.status(404).json({ error: 'Agent not found' });
-    }
-
-    // Update node with agent assignment
-    const { data: updated, error: updateError } = await supabase
-      .from('plan_nodes')
-      .update({
-        assigned_agent_id: agent_id,
-        assigned_agent_at: new Date().toISOString(),
-        assigned_agent_by: userId,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', nodeId)
-      .select('id, assigned_agent_id, assigned_agent_at, assigned_agent_by')
-      .single();
-
-    if (updateError) {
-      await logger.error('Failed to assign agent', updateError);
-      return res.status(500).json({ error: 'Failed to assign agent' });
-    }
+    const updated = await nodesDal.assignAgent(nodeId, { agentId: agent_id, assignedBy: userId });
 
     await logger.api(`Agent ${agent_id} assigned to node ${nodeId} by ${userId}`);
     res.json({
       ...updated,
-      agent: { id: agent.id, name: agent.name, email: agent.email, capability_tags: agent.capability_tags }
+      agent: { id: agent.id, name: agent.name, email: agent.email, capability_tags: agent.capabilityTags }
     });
   } catch (error) {
     await logger.error('Unexpected error in assignAgent', error);
@@ -1370,57 +757,20 @@ const unassignAgent = async (req, res, next) => {
     const { id: planId, nodeId } = req.params;
     const userId = req.user.id;
 
-    // Verify node exists and belongs to plan
-    const { data: node, error: nodeError } = await supabase
-      .from('plan_nodes')
-      .select('id, plan_id')
-      .eq('id', nodeId)
-      .eq('plan_id', planId)
-      .single();
+    const node = await nodesDal.findByIdAndPlan(nodeId, planId);
+    if (!node) return res.status(404).json({ error: 'Node not found in this plan' });
 
-    if (nodeError || !node) {
-      return res.status(404).json({ error: 'Node not found in this plan' });
+    const hasAccess = await checkPlanAccess(planId, userId, ['owner', 'admin', 'editor']);
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
     }
 
-    // Verify user has write access
-    const { data: plan } = await supabase
-      .from('plans')
-      .select('owner_id')
-      .eq('id', planId)
-      .single();
-
-    if (!plan) {
-      return res.status(404).json({ error: 'Plan not found' });
-    }
-
-    const isOwner = plan.owner_id === userId;
-    if (!isOwner) {
-      const { data: collab } = await supabase
-        .from('plan_collaborators')
-        .select('role')
-        .eq('plan_id', planId)
-        .eq('user_id', userId)
-        .single();
-
-      if (!collab || !['admin', 'editor'].includes(collab.role)) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
-    }
-
-    const { error: updateError } = await supabase
-      .from('plan_nodes')
-      .update({
-        assigned_agent_id: null,
-        assigned_agent_at: null,
-        assigned_agent_by: null,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', nodeId);
-
-    if (updateError) {
-      await logger.error('Failed to unassign agent', updateError);
-      return res.status(500).json({ error: 'Failed to unassign agent' });
-    }
+    await nodesDal.update(nodeId, {
+      assignedAgentId: null,
+      assignedAgentAt: null,
+      assignedAgentBy: null,
+      updatedAt: new Date(),
+    });
 
     await logger.api(`Agent unassigned from node ${nodeId} by ${userId}`);
     res.status(204).send();
@@ -1435,7 +785,6 @@ const unassignAgent = async (req, res, next) => {
  */
 const getSuggestedAgents = async (req, res, next) => {
   try {
-    const { nodeId } = req.params;
     const { tags } = req.query;
 
     let tagList = [];
@@ -1443,23 +792,16 @@ const getSuggestedAgents = async (req, res, next) => {
       tagList = tags.split(',').map(t => t.toLowerCase().trim()).filter(Boolean);
     }
 
-    let query = supabase
-      .from('users')
-      .select('id, name, email, avatar_url, capability_tags')
-      .not('capability_tags', 'eq', '{}');
+    // Use usersDal to list users with capability tags
+    // For now, get all users and filter in memory (DAL doesn't have overlaps query)
+    const allUsers = await usersDal.list({ limit: 100 });
+    const agents = allUsers.filter(u => {
+      if (!u.capabilityTags || u.capabilityTags.length === 0) return false;
+      if (tagList.length === 0) return true;
+      return tagList.some(tag => u.capabilityTags.includes(tag));
+    }).slice(0, 20);
 
-    if (tagList.length > 0) {
-      query = query.overlaps('capability_tags', tagList);
-    }
-
-    const { data, error } = await query.limit(20);
-
-    if (error) {
-      await logger.error('Failed to get suggested agents', error);
-      return res.status(500).json({ error: 'Failed to get suggested agents' });
-    }
-
-    res.json({ agents: data || [] });
+    res.json({ agents });
   } catch (error) {
     await logger.error('Unexpected error in getSuggestedAgents', error);
     next(error);

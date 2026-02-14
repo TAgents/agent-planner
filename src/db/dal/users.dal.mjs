@@ -1,4 +1,4 @@
-import { eq, ilike } from 'drizzle-orm';
+import { eq, ilike, inArray, sql, or } from 'drizzle-orm';
 import { db } from '../connection.mjs';
 import { users } from '../schema/users.mjs';
 
@@ -16,6 +16,11 @@ export const usersDal = {
   async findByGithubId(githubId) {
     const [user] = await db.select().from(users).where(eq(users.githubId, githubId)).limit(1);
     return user ?? null;
+  },
+
+  async findByIds(ids) {
+    if (ids.length === 0) return [];
+    return db.select().from(users).where(inArray(users.id, ids));
   },
 
   async create(data) {
@@ -38,5 +43,19 @@ export const usersDal = {
 
   async list({ limit = 50, offset = 0 } = {}) {
     return db.select().from(users).limit(limit).offset(offset);
+  },
+
+  async count() {
+    const result = await db.select({ count: sql`count(*)::int` }).from(users);
+    return result[0]?.count ?? 0;
+  },
+
+  async search(query, { limit = 10 } = {}) {
+    return db.select().from(users)
+      .where(or(
+        ilike(users.email, `%${query}%`),
+        ilike(users.name, `%${query}%`),
+      ))
+      .limit(limit);
   },
 };

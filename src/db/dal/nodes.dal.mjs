@@ -1,4 +1,4 @@
-import { eq, and, isNull, asc, sql } from 'drizzle-orm';
+import { eq, and, isNull, isNotNull, asc, sql, inArray, ilike, or, gte, lte, desc, ne } from 'drizzle-orm';
 import { db } from '../connection.mjs';
 import { planNodes } from '../schema/plans.mjs';
 
@@ -189,5 +189,118 @@ export const nodesDal = {
    */
   async deleteWithChildren(id) {
     return this.delete(id); // FK cascade handles children
+  },
+
+  /**
+   * Get unique assigned agent IDs for a plan
+   */
+  /**
+   * Count nodes matching filters
+   */
+  async countByPlan(planId, { nodeType, status, since } = {}) {
+    const conditions = [eq(planNodes.planId, planId)];
+    if (nodeType) conditions.push(eq(planNodes.nodeType, nodeType));
+    if (status) conditions.push(eq(planNodes.status, status));
+    if (since) conditions.push(gte(planNodes.updatedAt, since));
+
+    const result = await db.select({ count: sql`count(*)::int` })
+      .from(planNodes)
+      .where(and(...conditions));
+    return result[0]?.count ?? 0;
+  },
+
+  /**
+   * Search nodes with filters
+   */
+  async search(planId, { query, status, nodeType, dateFrom, dateTo } = {}) {
+    const conditions = [eq(planNodes.planId, planId)];
+    if (query) {
+      conditions.push(or(
+        ilike(planNodes.title, `%${query}%`),
+        ilike(planNodes.description, `%${query}%`),
+        ilike(planNodes.context, `%${query}%`),
+        ilike(planNodes.agentInstructions, `%${query}%`),
+      ));
+    }
+    if (status) {
+      const statuses = status.split(',');
+      conditions.push(inArray(planNodes.status, statuses));
+    }
+    if (nodeType) {
+      const types = nodeType.split(',');
+      conditions.push(inArray(planNodes.nodeType, types));
+    }
+    if (dateFrom) conditions.push(gte(planNodes.createdAt, new Date(dateFrom)));
+    if (dateTo) conditions.push(lte(planNodes.createdAt, new Date(dateTo)));
+
+    return db.select().from(planNodes)
+      .where(and(...conditions))
+      .orderBy(desc(planNodes.createdAt));
+  },
+
+  /**
+   * Find node by id and plan id
+   */
+  async findByIdAndPlan(nodeId, planId) {
+    const [node] = await db.select().from(planNodes)
+      .where(and(eq(planNodes.id, nodeId), eq(planNodes.planId, planId)))
+      .limit(1);
+    return node ?? null;
+  },
+
+  /**
+   * List nodes by multiple plan IDs with optional filters
+   */
+  async listByPlanIds(planIds, { nodeType, status, agentRequested, agentRequestedBy, limit: lim = 50 } = {}) {
+    if (planIds.length === 0) return [];
+    const conditions = [inArray(planNodes.planId, planIds)];
+    if (nodeType) {
+      const types = Array.isArray(nodeType) ? nodeType : [nodeType];
+      conditions.push(inArray(planNodes.nodeType, types));
+    }
+    if (status) conditions.push(eq(planNodes.status, status));
+    if (agentRequested) conditions.push(isNotNull(planNodes.agentRequested));
+    if (agentRequestedBy) conditions.push(eq(planNodes.agentRequestedBy, agentRequestedBy));
+
+    return db.select().from(planNodes)
+      .where(and(...conditions))
+      .orderBy(desc(planNodes.updatedAt))
+      .limit(lim);
+  },
+
+  async deleteByIds(ids) {
+    if (ids.length === 0) return;
+    return db.delete(planNodes).where(inArray(planNodes.id, ids));
+  },
+
+  /**
+   * Get max order_index among siblings, excluding a specific node
+   */
+  async getMaxSiblingOrder(planId, parentId, excludeNodeId = null) {
+    const conditions = [eq(planNodes.planId, planId), eq(planNodes.parentId, parentId)];
+    if (excludeNodeId) conditions.push(ne(planNodes.id, excludeNodeId));
+    const [result] = await db.select({ max: sql`coalesce(max(${planNodes.orderIndex}), -1)` })
+      .from(planNodes)
+      .where(and(...conditions));
+    return result?.max ?? -1;
+  },
+
+  /**
+   * List nodes with specific columns (for minimal/full field selection)
+   */
+  async listByPlanWithFields(planId, fields) {
+    // Returns all columns; caller can pick what to expose
+    return this.listByPlan(planId);
+  },
+
+  async getAssignedAgentIds(planId) {
+    const result = await db.select({ assignedAgentId: planNodes.assignedAgentId })
+      .from(planNodes)
+      .where(and(
+        eq(planNodes.planId, planId),
+        isNotNull(planNodes.assignedAgentId)
+      ));
+    
+    return result.map(r => r.assignedAgentId).filter(id => id !== null);
   },
 };

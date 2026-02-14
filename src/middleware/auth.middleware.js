@@ -6,25 +6,22 @@ const authVersion = process.env.AUTH_VERSION || 'v1';
 if (authVersion === 'v2') {
   module.exports = require('./auth.middleware.v2');
 } else {
-  // Original Supabase auth middleware
+  // Supabase auth middleware - uses auth service for token verification, DAL for DB queries
   const logger = require('../utils/logger');
-  const { supabase, supabaseAdmin } = require('../config/supabase');
+  const { adminAuth } = require('../services/supabase-auth');
+  const { tokensDal, usersDal } = require('../db/dal.cjs');
   const crypto = require('crypto');
 
   const syncGitHubProfile = async (user) => {
     try {
       if (user && user.app_metadata?.provider === 'github') {
         const githubData = user.user_metadata;
-        await supabaseAdmin
-          .from('users')
-          .update({
-            github_id: githubData.provider_id,
-            github_username: githubData.user_name,
-            github_avatar_url: githubData.avatar_url,
-            github_profile_url: `https://github.com/${githubData.user_name}`,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', user.id);
+        await usersDal.update(user.id, {
+          githubId: githubData.provider_id,
+          githubUsername: githubData.user_name,
+          githubAvatarUrl: githubData.avatar_url,
+          githubProfileUrl: `https://github.com/${githubData.user_name}`,
+        });
       }
     } catch (error) {
       // Don't block auth
@@ -34,14 +31,10 @@ if (authVersion === 'v2') {
   const authenticate = async (req, res, next) => {
     try {
       const authHeader = req.headers.authorization;
-      if (!authHeader) {
-        return res.status(401).json({ error: 'Authentication required' });
-      }
+      if (!authHeader) return res.status(401).json({ error: 'Authentication required' });
 
       const parts = authHeader.split(' ');
-      if (parts.length !== 2) {
-        return res.status(401).json({ error: 'Invalid authentication format' });
-      }
+      if (parts.length !== 2) return res.status(401).json({ error: 'Invalid authentication format' });
 
       const [scheme, token] = parts;
 
@@ -49,31 +42,18 @@ if (authVersion === 'v2') {
         // Try API token first
         if (token.length === 64 && /^[a-f0-9]{64}$/.test(token)) {
           const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-          const { data: tokenData, error: dbError } = await supabaseAdmin
-            .from('api_tokens')
-            .select('user_id, permissions, revoked, id, last_used')
-            .eq('token_hash', tokenHash)
-            .single();
+          const tokenData = await tokensDal.findByHash(tokenHash);
 
-          if (!dbError && tokenData && !tokenData.revoked) {
-            const { data: userData } = await supabaseAdmin
-              .from('users')
-              .select('id, email, name')
-              .eq('id', tokenData.user_id)
-              .single();
-
+          if (tokenData && !tokenData.revoked) {
+            const userData = await usersDal.findById(tokenData.userId);
             if (userData) {
               req.user = {
                 id: userData.id, email: userData.email, name: userData.name,
                 permissions: tokenData.permissions || [], authMethod: 'api_key',
                 tokenId: tokenData.id
               };
-
-              supabaseAdmin.from('api_tokens')
-                .update({ last_used: new Date().toISOString() })
-                .eq('id', tokenData.id)
-                .then(() => {}).catch(() => {});
-
+              // Update last used in background
+              tokensDal.updateLastUsed(tokenData.id).catch(() => {});
               return next();
             }
           }
@@ -81,10 +61,8 @@ if (authVersion === 'v2') {
 
         // Try Supabase JWT
         try {
-          const { data, error } = await supabaseAdmin.auth.getUser(token);
-          if (error || !data?.user) {
-            return res.status(401).json({ error: 'Invalid session token' });
-          }
+          const { data, error } = await adminAuth.getUser(token);
+          if (error || !data?.user) return res.status(401).json({ error: 'Invalid session token' });
 
           await syncGitHubProfile(data.user);
 
@@ -100,25 +78,12 @@ if (authVersion === 'v2') {
 
       if (scheme === 'ApiKey') {
         const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-        const { data: tokenData } = await supabaseAdmin
-          .from('api_tokens')
-          .select('user_id, permissions, revoked, id')
-          .eq('token_hash', tokenHash)
-          .single();
+        const tokenData = await tokensDal.findByHash(tokenHash);
 
-        if (!tokenData || tokenData.revoked) {
-          return res.status(401).json({ error: 'Invalid API token' });
-        }
+        if (!tokenData || tokenData.revoked) return res.status(401).json({ error: 'Invalid API token' });
 
-        const { data: userData } = await supabaseAdmin
-          .from('users')
-          .select('id, email, name')
-          .eq('id', tokenData.user_id)
-          .single();
-
-        if (!userData) {
-          return res.status(401).json({ error: 'User not found' });
-        }
+        const userData = await usersDal.findById(tokenData.userId);
+        if (!userData) return res.status(401).json({ error: 'User not found' });
 
         req.user = {
           id: userData.id, email: userData.email, name: userData.name,

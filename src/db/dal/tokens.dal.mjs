@@ -41,4 +41,23 @@ export const tokensDal = {
       .set({ lastUsed: new Date() })
       .where(eq(apiTokens.id, id));
   },
+
+  async findByUserAndId(userId, id) {
+    const [token] = await db.select().from(apiTokens)
+      .where(and(eq(apiTokens.id, id), eq(apiTokens.userId, userId)))
+      .limit(1);
+    return token ?? null;
+  },
+
+  async listActiveByUser(userId) {
+    return db.select({
+      id: apiTokens.id,
+      name: apiTokens.name,
+      permissions: apiTokens.permissions,
+      createdAt: apiTokens.createdAt,
+      lastUsed: apiTokens.lastUsed,
+    })
+    .from(apiTokens)
+    .where(and(eq(apiTokens.userId, userId), eq(apiTokens.revoked, false)));
+  },
 };

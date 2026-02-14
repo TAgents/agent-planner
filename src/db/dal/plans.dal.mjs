@@ -1,4 +1,4 @@
-import { eq, and, or, inArray, desc, sql } from 'drizzle-orm';
+import { eq, and, or, inArray, desc, asc, sql, ilike, isNull, isNotNull, gte, lte } from 'drizzle-orm';
 import { db } from '../connection.mjs';
 import { plans } from '../schema/plans.mjs';
 import { planCollaborators } from '../schema/plans.mjs';
@@ -91,6 +91,31 @@ export const plansDal = {
     return { hasAccess: false, role: null, plan: null };
   },
 
+  async count({ isPublic } = {}) {
+    const conditions = [];
+    if (isPublic !== undefined) conditions.push(eq(plans.isPublic, isPublic));
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const result = await db.select({ count: sql`count(*)::int` }).from(plans).where(where);
+    return result[0]?.count ?? 0;
+  },
+
+  async listByOwner(userId) {
+    return db.select().from(plans).where(eq(plans.ownerId, userId));
+  },
+
+  async countByIds(planIds, { status } = {}) {
+    if (planIds.length === 0) return 0;
+    const conditions = [inArray(plans.id, planIds)];
+    if (status) {
+      const statuses = Array.isArray(status) ? status : [status];
+      conditions.push(inArray(plans.status, statuses));
+    }
+    const result = await db.select({ count: sql`count(*)::int` })
+      .from(plans)
+      .where(and(...conditions));
+    return result[0]?.count ?? 0;
+  },
+
   async incrementViewCount(id) {
     await db.update(plans)
       .set({
@@ -98,5 +123,39 @@ export const plansDal = {
         lastViewedAt: new Date(),
       })
       .where(eq(plans.id, id));
+  },
+
+  /**
+   * List public plans with filters, sorting, and pagination
+   */
+  async listPublicFiltered({ sortBy = 'recent', limit = 12, offset = 0, status, hasGithubLink, owner, updatedAfter, updatedBefore } = {}) {
+    const conditions = [eq(plans.visibility, 'public')];
+
+    if (status) conditions.push(eq(plans.status, status));
+    if (hasGithubLink === 'true') conditions.push(isNotNull(plans.githubRepoOwner));
+    else if (hasGithubLink === 'false') conditions.push(isNull(plans.githubRepoOwner));
+    if (owner) conditions.push(eq(plans.ownerId, owner));
+    if (updatedAfter) conditions.push(gte(plans.updatedAt, new Date(updatedAfter)));
+    if (updatedBefore) conditions.push(lte(plans.updatedAt, new Date(updatedBefore)));
+
+    let query = db.select().from(plans).where(and(...conditions));
+
+    if (sortBy === 'recent') {
+      query = query.orderBy(desc(plans.updatedAt));
+    } else if (sortBy === 'alphabetical') {
+      query = query.orderBy(asc(plans.title));
+    } else {
+      query = query.orderBy(desc(plans.updatedAt)); // default for completion (sorted in memory)
+    }
+
+    const data = await query.limit(limit).offset(offset);
+
+    // Get total count
+    const [countResult] = await db.select({ count: sql`count(*)::int` })
+      .from(plans)
+      .where(and(...conditions));
+    const total = countResult?.count ?? 0;
+
+    return { data, total };
   },
 };

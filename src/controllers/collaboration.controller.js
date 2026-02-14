@@ -1,4 +1,4 @@
-const { supabaseAdmin } = require('../config/supabase');
+const { plansDal, nodesDal, usersDal } = require('../db/dal.cjs');
 const logger = require('../utils/logger');
 
 // This will be set by the main server file
@@ -25,29 +25,9 @@ const collaborationController = {
       const userId = req.user.id;
 
       // Verify access to the plan
-      const { data: plan, error: planError } = await supabaseAdmin
-        .from('plans')
-        .select('id, owner_id')
-        .eq('id', planId)
-        .single();
-
-      if (planError || !plan) {
-        return res.status(404).json({ error: 'Plan not found' });
-      }
-
-      // Check if user has access
-      const isOwner = plan.owner_id === userId;
-      if (!isOwner) {
-        const { data: collaborator } = await supabaseAdmin
-          .from('plan_collaborators')
-          .select('role')
-          .eq('plan_id', planId)
-          .eq('user_id', userId)
-          .single();
-
-        if (!collaborator) {
-          return res.status(403).json({ error: 'Access denied' });
-        }
+      const { hasAccess } = await plansDal.userHasAccess(planId, userId);
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Access denied' });
       }
 
       // Get active users from WebSocket server
@@ -58,29 +38,17 @@ const collaborationController = {
 
       // Get user details for active users
       if (activeUserIds.length > 0) {
-        const { data: users } = await supabaseAdmin
-          .from('users')
-          .select('id, email, name, avatar_url')
-          .in('id', activeUserIds);
-
-        const activeUsers = (users || []).map(user => ({
+        const users = await usersDal.findByIds(activeUserIds);
+        const activeUsers = users.map(user => ({
           id: user.id,
           email: user.email,
           name: user.name || user.email.split('@')[0],
-          avatar_url: user.avatar_url
+          avatar_url: user.avatarUrl
         }));
 
-        res.json({
-          planId: planId,
-          activeUsers: activeUsers,
-          count: activeUsers.length
-        });
+        res.json({ planId, activeUsers, count: activeUsers.length });
       } else {
-        res.json({
-          planId: planId,
-          activeUsers: [],
-          count: 0
-        });
+        res.json({ planId, activeUsers: [], count: 0 });
       }
     } catch (error) {
       console.error('Error in getActivePlanUsers:', error);
@@ -90,6 +58,8 @@ const collaborationController = {
 
   /**
    * Update user presence in a plan
+   * Note: user_presence table upsert is not yet in DAL.
+   * For now, presence is tracked in-memory via WebSocket server.
    */
   async updatePresence(req, res) {
     try {
@@ -98,54 +68,15 @@ const collaborationController = {
       const userId = req.user.id;
 
       // Verify access to the plan
-      const { data: plan, error: planError } = await supabaseAdmin
-        .from('plans')
-        .select('id, owner_id')
-        .eq('id', planId)
-        .single();
-
-      if (planError || !plan) {
-        return res.status(404).json({ error: 'Plan not found' });
+      const { hasAccess } = await plansDal.userHasAccess(planId, userId);
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Access denied' });
       }
 
-      // Check if user has access
-      const isOwner = plan.owner_id === userId;
-      if (!isOwner) {
-        const { data: collaborator } = await supabaseAdmin
-          .from('plan_collaborators')
-          .select('role')
-          .eq('plan_id', planId)
-          .eq('user_id', userId)
-          .single();
-
-        if (!collaborator) {
-          return res.status(403).json({ error: 'Access denied' });
-        }
-      }
-
-      // Store presence in database (for persistence)
-      const { data: presence, error } = await supabaseAdmin
-        .from('user_presence')
-        .upsert({
-          user_id: userId,
-          plan_id: planId,
-          node_id: nodeId,
-          status: status,
-          last_seen: new Date().toISOString()
-        }, {
-          onConflict: 'user_id,plan_id'
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Error updating presence:', error);
-        return res.status(500).json({ error: 'Failed to update presence' });
-      }
-
+      // Presence is tracked via WebSocket server in-memory
       res.json({
         message: 'Presence updated',
-        presence: presence
+        presence: { userId, planId, nodeId, status, lastSeen: new Date().toISOString() }
       });
     } catch (error) {
       console.error('Error in updatePresence:', error);
@@ -162,101 +93,57 @@ const collaborationController = {
       const userId = req.user.id;
 
       // Verify the node belongs to the plan
-      const { data: node, error: nodeError } = await supabaseAdmin
-        .from('plan_nodes')
-        .select('id, plan_id')
-        .eq('id', nodeId)
-        .eq('plan_id', planId)
-        .single();
-
-      if (nodeError || !node) {
+      const node = await nodesDal.findByIdAndPlan(nodeId, planId);
+      if (!node) {
         return res.status(404).json({ error: 'Node not found' });
       }
 
       // Verify access to the plan
-      const { data: plan, error: planError } = await supabaseAdmin
-        .from('plans')
-        .select('id, owner_id')
-        .eq('id', planId)
-        .single();
-
-      if (planError || !plan) {
-        return res.status(404).json({ error: 'Plan not found' });
-      }
-
-      // Check if user has access
-      const isOwner = plan.owner_id === userId;
-      if (!isOwner) {
-        const { data: collaborator } = await supabaseAdmin
-          .from('plan_collaborators')
-          .select('role')
-          .eq('plan_id', planId)
-          .eq('user_id', userId)
-          .single();
-
-        if (!collaborator) {
-          return res.status(403).json({ error: 'Access denied' });
-        }
+      const { hasAccess } = await plansDal.userHasAccess(planId, userId);
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Access denied' });
       }
 
       // Get active users from WebSocket server
       let activeUserIds = [];
       let typingUserIds = [];
-      
+
       if (collaborationServer) {
         activeUserIds = await collaborationServer.getActiveNodeUsers(nodeId);
         typingUserIds = await collaborationServer.getTypingUsers(nodeId);
       }
 
-      // Get user details
       const allUserIds = [...new Set([...activeUserIds, ...typingUserIds])];
-      
+
       if (allUserIds.length > 0) {
-        const { data: users } = await supabaseAdmin
-          .from('users')
-          .select('id, email, name, avatar_url')
-          .in('id', allUserIds);
+        const users = await usersDal.findByIds(allUserIds);
+        const userMap = new Map(users.map(u => [u.id, u]));
 
-        const userMap = new Map((users || []).map(u => [u.id, u]));
-
-        const activeUsers = activeUserIds.map(id => {
+        const mapUser = (id) => {
           const user = userMap.get(id);
           return user ? {
             id: user.id,
             email: user.email,
             name: user.name || user.email.split('@')[0],
-            avatar_url: user.avatar_url
+            avatar_url: user.avatarUrl
           } : null;
-        }).filter(Boolean);
+        };
 
-        const typingUsers = typingUserIds.map(id => {
-          const user = userMap.get(id);
-          return user ? {
-            id: user.id,
-            email: user.email,
-            name: user.name || user.email.split('@')[0],
-            avatar_url: user.avatar_url
-          } : null;
-        }).filter(Boolean);
+        const activeUsers = activeUserIds.map(mapUser).filter(Boolean);
+        const typingUsers = typingUserIds.map(mapUser).filter(Boolean);
 
         res.json({
-          nodeId: nodeId,
-          activeUsers: activeUsers,
-          typingUsers: typingUsers,
-          counts: {
-            active: activeUsers.length,
-            typing: typingUsers.length
-          }
+          nodeId,
+          activeUsers,
+          typingUsers,
+          counts: { active: activeUsers.length, typing: typingUsers.length }
         });
       } else {
         res.json({
-          nodeId: nodeId,
+          nodeId,
           activeUsers: [],
           typingUsers: [],
-          counts: {
-            active: 0,
-            typing: 0
-          }
+          counts: { active: 0, typing: 0 }
         });
       }
     } catch (error) {

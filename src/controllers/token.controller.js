@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
-const { supabaseAdmin: supabase } = require('../config/supabase');
+const { tokensDal } = require('../db/dal');
 const logger = require('../utils/logger');
 
 /**
@@ -10,17 +10,7 @@ const getTokens = async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    const { data, error } = await supabase
-      .from('api_tokens')
-      .select('id, name, created_at, last_used, permissions')
-      .eq('user_id', userId)
-      .eq('revoked', false);
-
-    if (error) {
-      await logger.error('Error fetching tokens', error);
-      return res.status(500).json({ error: 'Failed to retrieve tokens' });
-    }
-
+    const data = await tokensDal.listActiveByUser(userId);
     res.json(data);
   } catch (error) {
     next(error);
@@ -62,29 +52,22 @@ const createToken = async (req, res, next) => {
     const now = new Date();
 
     // Store token in database
-    const { data, error } = await supabase
-      .from('api_tokens')
-      .insert([
-        {
-          id: tokenId,
-          user_id: userId,
-          name,
-          token_hash: tokenHash,
-          permissions,
-          created_at: now,
-          revoked: false
-        },
-      ])
-      .select('id, name, created_at, permissions');
-
-    if (error) {
-      await logger.error('Error creating token', error);
-      return res.status(400).json({ error: error.message });
-    }
+    const data = await tokensDal.create({
+      id: tokenId,
+      userId: userId,
+      name,
+      tokenHash: tokenHash,
+      permissions,
+      createdAt: now,
+      revoked: false
+    });
 
     // Return token data with the token value (will only be shown once)
     res.status(201).json({
-      ...data[0],
+      id: data.id,
+      name: data.name,
+      createdAt: data.createdAt,
+      permissions: data.permissions,
       token: tokenValue
     });
   } catch (error) {
@@ -101,30 +84,14 @@ const revokeToken = async (req, res, next) => {
     const { id: tokenId } = req.params;
 
     // Verify the token belongs to the user
-    const { data: token, error: findError } = await supabase
-      .from('api_tokens')
-      .select('id')
-      .eq('id', tokenId)
-      .eq('user_id', userId)
-      .single();
+    const token = await tokensDal.findByUserAndId(userId, tokenId);
 
-    if (findError) {
-      if (findError.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Token not found' });
-      }
-      return res.status(500).json({ error: findError.message });
+    if (!token) {
+      return res.status(404).json({ error: 'Token not found' });
     }
 
     // Update the token to mark it as revoked
-    const { error: updateError } = await supabase
-      .from('api_tokens')
-      .update({ revoked: true })
-      .eq('id', tokenId);
-
-    if (updateError) {
-      await logger.error('Error revoking token', updateError);
-      return res.status(500).json({ error: updateError.message });
-    }
+    await tokensDal.revoke(tokenId);
 
     res.status(204).send();
   } catch (error) {
