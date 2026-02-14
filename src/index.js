@@ -30,6 +30,7 @@ const githubRoutes = require('./routes/github.routes');
 const shareRoutes = require('./routes/share.routes');
 // Removed: template, analytics, import-export, organization routes (pre-v2 cleanup)
 const goalRoutes = require('./routes/goal.routes');
+const goalsV2Routes = require('./routes/v2/goals.routes');
 // Removed: knowledge routes (pre-v2 cleanup)
 const contextRoutes = require('./routes/context.routes');
 const decisionRoutes = require('./routes/decision.routes');
@@ -132,6 +133,7 @@ app.use('/invites', generalLimiter, shareRoutes);
 
 // Goal routes
 app.use('/goals', generalLimiter, goalRoutes);
+app.use('/api/goals', generalLimiter, goalsV2Routes);
 
 // Removed: knowledge routes (pre-v2 cleanup)
 
