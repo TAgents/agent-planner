@@ -132,22 +132,35 @@ const createNode = async (req, res, next) => {
     const now = new Date();
     const nodeId = uuidv4();
 
-    const newNode = await nodesDal.create({
-      id: nodeId,
-      planId,
-      parentId: parentIdToUse,
-      nodeType,
-      title,
-      description: description || '',
-      status: status || 'not_started',
-      orderIndex: finalOrderIndex,
-      dueDate: dueDate || null,
-      createdAt: now,
-      updatedAt: now,
-      context: context || description || '',
-      agentInstructions: agentInstructions || null,
-      metadata: metadata || {},
-    });
+    let newNode;
+    try {
+      newNode = await nodesDal.create({
+        id: nodeId,
+        planId,
+        parentId: parentIdToUse,
+        nodeType,
+        title,
+        description: description || '',
+        status: status || 'not_started',
+        orderIndex: finalOrderIndex,
+        dueDate: dueDate || null,
+        createdAt: now,
+        updatedAt: now,
+        context: context || description || '',
+        agentInstructions: agentInstructions || null,
+        metadata: metadata || {},
+      });
+    } catch (dbError) {
+      // Handle unique constraint violation — return existing node (idempotent create)
+      if (dbError.code === '23505' && dbError.constraint === 'plan_nodes_unique_title_per_parent') {
+        const siblings = await nodesDal.getChildren(planId, parentIdToUse);
+        const existing = siblings.find(s => s.title === title && s.node_type === nodeType);
+        if (existing) {
+          return res.status(200).json(existing);
+        }
+      }
+      throw dbError;
+    }
 
     // Add log entry
     await logsDal.create({

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, integer, boolean, varchar, jsonb, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, integer, boolean, varchar, jsonb, index, unique } from 'drizzle-orm/pg-core';
 import { users } from './users.mjs';
 
 // ─── Plan status/visibility enums as check constraints ───────────
@@ -62,6 +62,9 @@ export const planNodes = pgTable('plan_nodes', {
   index('plan_nodes_parent_id_idx').on(table.parentId),
   index('idx_plan_nodes_status').on(table.status),
   index('idx_plan_nodes_node_type').on(table.nodeType),
+  unique('plan_nodes_unique_title_per_parent')
+    .on(table.planId, table.parentId, table.title, table.nodeType)
+    .nullsNotDistinct(),
 ]);
 
 // ─── Plan Collaborators ──────────────────────────────────────────

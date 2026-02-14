@@ -153,19 +153,32 @@ const createNode = async (req, res, next) => {
       finalOrderIndex = siblings.length > 0 ? Math.max(...siblings.map(s => s.orderIndex)) + 1 : 0;
     }
 
-    const node = await dal.nodesDal.create({
-      planId,
-      parentId: parentIdToUse,
-      nodeType,
-      title,
-      description: description || '',
-      status: status || 'not_started',
-      orderIndex: finalOrderIndex,
-      dueDate: dueDate || null,
-      context: context || description || '',
-      agentInstructions: agentInstructions || null,
-      metadata: metadata || {},
-    });
+    let node;
+    try {
+      node = await dal.nodesDal.create({
+        planId,
+        parentId: parentIdToUse,
+        nodeType,
+        title,
+        description: description || '',
+        status: status || 'not_started',
+        orderIndex: finalOrderIndex,
+        dueDate: dueDate || null,
+        context: context || description || '',
+        agentInstructions: agentInstructions || null,
+        metadata: metadata || {},
+      });
+    } catch (dbError) {
+      // Handle unique constraint violation — return existing node instead of duplicating
+      if (dbError.code === '23505' && dbError.constraint === 'plan_nodes_unique_title_per_parent') {
+        const siblings = await dal.nodesDal.getChildren(parentIdToUse);
+        const existing = siblings.find(s => s.title === title && s.nodeType === nodeType);
+        if (existing) {
+          return res.status(200).json(snakeNode(existing));
+        }
+      }
+      throw dbError;
+    }
 
     // Log creation
     await dal.logsDal.create({
