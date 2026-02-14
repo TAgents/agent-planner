@@ -34,7 +34,7 @@ const goalRoutes = require('./routes/goal.routes');
 const contextRoutes = require('./routes/context.routes');
 const decisionRoutes = require('./routes/decision.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
-const handoffRoutes = require('./routes/handoff.routes');
+// Removed: handoff routes (pre-v2 cleanup)
 // Removed: chat, prompt routes (pre-v2 cleanup)
 const heartbeatRoutes = require('./routes/heartbeat.routes');
 // Removed: artifact controller (Phase 0 simplification)
@@ -142,8 +142,7 @@ app.use('/plans', generalLimiter, decisionRoutes);
 
 // Dashboard routes (home page data)
 app.use('/dashboard', generalLimiter, dashboardRoutes);
-app.use('/plans', generalLimiter, handoffRoutes);
-app.use('/', generalLimiter, handoffRoutes);
+// Removed: handoff routes (pre-v2 cleanup)
 // Removed: chat, prompt routes (pre-v2 cleanup)
 app.use('/', generalLimiter, heartbeatRoutes);
 
