@@ -32,6 +32,7 @@ const shareRoutes = require('./routes/share.routes');
 const goalRoutes = require('./routes/goal.routes');
 const goalsV2Routes = require('./routes/v2/goals.routes');
 const knowledgeV2Routes = require('./routes/v2/knowledge.routes');
+const workflowsV2Routes = require('./routes/v2/workflows.routes');
 const contextRoutes = require('./routes/context.routes');
 const decisionRoutes = require('./routes/decision.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
@@ -136,6 +137,7 @@ app.use('/goals', generalLimiter, goalRoutes);
 app.use('/api/goals', generalLimiter, goalsV2Routes);
 
 app.use('/api/knowledge', generalLimiter, knowledgeV2Routes);
+app.use('/api/workflows', generalLimiter, workflowsV2Routes);
 
 // Agent context routes (leaf-up context loading)
 app.use('/context', generalLimiter, contextRoutes);
