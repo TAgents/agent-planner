@@ -207,9 +207,12 @@ const startServer = async () => {
     await logger.api(`Starting agent-planner API server...`);
     
     // Initialize the database if the environment is development
-    if (process.env.NODE_ENV === 'development') {
+    // Skip old migrations in v2 mode — Drizzle handles schema
+    if (process.env.NODE_ENV === 'development' && process.env.AUTH_VERSION !== 'v2') {
       await logger.api(`Initializing database in development mode`);
       await initializeDatabase();
+    } else if (process.env.AUTH_VERSION === 'v2') {
+      await logger.api(`v2 mode: skipping legacy migrations (Drizzle manages schema)`);
     }
     
     // Start the server
