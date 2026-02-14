@@ -20,27 +20,22 @@ const nodeRoutes = require('./routes/node.routes');
 const activityRoutes = require('./routes/activity.routes');
 const searchRoutes = require('./routes/search.routes');
 const tokenRoutes = require('./routes/token.routes');
-const debugRoutes = require('./routes/debug.routes');
+// Removed: debug routes (pre-v2 cleanup)
 const uploadRoutes = require('./routes/upload.routes');
 const userRoutes = require('./routes/user.routes');
 const collaborationRoutes = require('./routes/collaboration.routes');
 const statsRoutes = require('./routes/stats.routes');
 const githubRoutes = require('./routes/github.routes');
-const aiRoutes = require('./routes/ai.routes');
-const webhookRoutes = require('./routes/webhook.routes');
+// Removed: ai routes, webhook routes (pre-v2 cleanup)
 const shareRoutes = require('./routes/share.routes');
-const templateRoutes = require('./routes/template.routes');
-const analyticsRoutes = require('./routes/analytics.routes');
-const importExportRoutes = require('./routes/import-export.routes');
-const organizationRoutes = require('./routes/organization.routes');
+// Removed: template, analytics, import-export, organization routes (pre-v2 cleanup)
 const goalRoutes = require('./routes/goal.routes');
-const knowledgeRoutes = require('./routes/knowledge.routes');
+// Removed: knowledge routes (pre-v2 cleanup)
 const contextRoutes = require('./routes/context.routes');
 const decisionRoutes = require('./routes/decision.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const handoffRoutes = require('./routes/handoff.routes');
-const chatRoutes = require('./routes/chat.routes');
-const promptRoutes = require('./routes/prompt.routes');
+// Removed: chat, prompt routes (pre-v2 cleanup)
 const heartbeatRoutes = require('./routes/heartbeat.routes');
 // Removed: artifact controller (Phase 0 simplification)
 
@@ -55,8 +50,7 @@ const {
   generalLimiter, 
   authLimiter, 
   searchLimiter, 
-  tokenLimiter,
-  webhookLimiter 
+  tokenLimiter
 } = require('./middleware/rateLimit.middleware');
 
 // Create Express app
@@ -114,44 +108,31 @@ app.use('/search', searchLimiter, searchRoutes);
 // Token routes - strict rate limiting to prevent token abuse
 app.use('/tokens', tokenLimiter, tokenRoutes);
 
-// Webhook routes - moderate rate limiting
-app.use('/webhooks', webhookLimiter, webhookRoutes);
+// Removed: webhook routes (pre-v2 cleanup)
 
 // General routes with standard rate limiting
 app.use('/plans', generalLimiter, planRoutes);
 app.use('/plans', generalLimiter, nodeRoutes);
 // Removed: artifact routes (Phase 0 simplification)
 app.use('/activity', generalLimiter, activityRoutes);
-app.use('/debug', generalLimiter, debugRoutes);
+// Removed: debug routes (pre-v2 cleanup)
 app.use('/upload', generalLimiter, uploadRoutes);
 app.use('/users', generalLimiter, userRoutes);
 app.use('/plans', generalLimiter, collaborationRoutes);
 app.use('/stats', generalLimiter, statsRoutes);
 app.use('/github', generalLimiter, githubRoutes);
-app.use('/ai', generalLimiter, aiRoutes);
+// Removed: ai routes (pre-v2 cleanup)
 
 // Share routes (plan sharing by email)
 app.use('/plans', generalLimiter, shareRoutes);
 app.use('/invites', generalLimiter, shareRoutes);
 
-// Template routes
-app.use('/templates', generalLimiter, templateRoutes);
-app.use('/plans', generalLimiter, templateRoutes);
-
-// Analytics routes
-app.use('/plans', generalLimiter, analyticsRoutes);
-
-// Import/Export routes
-app.use('/plans', generalLimiter, importExportRoutes);
-
-// Organization routes
-app.use('/organizations', generalLimiter, organizationRoutes);
+// Removed: template, analytics, import-export, organization routes (pre-v2 cleanup)
 
 // Goal routes
 app.use('/goals', generalLimiter, goalRoutes);
 
-// Knowledge routes
-app.use('/knowledge', generalLimiter, knowledgeRoutes);
+// Removed: knowledge routes (pre-v2 cleanup)
 
 // Agent context routes (leaf-up context loading)
 app.use('/context', generalLimiter, contextRoutes);
@@ -163,8 +144,7 @@ app.use('/plans', generalLimiter, decisionRoutes);
 app.use('/dashboard', generalLimiter, dashboardRoutes);
 app.use('/plans', generalLimiter, handoffRoutes);
 app.use('/', generalLimiter, handoffRoutes);
-app.use('/plans', generalLimiter, chatRoutes);
-app.use('/prompts', generalLimiter, promptRoutes);
+// Removed: chat, prompt routes (pre-v2 cleanup)
 app.use('/', generalLimiter, heartbeatRoutes);
 
 // Removed: artifact download endpoint (Phase 0 simplification)

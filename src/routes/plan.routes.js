@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const planController = require('../controllers/plan.controller');
-const starController = require('../controllers/star.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 const { validate, schemas } = require('../validation');
 
@@ -891,6 +890,9 @@ router.put('/:id/github', authenticate, planController.linkGitHubRepo);
  */
 router.post('/:id/view', planController.incrementViewCount);
 
+module.exports = router;
+
+/* Removed in pre-v2 cleanup: star/bookmark routes
 /**
  * @swagger
  * /plans/{id}/star:
@@ -1039,5 +1041,4 @@ router.get('/:id/stars', starController.getPlanStars);
  *                   type: integer
  */
 router.get('/starred', authenticate, starController.getUserStarredPlans);
-
-module.exports = router;
+*/
