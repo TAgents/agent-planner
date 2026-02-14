@@ -269,14 +269,17 @@ const getUserActivityFeed = async (req, res, next) => {
         content, 
         comment_type, 
         created_at,
-        user:user_id (id, name, email)
+        user_id
       `)
       .in('plan_node_id', nodeIds)
       .order('created_at', { ascending: false })
       .range(offset, offset + limitNum - 1);
 
     if (commentsError) {
-      return res.status(500).json({ error: commentsError.message });
+      // If plan_comments table doesn't exist or has schema issues, continue without comments
+      await logger.error('Activity feed comments query failed:', commentsError);
+      comments = [];
+      commentsError = null;
     }
 
     // Get total count for pagination
@@ -289,16 +292,17 @@ const getUserActivityFeed = async (req, res, next) => {
       return res.status(500).json({ error: logsCountError.message });
     }
 
-    const { count: commentsCount, error: commentsCountError } = await supabase
+    let commentsCount = 0;
+    const { count: commentsCountResult, error: commentsCountError } = await supabase
       .from('plan_comments')
       .select('id', { count: 'exact', head: true })
       .in('plan_node_id', nodeIds);
       
-    if (commentsCountError) {
-      return res.status(500).json({ error: commentsCountError.message });
+    if (!commentsCountError) {
+      commentsCount = commentsCountResult || 0;
     }
 
-    const totalCount = logsCount + commentsCount;
+    const totalCount = (logsCount || 0) + commentsCount;
 
     // Convert logs to activity items
     const logActivities = logs.map(log => ({
@@ -313,15 +317,15 @@ const getUserActivityFeed = async (req, res, next) => {
     }));
 
     // Convert comments to activity items
-    const commentActivities = comments.map(comment => ({
+    const commentActivities = (comments || []).map(comment => ({
       id: comment.id,
       type: 'comment',
       content: comment.content,
       activity_type: comment.comment_type,
       created_at: comment.created_at,
-      user: comment.user,
+      user: comment.user || { id: comment.user_id },
       node: nodesMap[comment.plan_node_id],
-      plan: plansMap[nodesMap[comment.plan_node_id].plan_id]
+      plan: nodesMap[comment.plan_node_id] ? plansMap[nodesMap[comment.plan_node_id].plan_id] : null
     }));
 
     // Combine and sort all activities
