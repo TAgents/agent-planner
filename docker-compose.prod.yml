@@ -148,6 +148,7 @@ services:
     environment:
       NODE_ENV: production
       HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN}
+      HATCHET_CLIENT_TLS_STRATEGY: none
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
       DISCORD_TOKEN: ${DISCORD_TOKEN:-}
       API_BASE_URL: http://api:3000
