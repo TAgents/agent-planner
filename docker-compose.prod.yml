@@ -150,37 +150,57 @@ services:
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
       DISCORD_TOKEN: ${DISCORD_TOKEN:-}
       API_BASE_URL: http://api:3000
-    command: ["node", "src/worker.js"]
+    command: ["node", "src/workflows/worker.js"]
     deploy:
       resources:
         limits:
           memory: 512M
 
   # ─── Knowledge Worker ──────────────────────────────────────
-  knowledge-worker:
+  # TODO: Re-enable once knowledge-worker.js is implemented
+  # knowledge-worker:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.prod
+  #   restart: always
+  #   networks: [internal]
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     hatchet:
+  #       condition: service_healthy
+  #   environment:
+  #     NODE_ENV: production
+  #     DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+  #     HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN}
+  #     OPENAI_API_KEY: ${OPENAI_API_KEY}
+  #   command: ["node", "src/knowledge-worker.js"]
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 512M
+
+  # ─── MCP Server ───────────────────────────────────────────
+  mcp:
     build:
-      context: .
-      dockerfile: Dockerfile.prod
+      context: ../agent-planner-mcp
+      dockerfile: Dockerfile
     restart: always
     networks: [internal]
     depends_on:
-      postgres:
-        condition: service_healthy
-      hatchet:
+      api:
         condition: service_healthy
     environment:
+      MCP_TRANSPORT: http
+      API_URL: http://api:3000
+      USER_API_TOKEN: ${MCP_API_TOKEN}
+      PORT: "8080"
+      HOST: 0.0.0.0
       NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
-      HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      OPENCLAW_WORKSPACE_MEMORY: /openclaw/workspace/memory
-    volumes:
-      - openclaw-workspace:/openclaw/workspace:ro
-    command: ["node", "src/knowledge-worker.js"]
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 256M
 
   # ─── Nginx Reverse Proxy ───────────────────────────────────
   nginx:
@@ -197,6 +217,7 @@ services:
     depends_on:
       - api
       - frontend
+      - mcp
 
   # ─── Certbot ───────────────────────────────────────────────
   certbot:
