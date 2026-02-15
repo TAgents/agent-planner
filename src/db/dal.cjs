@@ -19,8 +19,12 @@ function loadDal() {
 // Proxy that lazy-loads the ESM module
 const handler = {
   get(_, prop) {
+    // Allow Promise resolution checks (e.g. Promise.resolve(proxy.foo))
+    if (prop === 'then' || prop === 'catch' || prop === 'finally') return undefined;
     return new Proxy({}, {
       get(_, method) {
+        // Allow Promise resolution checks on sub-proxies too
+        if (method === 'then' || method === 'catch' || method === 'finally') return undefined;
         return async (...args) => {
           const dal = await loadDal();
           if (!dal[prop]) throw new Error(`DAL module '${prop}' not found`);

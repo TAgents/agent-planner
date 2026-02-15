@@ -11,11 +11,8 @@ const router = express.Router();
 const { authenticate } = require('../../middleware/auth.middleware');
 const logger = require('../../utils/logger');
 
-// DAL (via CJS bridge)
-const dal = require('../../db/dal.cjs');
-async function getDal() {
-  return dal.knowledgeDal;
-}
+// DAL (via CJS bridge) — access methods directly via proxy
+const knowledgeDal = require('../../db/dal.cjs').knowledgeDal;
 
 async function getEmbeddingService() {
   return require('../../services/embeddings');
@@ -29,7 +26,7 @@ const VALID_SOURCES = ['agent', 'human', 'import', 'openclaw'];
 // GET /api/knowledge
 router.get('/', authenticate, async (req, res) => {
   try {
-    const dal = await getDal();
+    const dal = knowledgeDal;
     const { limit = 50, offset = 0, entryType, scope, scopeId } = req.query;
 
     let entries;
@@ -60,7 +57,7 @@ router.post('/search', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'query is required' });
     }
 
-    const dal = await getDal();
+    const dal = knowledgeDal;
 
     // If OpenAI key available, do semantic search; otherwise fall back to text
     if (process.env.OPENAI_API_KEY) {
@@ -95,7 +92,7 @@ router.post('/search', authenticate, async (req, res) => {
 // GET /api/knowledge/graph  (before /:id to avoid param capture)
 router.get('/graph', authenticate, async (req, res) => {
   try {
-    const dal = await getDal();
+    const dal = knowledgeDal;
     const { threshold = 0.7, limit = 100 } = req.query;
     const graph = await dal.getGraphData({
       ownerId: req.user.id,
@@ -113,7 +110,7 @@ router.get('/graph', authenticate, async (req, res) => {
 // GET /api/knowledge/:id
 router.get('/:id', authenticate, async (req, res) => {
   try {
-    const dal = await getDal();
+    const dal = knowledgeDal;
     const entry = await dal.findById(req.params.id);
     if (!entry) return res.status(404).json({ error: 'Knowledge entry not found' });
     if (entry.ownerId !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
@@ -140,7 +137,7 @@ router.post('/', authenticate, async (req, res) => {
       return res.status(400).json({ error: `Invalid scope. Must be one of: ${VALID_SCOPES.join(', ')}` });
     }
 
-    const dal = await getDal();
+    const dal = knowledgeDal;
 
     // Generate embedding if OPENAI_API_KEY is configured
     let embedding = null;
@@ -178,7 +175,7 @@ router.post('/', authenticate, async (req, res) => {
 // PUT /api/knowledge/:id
 router.put('/:id', authenticate, async (req, res) => {
   try {
-    const dal = await getDal();
+    const dal = knowledgeDal;
     const existing = await dal.findById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Knowledge entry not found' });
     if (existing.ownerId !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
@@ -224,7 +221,7 @@ router.put('/:id', authenticate, async (req, res) => {
 // DELETE /api/knowledge/:id
 router.delete('/:id', authenticate, async (req, res) => {
   try {
-    const dal = await getDal();
+    const dal = knowledgeDal;
     const existing = await dal.findById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Knowledge entry not found' });
     if (existing.ownerId !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
@@ -241,7 +238,7 @@ router.delete('/:id', authenticate, async (req, res) => {
 // GET /api/knowledge/:id/similar
 router.get('/:id/similar', authenticate, async (req, res) => {
   try {
-    const dal = await getDal();
+    const dal = knowledgeDal;
     const existing = await dal.findById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Knowledge entry not found' });
     if (existing.ownerId !== req.user.id) return res.status(403).json({ error: 'Forbidden' });

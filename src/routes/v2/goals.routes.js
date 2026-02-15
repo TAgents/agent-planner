@@ -8,11 +8,8 @@ const router = express.Router();
 const { authenticate } = require('../../middleware/auth.middleware');
 const logger = require('../../utils/logger');
 
-// DAL (via CJS bridge)
-const dal = require('../../db/dal.cjs');
-function getDal() {
-  return Promise.resolve(dal.goalsDal);
-}
+// DAL (via CJS bridge) — access methods directly via proxy
+const goalsDal = require('../../db/dal.cjs').goalsDal;
 
 const VALID_TYPES = ['outcome', 'constraint', 'metric', 'principle'];
 const VALID_STATUSES = ['active', 'achieved', 'paused', 'abandoned'];
@@ -21,7 +18,7 @@ const VALID_LINK_TYPES = ['plan', 'task', 'agent', 'workflow'];
 // GET /api/goals/tree — must be before /:id
 router.get('/tree', authenticate, async (req, res) => {
   try {
-    const dal = await getDal();
+    const dal = goalsDal;
     const tree = await dal.getTree(req.user.id);
     res.json({ tree });
   } catch (err) {
@@ -33,7 +30,7 @@ router.get('/tree', authenticate, async (req, res) => {
 // GET /api/goals
 router.get('/', authenticate, async (req, res) => {
   try {
-    const dal = await getDal();
+    const dal = goalsDal;
     const { status, type } = req.query;
     const goals = await dal.findAll(req.user.id, { status, type });
     res.json({ goals });
@@ -54,7 +51,7 @@ router.post('/', authenticate, async (req, res) => {
       return res.status(400).json({ error: `type must be one of: ${VALID_TYPES.join(', ')}` });
     }
 
-    const dal = await getDal();
+    const dal = goalsDal;
     const goal = await dal.create({
       title,
       description: description || null,
@@ -74,7 +71,7 @@ router.post('/', authenticate, async (req, res) => {
 // GET /api/goals/:id
 router.get('/:id', authenticate, async (req, res) => {
   try {
-    const dal = await getDal();
+    const dal = goalsDal;
     const goal = await dal.findById(req.params.id);
     if (!goal) return res.status(404).json({ error: 'Goal not found' });
     // Basic access check
@@ -91,7 +88,7 @@ router.get('/:id', authenticate, async (req, res) => {
 // PUT /api/goals/:id
 router.put('/:id', authenticate, async (req, res) => {
   try {
-    const dal = await getDal();
+    const dal = goalsDal;
     const existing = await dal.findById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Goal not found' });
     if (existing.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
@@ -123,7 +120,7 @@ router.put('/:id', authenticate, async (req, res) => {
 // DELETE /api/goals/:id (soft delete)
 router.delete('/:id', authenticate, async (req, res) => {
   try {
-    const dal = await getDal();
+    const dal = goalsDal;
     const existing = await dal.findById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Goal not found' });
     if (existing.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
@@ -147,7 +144,7 @@ router.post('/:id/links', authenticate, async (req, res) => {
       return res.status(400).json({ error: `linkedType must be one of: ${VALID_LINK_TYPES.join(', ')}` });
     }
 
-    const dal = await getDal();
+    const dal = goalsDal;
     const link = await dal.addLink(req.params.id, linkedType, linkedId);
     res.status(201).json(link);
   } catch (err) {
@@ -159,7 +156,7 @@ router.post('/:id/links', authenticate, async (req, res) => {
 // DELETE /api/goals/:id/links/:linkId
 router.delete('/:id/links/:linkId', authenticate, async (req, res) => {
   try {
-    const dal = await getDal();
+    const dal = goalsDal;
     const link = await dal.removeLink(req.params.linkId);
     if (!link) return res.status(404).json({ error: 'Link not found' });
     res.json({ success: true });
@@ -180,7 +177,7 @@ router.post('/:id/evaluations', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'score must be between 0 and 100' });
     }
 
-    const dal = await getDal();
+    const dal = goalsDal;
     const evaluation = await dal.addEvaluation(req.params.id, {
       evaluatedBy,
       score: score ?? null,
@@ -197,7 +194,7 @@ router.post('/:id/evaluations', authenticate, async (req, res) => {
 // GET /api/goals/:id/evaluations
 router.get('/:id/evaluations', authenticate, async (req, res) => {
   try {
-    const dal = await getDal();
+    const dal = goalsDal;
     const evaluations = await dal.getEvaluations(req.params.id);
     res.json({ evaluations });
   } catch (err) {
