@@ -12,7 +12,9 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const REFRESH_EXPIRES_IN = process.env.REFRESH_EXPIRES_IN || '30d';
 const SALT_ROUNDS = 12;
 
-if (!JWT_SECRET || JWT_SECRET === 'dev-jwt-secret-change-in-production') {
+if (process.env.NODE_ENV === 'production' && (!JWT_SECRET || JWT_SECRET === 'dev-jwt-secret-change-in-production')) {
+  throw new Error('JWT_SECRET must be set to a strong secret in production');
+} else if (!JWT_SECRET || JWT_SECRET === 'dev-jwt-secret-change-in-production') {
   console.warn('⚠️  JWT_SECRET is not set or using default. Set a strong secret in production!');
 }
 
@@ -369,7 +371,7 @@ const githubCallback = async (req, res, next) => {
 
 // Placeholder stubs for email-based flows (can be implemented later with nodemailer)
 const forgotPassword = async (req, res) => {
-  res.json({ message: 'If an account exists with that email, a password reset link has been sent.' });
+  res.status(501).json({ error: 'Password reset via email not yet implemented in v2' });
 };
 
 const resetPassword = async (req, res) => {

@@ -428,11 +428,14 @@ const supabaseShim = {
     getSession: async () => ({ data: null, error: { message: 'Use v2 auth' } }),
   },
   async rpc(fnName, params = {}) {
-    // Handle common RPC functions
+    // Handle common RPC functions — table names are whitelisted, not from user input
+    const ALLOWED_RPC = {
+      search_plans: 'plans',
+      search_nodes: 'plan_nodes',
+    };
     try {
-      if (fnName === 'search_plans' || fnName === 'search_nodes') {
-        // Full-text search — simple ILIKE fallback
-        const table = fnName === 'search_plans' ? 'plans' : 'plan_nodes';
+      if (ALLOWED_RPC[fnName]) {
+        const table = ALLOWED_RPC[fnName];
         const query = params.search_query || params.query || '';
         const rows = await db.unsafe(
           `SELECT * FROM "${table}" WHERE title ILIKE $1 OR description ILIKE $1 LIMIT 20`,
