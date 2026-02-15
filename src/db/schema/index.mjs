@@ -3,6 +3,7 @@
 
 export * from './users.mjs';
 export * from './auth.mjs';
+export * from './organizations.mjs';
 export * from './plans.mjs';
 export * from './goals.mjs';
 export * from './decisions.mjs';

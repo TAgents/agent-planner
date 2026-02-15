@@ -2,6 +2,7 @@ import { eq, and, or, inArray, desc, asc, sql, ilike, isNull, isNotNull, gte, lt
 import { db } from '../connection.mjs';
 import { plans } from '../schema/plans.mjs';
 import { planCollaborators } from '../schema/plans.mjs';
+import { organizationMembers } from '../schema/organizations.mjs';
 
 export const plansDal = {
   async findById(id) {
@@ -81,6 +82,20 @@ export const plansDal = {
 
     if (collab) {
       return { hasAccess: true, role: collab.role, plan };
+    }
+
+    // Check organization membership
+    if (plan.organizationId) {
+      const [orgMember] = await db.select({ role: organizationMembers.role })
+        .from(organizationMembers)
+        .where(and(
+          eq(organizationMembers.organizationId, plan.organizationId),
+          eq(organizationMembers.userId, userId),
+        ))
+        .limit(1);
+      if (orgMember) {
+        return { hasAccess: true, role: 'viewer', plan };
+      }
     }
 
     // Check if public

@@ -14,6 +14,7 @@ export { decisionsDal } from './decisions.dal.mjs';
 export { knowledgeDal } from './knowledge.dal.mjs';
 export { agentsDal } from './agents.dal.mjs';
 export { auditDal } from './audit.dal.mjs';
+export { organizationsDal } from './organizations.dal.mjs';
 export { searchDal } from './search.dal.mjs';
 export { heartbeatsDal } from './heartbeats.dal.mjs';
 export { invitesDal } from './invites.dal.mjs';

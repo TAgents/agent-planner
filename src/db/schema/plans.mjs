@@ -1,5 +1,6 @@
 import { pgTable, uuid, text, timestamp, integer, boolean, varchar, jsonb, index, unique } from 'drizzle-orm/pg-core';
 import { users } from './users.mjs';
+import { organizations } from './organizations.mjs';
 
 // ─── Plan status/visibility enums as check constraints ───────────
 // Using text + check rather than pgEnum for easier migration
@@ -13,6 +14,7 @@ export const plans = pgTable('plans', {
   status: text('status').notNull().default('draft'),           // draft | active | completed | archived
   visibility: varchar('visibility', { length: 20 }).notNull().default('private'), // private | public | unlisted
   isPublic: boolean('is_public').notNull().default(false),     // legacy compat
+  organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'set null' }),
 
   // GitHub integration
   githubRepoOwner: varchar('github_repo_owner', { length: 255 }),
