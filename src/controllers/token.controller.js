@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
-const { tokensDal } = require('../db/dal');
+const { tokensDal } = require('../db/dal.cjs');
 const logger = require('../utils/logger');
 
 /**

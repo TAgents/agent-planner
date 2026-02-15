@@ -290,8 +290,39 @@ const getPlanProgress = async (req, res, next) => {
 
 const listPublicPlans = async (req, res, next) => {
   try {
-    const plans = await dal.plansDal.listPublic();
-    const results = await Promise.all(plans.map(async (p) => {
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 12, 50);
+    const search = req.query.search || undefined;
+    const status = req.query.status || undefined;
+    const sortBy = req.query.sortBy || 'recent';
+
+    const allPlans = await dal.plansDal.listPublic();
+
+    // Filter
+    let filtered = allPlans;
+    if (search) {
+      const q = search.toLowerCase();
+      filtered = filtered.filter(p => (p.title || '').toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q));
+    }
+    if (status) {
+      filtered = filtered.filter(p => p.status === status);
+    }
+
+    // Sort
+    if (sortBy === 'alphabetical') {
+      filtered.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    } else if (sortBy === 'completion') {
+      // default order is fine for now
+    } else {
+      filtered.sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
+    }
+
+    const total = filtered.length;
+    const totalPages = Math.ceil(total / limit);
+    const offset = (page - 1) * limit;
+    const paginated = filtered.slice(offset, offset + limit);
+
+    const results = await Promise.all(paginated.map(async (p) => {
       const owner = await dal.usersDal.findById(p.ownerId);
       return {
         ...snakePlan(p),
@@ -299,7 +330,14 @@ const listPublicPlans = async (req, res, next) => {
         progress: await calculatePlanProgress(p.id),
       };
     }));
-    res.json(results);
+
+    res.json({
+      plans: results,
+      total,
+      page,
+      limit,
+      total_pages: totalPages,
+    });
   } catch (error) { next(error); }
 };
 

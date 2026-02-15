@@ -1,4 +1,4 @@
-const { heartbeatsDal, nodesDal, usersDal } = require('../db/dal');
+const { heartbeatsDal, nodesDal, usersDal } = require('../db/dal.cjs');
 const logger = require('../utils/logger');
 
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
