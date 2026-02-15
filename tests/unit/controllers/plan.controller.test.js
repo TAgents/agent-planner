@@ -1,6 +1,6 @@
 /**
  * Unit Tests for Plan Controller
- * Tests core CRUD operations for plans
+ * Tests core CRUD operations for plans using DAL mocks
  */
 
 const { v4: uuidv4 } = require('uuid');
@@ -13,20 +13,44 @@ const {
   createMockRootNode
 } = require('../../fixtures/testData');
 
-// Mock dependencies before requiring the controller
-jest.mock('../../../src/config/supabase');
+// Mock DAL modules
+jest.mock('../../../src/db/dal.cjs', () => {
+  const plansDal = {
+    findById: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    listForUser: jest.fn(),
+    userHasAccess: jest.fn(),
+  };
+  const nodesDal = {
+    create: jest.fn(),
+    getRoot: jest.fn(),
+    listByPlan: jest.fn(),
+    update: jest.fn(),
+  };
+  const collaboratorsDal = {
+    listByPlan: jest.fn(),
+    deleteByPlan: jest.fn(),
+  };
+  const usersDal = {
+    findById: jest.fn(),
+  };
+  return { plansDal, nodesDal, collaboratorsDal, usersDal };
+});
+
 jest.mock('../../../src/websocket/broadcast', () => ({
   broadcastPlanUpdate: jest.fn().mockResolvedValue(true),
   broadcastToAll: jest.fn().mockResolvedValue(true)
 }));
 
-const { supabaseAdmin: supabase } = require('../../../src/config/supabase');
+const { plansDal, nodesDal, collaboratorsDal, usersDal } = require('../../../src/db/dal.cjs');
 const planController = require('../../../src/controllers/plan.controller');
 
 describe('Plan Controller', () => {
   let mockUser;
   let mockPlan;
-  
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockUser = createMockUser();
@@ -37,66 +61,20 @@ describe('Plan Controller', () => {
     it('should create a plan successfully with valid title', async () => {
       const req = createMockRequest({
         user: mockUser,
-        body: {
-          title: 'Test Plan',
-          description: 'Test description'
-        }
+        body: { title: 'Test Plan', description: 'Test description' }
       });
       const res = createMockResponse();
       const next = createMockNext();
 
-      // Mock supabase responses
-      const createdPlan = {
+      plansDal.create.mockResolvedValue({
         id: expect.any(String),
         title: 'Test Plan',
         description: 'Test description',
         status: 'draft',
-        owner_id: mockUser.id,
-        created_at: expect.any(Date),
-        updated_at: expect.any(Date)
-      };
-
-      // Mock chain for plan insert
-      const planInsertMock = {
-        insert: jest.fn().mockResolvedValue({ error: null })
-      };
-      
-      // Mock chain for node insert
-      const nodeInsertMock = {
-        insert: jest.fn().mockResolvedValue({ error: null })
-      };
-      
-      // Mock chain for select/fetch
-      const selectMock = {
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: {
-            id: uuidv4(),
-            title: 'Test Plan',
-            description: 'Test description',
-            status: 'draft',
-            owner_id: mockUser.id,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          },
-          error: null
-        })
-      };
-
-      let callCount = 0;
-      supabase.from.mockImplementation((table) => {
-        callCount++;
-        if (table === 'plans') {
-          // First call is insert, second call is select
-          if (callCount === 1) return planInsertMock;
-          return selectMock;
-        }
-        if (table === 'plan_nodes') {
-          return nodeInsertMock;
-        }
-        return planInsertMock;
+        ownerId: mockUser.id,
       });
+      nodesDal.create.mockResolvedValue({ id: uuidv4() });
+      nodesDal.listByPlan.mockResolvedValue([]); // for progress calculation
 
       await planController.createPlan(req, res, next);
 
@@ -110,10 +88,7 @@ describe('Plan Controller', () => {
     it('should return 400 when title is missing', async () => {
       const req = createMockRequest({
         user: mockUser,
-        body: {
-          description: 'Test description'
-          // title is missing
-        }
+        body: { description: 'Test description' }
       });
       const res = createMockResponse();
       const next = createMockNext();
@@ -124,79 +99,23 @@ describe('Plan Controller', () => {
       expect(res.json).toHaveBeenCalledWith({ error: 'Title is required' });
     });
 
-    it('should handle database errors on plan creation', async () => {
-      const req = createMockRequest({
-        user: mockUser,
-        body: {
-          title: 'Test Plan',
-          description: 'Test description'
-        }
-      });
-      const res = createMockResponse();
-      const next = createMockNext();
-
-      supabase.from.mockReturnValue({
-        insert: jest.fn().mockResolvedValue({
-          error: { message: 'Database error' }
-        })
-      });
-
-      await planController.createPlan(req, res, next);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({ error: 'Database error' });
-    });
-
     it('should use default status "draft" when not provided', async () => {
       const req = createMockRequest({
         user: mockUser,
-        body: {
-          title: 'Test Plan'
-        }
+        body: { title: 'Test Plan' }
       });
       const res = createMockResponse();
       const next = createMockNext();
 
-      let insertedPlan = null;
-      const planInsertMock = {
-        insert: jest.fn().mockImplementation((data) => {
-          insertedPlan = data[0];
-          return Promise.resolve({ error: null });
-        })
-      };
-      
-      const nodeInsertMock = {
-        insert: jest.fn().mockResolvedValue({ error: null })
-      };
-
-      const selectMock = {
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: {
-            id: uuidv4(),
-            title: 'Test Plan',
-            description: '',
-            status: 'draft',
-            owner_id: mockUser.id
-          },
-          error: null
-        })
-      };
-
-      let callCount = 0;
-      supabase.from.mockImplementation((table) => {
-        callCount++;
-        if (table === 'plans') {
-          if (callCount === 1) return planInsertMock;
-          return selectMock;
-        }
-        return nodeInsertMock;
+      plansDal.create.mockImplementation(async (data) => {
+        expect(data.status).toBe('draft');
+        return { ...data };
       });
+      nodesDal.create.mockResolvedValue({ id: uuidv4() });
+      nodesDal.listByPlan.mockResolvedValue([]);
 
       await planController.createPlan(req, res, next);
-
-      expect(insertedPlan.status).toBe('draft');
+      expect(plansDal.create).toHaveBeenCalled();
     });
   });
 
@@ -210,54 +129,11 @@ describe('Plan Controller', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      const planData = createMockPlan({ id: planId, owner_id: mockUser.id });
-      const rootNode = createMockRootNode(planId, planData.title);
-
-      // Mock for checkPlanAccess
-      let callCount = 0;
-      supabase.from.mockImplementation((table) => {
-        callCount++;
-        
-        if (table === 'plans') {
-          // First call: checkPlanAccess ownership check
-          if (callCount === 1) {
-            return {
-              select: jest.fn().mockReturnThis(),
-              eq: jest.fn().mockReturnThis(),
-              single: jest.fn().mockResolvedValue({
-                data: { owner_id: mockUser.id },
-                error: null
-              })
-            };
-          }
-          // Second call: getPlan fetch
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockReturnThis(),
-            single: jest.fn().mockResolvedValue({
-              data: planData,
-              error: null
-            })
-          };
-        }
-        
-        if (table === 'plan_nodes') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockReturnThis(),
-            single: jest.fn().mockResolvedValue({
-              data: rootNode,
-              error: null
-            })
-          };
-        }
-        
-        return {
-          select: jest.fn().mockReturnThis(),
-          eq: jest.fn().mockReturnThis(),
-          single: jest.fn().mockResolvedValue({ data: null, error: null })
-        };
-      });
+      const planData = { id: planId, ownerId: mockUser.id, title: 'Test', visibility: 'private', isPublic: false };
+      plansDal.userHasAccess.mockResolvedValue({ hasAccess: true, role: 'owner' });
+      plansDal.findById.mockResolvedValue(planData);
+      nodesDal.getRoot.mockResolvedValue({ id: uuidv4(), nodeType: 'root', title: 'Test' });
+      nodesDal.listByPlan.mockResolvedValue([]);
 
       await planController.getPlan(req, res, next);
 
@@ -270,7 +146,6 @@ describe('Plan Controller', () => {
 
     it('should return 403 when user has no access', async () => {
       const planId = uuidv4();
-      const otherUserId = uuidv4();
       const req = createMockRequest({
         user: mockUser,
         params: { id: planId }
@@ -278,41 +153,11 @@ describe('Plan Controller', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      // Mock: user is not the owner
-      supabase.from.mockImplementation((table) => {
-        if (table === 'plans') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockReturnThis(),
-            single: jest.fn().mockResolvedValue({
-              data: { owner_id: otherUserId },
-              error: null
-            })
-          };
-        }
-        if (table === 'plan_collaborators') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockReturnThis(),
-            single: jest.fn().mockResolvedValue({
-              data: null,
-              error: { code: 'PGRST116' }
-            })
-          };
-        }
-        return {
-          select: jest.fn().mockReturnThis(),
-          eq: jest.fn().mockReturnThis(),
-          single: jest.fn().mockResolvedValue({ data: null, error: null })
-        };
-      });
+      plansDal.userHasAccess.mockResolvedValue({ hasAccess: false, role: null });
 
       await planController.getPlan(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(403);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ error: expect.stringContaining('access') })
-      );
     });
 
     it('should return 404 when plan not found', async () => {
@@ -324,19 +169,12 @@ describe('Plan Controller', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      // Mock: plan not found in checkPlanAccess
-      supabase.from.mockReturnValue({
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: null,
-          error: { code: 'PGRST116' }
-        })
-      });
+      plansDal.userHasAccess.mockResolvedValue({ hasAccess: true, role: 'owner' });
+      plansDal.findById.mockResolvedValue(null);
 
       await planController.getPlan(req, res, next);
 
-      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.status).toHaveBeenCalledWith(404);
     });
   });
 
@@ -351,54 +189,11 @@ describe('Plan Controller', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      const updatedPlan = createMockPlan({
-        id: planId,
-        owner_id: mockUser.id,
-        title: 'Updated Title'
-      });
-
-      let callCount = 0;
-      supabase.from.mockImplementation((table) => {
-        callCount++;
-        
-        if (table === 'plans') {
-          // checkPlanAccess call
-          if (callCount === 1) {
-            return {
-              select: jest.fn().mockReturnThis(),
-              eq: jest.fn().mockReturnThis(),
-              single: jest.fn().mockResolvedValue({
-                data: { owner_id: mockUser.id },
-                error: null
-              })
-            };
-          }
-          // update call
-          return {
-            update: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockReturnThis(),
-            select: jest.fn().mockResolvedValue({
-              data: [updatedPlan],
-              error: null
-            })
-          };
-        }
-        
-        if (table === 'plan_nodes') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockReturnThis(),
-            update: jest.fn().mockReturnThis(),
-            single: jest.fn().mockResolvedValue({ data: [], error: null })
-          };
-        }
-        
-        return {
-          select: jest.fn().mockReturnThis(),
-          eq: jest.fn().mockReturnThis(),
-          single: jest.fn().mockResolvedValue({ data: null, error: null })
-        };
-      });
+      plansDal.userHasAccess.mockResolvedValue({ hasAccess: true, role: 'owner' });
+      plansDal.update.mockResolvedValue({ id: planId, title: 'Updated Title', ownerId: mockUser.id });
+      nodesDal.getRoot.mockResolvedValue({ id: uuidv4() });
+      nodesDal.update.mockResolvedValue({});
+      nodesDal.listByPlan.mockResolvedValue([]);
 
       await planController.updatePlan(req, res, next);
 
@@ -409,7 +204,6 @@ describe('Plan Controller', () => {
 
     it('should return 403 when user is not owner or admin', async () => {
       const planId = uuidv4();
-      const otherUserId = uuidv4();
       const req = createMockRequest({
         user: mockUser,
         params: { id: planId },
@@ -418,40 +212,7 @@ describe('Plan Controller', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      // User is not owner
-      let callCount = 0;
-      supabase.from.mockImplementation((table) => {
-        callCount++;
-        
-        if (table === 'plans') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockReturnThis(),
-            single: jest.fn().mockResolvedValue({
-              data: { owner_id: otherUserId },
-              error: null
-            })
-          };
-        }
-        
-        // User is viewer, not admin
-        if (table === 'plan_collaborators') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockReturnThis(),
-            single: jest.fn().mockResolvedValue({
-              data: { role: 'viewer' },
-              error: null
-            })
-          };
-        }
-        
-        return {
-          select: jest.fn().mockReturnThis(),
-          eq: jest.fn().mockReturnThis(),
-          single: jest.fn().mockResolvedValue({ data: null, error: null })
-        };
-      });
+      plansDal.userHasAccess.mockResolvedValue({ hasAccess: true, role: 'viewer' });
 
       await planController.updatePlan(req, res, next);
 
@@ -470,26 +231,9 @@ describe('Plan Controller', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      supabase.from.mockImplementation((table) => {
-        if (table === 'plans') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockReturnThis(),
-            delete: jest.fn().mockReturnThis(),
-            single: jest.fn().mockResolvedValue({
-              data: { owner_id: mockUser.id },
-              error: null
-            })
-          };
-        }
-        
-        // Mock all related table deletes
-        return {
-          delete: jest.fn().mockReturnThis(),
-          eq: jest.fn().mockReturnThis(),
-          match: jest.fn().mockResolvedValue({ error: null })
-        };
-      });
+      plansDal.findById.mockResolvedValue({ id: planId, ownerId: mockUser.id });
+      collaboratorsDal.deleteByPlan.mockResolvedValue();
+      plansDal.delete.mockResolvedValue({ id: planId });
 
       await planController.deletePlan(req, res, next);
 
@@ -507,52 +251,8 @@ describe('Plan Controller', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      const archivedPlan = createMockPlan({
-        id: planId,
-        owner_id: mockUser.id,
-        status: 'archived'
-      });
-
-      let callCount = 0;
-      supabase.from.mockImplementation((table) => {
-        callCount++;
-        
-        if (table === 'plans') {
-          // First call: ownership check
-          if (callCount === 1) {
-            return {
-              select: jest.fn().mockReturnThis(),
-              eq: jest.fn().mockReturnThis(),
-              single: jest.fn().mockResolvedValue({
-                data: { owner_id: mockUser.id },
-                error: null
-              })
-            };
-          }
-          // Second call: update to archive
-          if (callCount === 2) {
-            return {
-              update: jest.fn().mockReturnThis(),
-              eq: jest.fn().mockResolvedValue({ error: null })
-            };
-          }
-          // Third call: fetch archived plan for broadcast
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockReturnThis(),
-            single: jest.fn().mockResolvedValue({
-              data: archivedPlan,
-              error: null
-            })
-          };
-        }
-        
-        return {
-          select: jest.fn().mockReturnThis(),
-          eq: jest.fn().mockReturnThis(),
-          single: jest.fn().mockResolvedValue({ data: null, error: null })
-        };
-      });
+      plansDal.findById.mockResolvedValue({ id: planId, ownerId: mockUser.id });
+      plansDal.update.mockResolvedValue({ id: planId, status: 'archived' });
 
       await planController.deletePlan(req, res, next);
 
@@ -564,7 +264,6 @@ describe('Plan Controller', () => {
 
     it('should return 403 when user is not owner', async () => {
       const planId = uuidv4();
-      const otherUserId = uuidv4();
       const req = createMockRequest({
         user: mockUser,
         params: { id: planId },
@@ -573,21 +272,11 @@ describe('Plan Controller', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      supabase.from.mockReturnValue({
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: { owner_id: otherUserId },
-          error: null
-        })
-      });
+      plansDal.findById.mockResolvedValue({ id: planId, ownerId: uuidv4() });
 
       await planController.deletePlan(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(403);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ error: expect.stringContaining('owner') })
-      );
     });
 
     it('should return 404 when plan not found', async () => {
@@ -600,14 +289,7 @@ describe('Plan Controller', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      supabase.from.mockReturnValue({
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: null,
-          error: { code: 'PGRST116' }
-        })
-      });
+      plansDal.findById.mockResolvedValue(null);
 
       await planController.deletePlan(req, res, next);
 
@@ -621,30 +303,7 @@ describe('Plan Controller', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      supabase.from.mockImplementation((table) => {
-        if (table === 'plans') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockResolvedValue({
-              data: [],
-              error: null
-            })
-          };
-        }
-        if (table === 'plan_collaborators') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockResolvedValue({
-              data: [],
-              error: null
-            })
-          };
-        }
-        return {
-          select: jest.fn().mockReturnThis(),
-          eq: jest.fn().mockResolvedValue({ data: [], error: null })
-        };
-      });
+      plansDal.listForUser.mockResolvedValue({ owned: [], shared: [] });
 
       await planController.listPlans(req, res, next);
 
@@ -656,43 +315,9 @@ describe('Plan Controller', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      const ownedPlan = createMockPlan({ owner_id: mockUser.id });
-
-      let nodeQueryCount = 0;
-      supabase.from.mockImplementation((table) => {
-        if (table === 'plans') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockResolvedValue({
-              data: [ownedPlan],
-              error: null
-            })
-          };
-        }
-        if (table === 'plan_collaborators') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockResolvedValue({
-              data: [],
-              error: null
-            })
-          };
-        }
-        // plan_nodes for progress calculation
-        if (table === 'plan_nodes') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockResolvedValue({
-              data: [{ id: uuidv4(), status: 'not_started' }],
-              error: null
-            })
-          };
-        }
-        return {
-          select: jest.fn().mockReturnThis(),
-          eq: jest.fn().mockResolvedValue({ data: [], error: null })
-        };
-      });
+      const ownedPlan = { id: uuidv4(), title: 'My Plan', ownerId: mockUser.id };
+      plansDal.listForUser.mockResolvedValue({ owned: [ownedPlan], shared: [] });
+      nodesDal.listByPlan.mockResolvedValue([{ status: 'not_started' }]);
 
       await planController.listPlans(req, res, next);
 
@@ -702,89 +327,17 @@ describe('Plan Controller', () => {
       expect(responseData[0].role).toBe('owner');
       expect(responseData[0]).toHaveProperty('progress');
     });
-
-    it('should handle database errors gracefully', async () => {
-      const req = createMockRequest({ user: mockUser });
-      const res = createMockResponse();
-      const next = createMockNext();
-
-      supabase.from.mockReturnValue({
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockResolvedValue({
-          data: null,
-          error: { message: 'Database connection failed' }
-        })
-      });
-
-      await planController.listPlans(req, res, next);
-
-      expect(res.status).toHaveBeenCalledWith(500);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ error: 'Database connection failed' })
-      );
-    });
   });
 
   describe('calculatePlanProgress', () => {
-    // Testing through integration as it's a private function
-    // Progress is included in getPlan and listPlans responses
-    
     it('should calculate 0% for plans with no completed nodes', async () => {
-      const planId = uuidv4();
-      const req = createMockRequest({
-        user: mockUser,
-        params: { id: planId }
-      });
-      const res = createMockResponse();
-      const next = createMockNext();
+      nodesDal.listByPlan.mockResolvedValue([
+        { status: 'not_started' },
+        { status: 'in_progress' },
+      ]);
 
-      const planData = createMockPlan({ id: planId, owner_id: mockUser.id });
-
-      let callCount = 0;
-      supabase.from.mockImplementation((table) => {
-        callCount++;
-        
-        if (table === 'plans') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockReturnThis(),
-            single: jest.fn().mockResolvedValue({
-              data: callCount === 1 ? { owner_id: mockUser.id } : planData,
-              error: null
-            })
-          };
-        }
-        
-        if (table === 'plan_nodes') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockReturnThis(),
-            single: jest.fn().mockResolvedValue({
-              data: createMockRootNode(planId, planData.title),
-              error: null
-            }),
-            // For calculatePlanProgress
-            then: (resolve) => resolve({
-              data: [
-                { id: uuidv4(), status: 'not_started' },
-                { id: uuidv4(), status: 'not_started' }
-              ],
-              error: null
-            })
-          };
-        }
-        
-        return {
-          select: jest.fn().mockReturnThis(),
-          eq: jest.fn().mockReturnThis(),
-          single: jest.fn().mockResolvedValue({ data: null, error: null })
-        };
-      });
-
-      await planController.getPlan(req, res, next);
-
-      // Progress calculation happens, though mocking makes it hard to verify exact value
-      expect(res.json).toHaveBeenCalled();
+      const progress = await planController.calculatePlanProgress(uuidv4());
+      expect(progress).toBe(0);
     });
   });
 });

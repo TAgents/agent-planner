@@ -28,9 +28,12 @@ const statsRoutes = require('./routes/stats.routes');
 const githubRoutes = require('./routes/github.routes');
 // Removed: ai routes, webhook routes (pre-v2 cleanup)
 const shareRoutes = require('./routes/share.routes');
-// Removed: template, analytics, import-export, organization routes (pre-v2 cleanup)
+const organizationRoutes = require('./routes/organization.routes');
 const goalRoutes = require('./routes/goal.routes');
-// Removed: knowledge routes (pre-v2 cleanup)
+const goalsV2Routes = require('./routes/v2/goals.routes');
+const knowledgeV2Routes = require('./routes/v2/knowledge.routes');
+const workflowsV2Routes = require('./routes/v2/workflows.routes');
+const openclawV2Routes = require('./routes/v2/openclaw.routes');
 const contextRoutes = require('./routes/context.routes');
 const decisionRoutes = require('./routes/decision.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
@@ -128,12 +131,17 @@ app.use('/github', generalLimiter, githubRoutes);
 app.use('/plans', generalLimiter, shareRoutes);
 app.use('/invites', generalLimiter, shareRoutes);
 
-// Removed: template, analytics, import-export, organization routes (pre-v2 cleanup)
+// Organization routes
+app.use('/organizations', generalLimiter, organizationRoutes);
 
 // Goal routes
 app.use('/goals', generalLimiter, goalRoutes);
+app.use('/api/goals', generalLimiter, goalsV2Routes);
 
-// Removed: knowledge routes (pre-v2 cleanup)
+app.use('/api/knowledge', generalLimiter, knowledgeV2Routes);
+app.use('/api/knowledge/search', searchLimiter);  // stricter limit for semantic search
+app.use('/api/workflows', generalLimiter, workflowsV2Routes);
+app.use('/api/v2/openclaw', generalLimiter, openclawV2Routes);
 
 // Agent context routes (leaf-up context loading)
 app.use('/context', generalLimiter, contextRoutes);
@@ -207,9 +215,12 @@ const startServer = async () => {
     await logger.api(`Starting agent-planner API server...`);
     
     // Initialize the database if the environment is development
-    if (process.env.NODE_ENV === 'development') {
+    // Skip old migrations in v2 mode — Drizzle handles schema
+    if (process.env.NODE_ENV === 'development' && process.env.AUTH_VERSION !== 'v2') {
       await logger.api(`Initializing database in development mode`);
       await initializeDatabase();
+    } else if (process.env.AUTH_VERSION === 'v2') {
+      await logger.api(`v2 mode: skipping legacy migrations (Drizzle manages schema)`);
     }
     
     // Start the server

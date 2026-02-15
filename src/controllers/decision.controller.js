@@ -1,58 +1,15 @@
 /**
  * Decision Request Controller
- * 
- * Handles CRUD operations for decision requests - enabling agents to request
- * human decisions with structured options and context.
  */
 
 const { v4: uuidv4 } = require('uuid');
-const { supabaseAdmin: supabase } = require('../config/supabase');
+const { plansDal, nodesDal, decisionsDal } = require('../db/dal.cjs');
 const { broadcastPlanUpdate } = require('../websocket/broadcast');
 const {
   createDecisionRequestedMessage,
   createDecisionResolvedMessage
 } = require('../websocket/message-schema');
 const { notifyDecisionRequested, notifyDecisionResolved } = require('../services/notifications');
-// Removed: decision-knowledge auto-capture (knowledge hub removed in pre-v2 cleanup)
-
-/**
- * Helper to check if user has access to a plan
- */
-const checkPlanAccess = async (planId, userId, requireEdit = false) => {
-  // Check if user is owner
-  const { data: plan, error: planError } = await supabase
-    .from('plans')
-    .select('owner_id')
-    .eq('id', planId)
-    .single();
-
-  if (planError || !plan) {
-    return { hasAccess: false, isOwner: false };
-  }
-
-  if (plan.owner_id === userId) {
-    return { hasAccess: true, isOwner: true };
-  }
-
-  // Check if user is collaborator
-  const { data: collab, error: collabError } = await supabase
-    .from('plan_collaborators')
-    .select('role')
-    .eq('plan_id', planId)
-    .eq('user_id', userId)
-    .single();
-
-  if (collabError || !collab) {
-    return { hasAccess: false, isOwner: false };
-  }
-
-  // For edit access, require editor or admin role
-  if (requireEdit && !['editor', 'admin'].includes(collab.role)) {
-    return { hasAccess: false, isOwner: false };
-  }
-
-  return { hasAccess: true, isOwner: false };
-};
 
 /**
  * List decision requests for a plan
@@ -63,46 +20,27 @@ const listDecisionRequests = async (req, res, next) => {
     const { status, urgency, node_id, limit = 50, offset = 0 } = req.query;
     const userId = req.user.id;
 
-    // Check access
-    const { hasAccess } = await checkPlanAccess(planId, userId);
+    const { hasAccess } = await plansDal.userHasAccess(planId, userId);
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have access to this plan' });
     }
 
-    // Build base query for filtering
-    let baseQuery = supabase
-      .from('decision_requests')
-      .select('*', { count: 'exact' })
-      .eq('plan_id', planId);
+    // Get all decisions for the plan and filter in-memory
+    let decisions = await decisionsDal.listByPlan(planId, { status: status || undefined });
+    
+    if (urgency) decisions = decisions.filter(d => d.urgency === urgency);
+    if (node_id) decisions = decisions.filter(d => d.nodeId === node_id);
 
-    // Apply filters to both count and data queries
-    if (status) {
-      baseQuery = baseQuery.eq('status', status);
-    }
-    if (urgency) {
-      baseQuery = baseQuery.eq('urgency', urgency);
-    }
-    if (node_id) {
-      baseQuery = baseQuery.eq('node_id', node_id);
-    }
+    const total = decisions.length;
+    const data = decisions.slice(Number(offset), Number(offset) + Number(limit));
 
-    // Execute query with pagination
-    const { data, error, count } = await baseQuery
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (error) {
-      return res.status(500).json({ error: error.message });
-    }
-
-    // Return with pagination metadata
     res.json({
       data,
       pagination: {
-        total: count || 0,
+        total,
         limit: parseInt(limit),
         offset: parseInt(offset),
-        has_more: (offset + data.length) < (count || 0)
+        has_more: (Number(offset) + data.length) < total
       }
     });
   } catch (error) {
@@ -118,27 +56,17 @@ const getDecisionRequest = async (req, res, next) => {
     const { id: planId, decisionId } = req.params;
     const userId = req.user.id;
 
-    // Check access
-    const { hasAccess } = await checkPlanAccess(planId, userId);
+    const { hasAccess } = await plansDal.userHasAccess(planId, userId);
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have access to this plan' });
     }
 
-    const { data, error } = await supabase
-      .from('decision_requests')
-      .select('*')
-      .eq('id', decisionId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Decision request not found' });
-      }
-      return res.status(500).json({ error: error.message });
+    const decision = await decisionsDal.findById(decisionId);
+    if (!decision || decision.planId !== planId) {
+      return res.status(404).json({ error: 'Decision request not found' });
     }
 
-    res.json(data);
+    res.json(decision);
   } catch (error) {
     next(error);
   }
@@ -162,54 +90,36 @@ const createDecisionRequest = async (req, res, next) => {
       metadata = {}
     } = req.body;
 
-    // Check edit access
-    const { hasAccess } = await checkPlanAccess(planId, userId, true);
-    if (!hasAccess) {
+    const { hasAccess, role } = await plansDal.userHasAccess(planId, userId);
+    if (!hasAccess || (role !== 'owner' && !['editor', 'admin'].includes(role))) {
       return res.status(403).json({ error: 'You do not have edit access to this plan' });
     }
 
     // If node_id is provided, verify it belongs to this plan
     if (node_id) {
-      const { data: node, error: nodeError } = await supabase
-        .from('plan_nodes')
-        .select('id')
-        .eq('id', node_id)
-        .eq('plan_id', planId)
-        .single();
-
-      if (nodeError || !node) {
+      const node = await nodesDal.findByIdAndPlan(node_id, planId);
+      if (!node) {
         return res.status(400).json({ error: 'Node not found in this plan' });
       }
     }
 
-    // Create the decision request
-    const decisionId = uuidv4();
-    const now = new Date().toISOString();
-
-    const { data, error } = await supabase
-      .from('decision_requests')
-      .insert([{
-        id: decisionId,
-        plan_id: planId,
-        node_id: node_id || null,
-        requested_by_user_id: userId,
-        requested_by_agent_name: requested_by_agent_name || null,
-        title,
-        context,
-        options: options || [],
-        urgency,
-        expires_at: expires_at || null,
-        status: 'pending',
-        metadata,
-        created_at: now,
-        updated_at: now
-      }])
-      .select()
-      .single();
-
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
+    const now = new Date();
+    const data = await decisionsDal.create({
+      id: uuidv4(),
+      planId,
+      nodeId: node_id || null,
+      requestedByUserId: userId,
+      requestedByAgentName: requested_by_agent_name || null,
+      title,
+      context,
+      options: options || [],
+      urgency,
+      expiresAt: expires_at || null,
+      status: 'pending',
+      metadata,
+      createdAt: now,
+      updatedAt: now
+    });
 
     // Broadcast the decision request event
     const userName = req.user.name || req.user.email;
@@ -217,27 +127,20 @@ const createDecisionRequest = async (req, res, next) => {
       const message = createDecisionRequestedMessage(data, planId, userName);
       await broadcastPlanUpdate(planId, message);
     } catch (broadcastError) {
-      // Don't fail the request if broadcast fails
       console.error('Failed to broadcast decision request:', broadcastError);
     }
 
-    // Send webhook notification to plan owner (async, don't block response)
+    // Send webhook notification (async)
     (async () => {
       try {
-        // Fetch plan details for notification
-        const { data: plan } = await supabase
-          .from('plans')
-          .select('id, title, owner_id')
-          .eq('id', planId)
-          .single();
-        
+        const plan = await plansDal.findById(planId);
         if (plan) {
           const actor = {
             name: requested_by_agent_name || userName,
             type: requested_by_agent_name ? 'agent' : 'user',
             agent_name: requested_by_agent_name || null
           };
-          await notifyDecisionRequested(data, plan, actor, plan.owner_id);
+          await notifyDecisionRequested(data, plan, actor, plan.ownerId);
         }
       } catch (notifyError) {
         console.error('Failed to send decision notification:', notifyError);
@@ -259,21 +162,13 @@ const updateDecisionRequest = async (req, res, next) => {
     const userId = req.user.id;
     const updates = req.body;
 
-    // Check edit access
-    const { hasAccess } = await checkPlanAccess(planId, userId, true);
-    if (!hasAccess) {
+    const { hasAccess, role } = await plansDal.userHasAccess(planId, userId);
+    if (!hasAccess || (role !== 'owner' && !['editor', 'admin'].includes(role))) {
       return res.status(403).json({ error: 'You do not have edit access to this plan' });
     }
 
-    // Check the decision exists and is still pending
-    const { data: existing, error: existingError } = await supabase
-      .from('decision_requests')
-      .select('status')
-      .eq('id', decisionId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (existingError || !existing) {
+    const existing = await decisionsDal.findById(decisionId);
+    if (!existing || existing.planId !== planId) {
       return res.status(404).json({ error: 'Decision request not found' });
     }
 
@@ -281,22 +176,7 @@ const updateDecisionRequest = async (req, res, next) => {
       return res.status(400).json({ error: 'Cannot update a decision request that has already been resolved' });
     }
 
-    // Apply updates
-    const { data, error } = await supabase
-      .from('decision_requests')
-      .update({
-        ...updates,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', decisionId)
-      .eq('plan_id', planId)
-      .select()
-      .single();
-
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
-
+    const data = await decisionsDal.update(decisionId, updates);
     res.json(data);
   } catch (error) {
     next(error);
@@ -312,21 +192,13 @@ const resolveDecisionRequest = async (req, res, next) => {
     const userId = req.user.id;
     const { decision, rationale } = req.body;
 
-    // Check edit access
-    const { hasAccess } = await checkPlanAccess(planId, userId, true);
-    if (!hasAccess) {
+    const { hasAccess, role } = await plansDal.userHasAccess(planId, userId);
+    if (!hasAccess || (role !== 'owner' && !['editor', 'admin'].includes(role))) {
       return res.status(403).json({ error: 'You do not have edit access to this plan' });
     }
 
-    // Check the decision exists first (for better error messages)
-    const { data: existing, error: existingError } = await supabase
-      .from('decision_requests')
-      .select('status, title, expires_at')
-      .eq('id', decisionId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (existingError || !existing) {
+    const existing = await decisionsDal.findById(decisionId);
+    if (!existing || existing.planId !== planId) {
       return res.status(404).json({ error: 'Decision request not found' });
     }
 
@@ -334,44 +206,19 @@ const resolveDecisionRequest = async (req, res, next) => {
       return res.status(400).json({ error: 'Decision request has already been resolved' });
     }
 
-    const now = new Date().toISOString();
+    // Check expiration
+    if (existing.expiresAt && new Date(existing.expiresAt) < new Date()) {
+      return res.status(400).json({ error: 'Decision request has expired' });
+    }
 
-    // Resolve the decision with atomic optimistic locking:
-    // - status must be 'pending' (prevents race with other resolvers)
-    // - expires_at must be NULL or in the future (prevents TOCTOU on expiration)
-    const { data, error } = await supabase
-      .from('decision_requests')
-      .update({
-        status: 'decided',
-        decided_by_user_id: userId,
-        decision,
-        rationale: rationale || null,
-        decided_at: now,
-        updated_at: now
-      })
-      .eq('id', decisionId)
-      .eq('plan_id', planId)
-      .eq('status', 'pending')
-      .or(`expires_at.is.null,expires_at.gt.${now}`) // Atomic expiration check
-      .select()
-      .single();
+    const data = await decisionsDal.resolve(decisionId, {
+      decidedByUserId: userId,
+      decision,
+      rationale: rationale || null,
+    });
 
-    if (error) {
-      // PGRST116 means no rows matched - could be resolved, cancelled, or expired
-      if (error.code === 'PGRST116') {
-        // Re-check to give specific error message
-        const { data: current } = await supabase
-          .from('decision_requests')
-          .select('status, expires_at')
-          .eq('id', decisionId)
-          .single();
-        
-        if (current?.expires_at && new Date(current.expires_at) < new Date()) {
-          return res.status(400).json({ error: 'Decision request has expired' });
-        }
-        return res.status(409).json({ error: 'Decision was already resolved by another user' });
-      }
-      return res.status(400).json({ error: error.message });
+    if (!data) {
+      return res.status(409).json({ error: 'Decision was already resolved by another user' });
     }
 
     // Broadcast the resolution
@@ -383,25 +230,18 @@ const resolveDecisionRequest = async (req, res, next) => {
       console.error('Failed to broadcast decision resolution:', broadcastError);
     }
 
-    // Send webhook notification to original requester (async, don't block response)
+    // Send webhook notification (async)
     (async () => {
       try {
-        const { data: plan } = await supabase
-          .from('plans')
-          .select('id, title, owner_id')
-          .eq('id', planId)
-          .single();
-        
-        if (plan && data.requested_by_user_id) {
+        const plan = await plansDal.findById(planId);
+        if (plan && data.requestedByUserId) {
           const actor = { name: userName, type: 'user' };
-          await notifyDecisionResolved(data, plan, actor, data.requested_by_user_id);
+          await notifyDecisionResolved(data, plan, actor, data.requestedByUserId);
         }
       } catch (notifyError) {
         console.error('Failed to send decision resolution notification:', notifyError);
       }
     })();
-
-    // Removed: auto-capture decision as knowledge entry (knowledge hub removed in pre-v2 cleanup)
 
     res.json(data);
   } catch (error) {
@@ -418,21 +258,13 @@ const cancelDecisionRequest = async (req, res, next) => {
     const userId = req.user.id;
     const { reason } = req.body || {};
 
-    // Check edit access
-    const { hasAccess } = await checkPlanAccess(planId, userId, true);
-    if (!hasAccess) {
+    const { hasAccess, role } = await plansDal.userHasAccess(planId, userId);
+    if (!hasAccess || (role !== 'owner' && !['editor', 'admin'].includes(role))) {
       return res.status(403).json({ error: 'You do not have edit access to this plan' });
     }
 
-    // Check the decision exists and is pending, also get existing metadata
-    const { data: existing, error: existingError } = await supabase
-      .from('decision_requests')
-      .select('status, metadata')
-      .eq('id', decisionId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (existingError || !existing) {
+    const existing = await decisionsDal.findById(decisionId);
+    if (!existing || existing.planId !== planId) {
       return res.status(404).json({ error: 'Decision request not found' });
     }
 
@@ -440,34 +272,18 @@ const cancelDecisionRequest = async (req, res, next) => {
       return res.status(400).json({ error: 'Cannot cancel a decision request that has already been resolved' });
     }
 
-    const now = new Date().toISOString();
-
-    // Merge cancellation reason with existing metadata (preserve existing data)
     const updatedMetadata = {
       ...(existing.metadata || {}),
       ...(reason ? { cancellation_reason: reason } : {})
     };
 
-    // Cancel the decision with optimistic locking
-    const { data, error } = await supabase
-      .from('decision_requests')
-      .update({
-        status: 'cancelled',
-        metadata: updatedMetadata,
-        updated_at: now
-      })
-      .eq('id', decisionId)
-      .eq('plan_id', planId)
-      .eq('status', 'pending') // Optimistic lock
-      .select()
-      .single();
+    const data = await decisionsDal.update(decisionId, {
+      status: 'cancelled',
+      metadata: updatedMetadata,
+    });
 
-    if (error) {
-      // PGRST116 means no rows matched - status changed
-      if (error.code === 'PGRST116') {
-        return res.status(409).json({ error: 'Decision status changed - it may have been resolved or cancelled by another user' });
-      }
-      return res.status(400).json({ error: error.message });
+    if (!data) {
+      return res.status(409).json({ error: 'Decision status changed - it may have been resolved or cancelled by another user' });
     }
 
     res.json(data);
@@ -484,22 +300,12 @@ const deleteDecisionRequest = async (req, res, next) => {
     const { id: planId, decisionId } = req.params;
     const userId = req.user.id;
 
-    // Check ownership
-    const { isOwner } = await checkPlanAccess(planId, userId);
-    if (!isOwner) {
+    const { hasAccess, role } = await plansDal.userHasAccess(planId, userId);
+    if (role !== 'owner') {
       return res.status(403).json({ error: 'Only plan owners can delete decision requests' });
     }
 
-    const { error } = await supabase
-      .from('decision_requests')
-      .delete()
-      .eq('id', decisionId)
-      .eq('plan_id', planId);
-
-    if (error) {
-      return res.status(500).json({ error: error.message });
-    }
-
+    await decisionsDal.delete(decisionId);
     res.status(204).send();
   } catch (error) {
     next(error);
@@ -507,30 +313,20 @@ const deleteDecisionRequest = async (req, res, next) => {
 };
 
 /**
- * Get pending decision count for a plan (for badges/notifications)
+ * Get pending decision count for a plan
  */
 const getPendingDecisionCount = async (req, res, next) => {
   try {
     const { id: planId } = req.params;
     const userId = req.user.id;
 
-    // Check access
-    const { hasAccess } = await checkPlanAccess(planId, userId);
+    const { hasAccess } = await plansDal.userHasAccess(planId, userId);
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have access to this plan' });
     }
 
-    const { count, error } = await supabase
-      .from('decision_requests')
-      .select('id', { count: 'exact', head: true })
-      .eq('plan_id', planId)
-      .eq('status', 'pending');
-
-    if (error) {
-      return res.status(500).json({ error: error.message });
-    }
-
-    res.json({ pending_count: count || 0 });
+    const count = await decisionsDal.countPending(planId);
+    res.json({ pending_count: count });
   } catch (error) {
     next(error);
   }

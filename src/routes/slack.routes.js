@@ -6,7 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { authenticateToken } = require('../middleware/auth.middleware');
+const { authenticate: authenticateToken } = require('../middleware/auth.middleware');
 const slackService = require('../services/slack');
 const logger = require('../utils/logger');
 
