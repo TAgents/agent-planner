@@ -1,17 +1,24 @@
 /**
- * Supabase Auth Service
- * 
- * Thin wrapper around Supabase Auth SDK.
- * This is the ONLY file outside config/ that should import supabase directly.
- * All database queries should go through the DAL layer instead.
+ * Supabase auth stub — Supabase has been removed.
+ * Some legacy controllers still import this file. All methods return errors
+ * to surface any accidental usage.
  */
-const { supabase, supabaseAdmin } = require('../config/supabase');
+const notSupported = (method) => () => {
+  throw new Error(`${method} is not supported — Supabase has been removed. Use v2 auth/DAL instead.`);
+};
+
+const adminStub = {
+  getUser: notSupported('adminAuth.getUser'),
+  admin: {
+    getUserById: notSupported('adminAuth.admin.getUserById'),
+    updateUserById: notSupported('adminAuth.admin.updateUserById'),
+    listUsers: notSupported('adminAuth.admin.listUsers'),
+    createUser: notSupported('adminAuth.admin.createUser'),
+  },
+};
 
 module.exports = {
-  /** Public client auth methods (signUp, signIn, etc.) */
-  auth: supabase?.auth,
-  /** Admin auth methods (getUserById, createUser, etc.) */
-  adminAuth: supabaseAdmin?.auth,
-  /** Supabase Storage (for file uploads) */
-  storage: supabaseAdmin?.storage,
+  auth: { signInWithPassword: notSupported('auth.signInWithPassword') },
+  adminAuth: adminStub,
+  storage: { from: notSupported('storage.from') },
 };

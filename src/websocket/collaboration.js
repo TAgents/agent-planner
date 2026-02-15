@@ -1,5 +1,7 @@
 const WebSocket = require('ws');
-const { adminAuth } = require('../services/supabase-auth');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const dal = require('../db/dal.cjs');
 const logger = require('../utils/logger');
 
 class CollaborationServer {
@@ -108,15 +110,30 @@ class CollaborationServer {
   async authenticateUser(token) {
     if (!token) return { user: null, error: { code: 'no_token' } };
     try {
-      const { data: userData, error } = await adminAuth.getUser(token);
-      if (error || !userData.user) return { user: null, error };
-      return {
-        user: { id: userData.user.id, email: userData.user.email, name: userData.user.user_metadata?.name },
-        error: null
-      };
-    } catch (error) {
-      return { user: null, error };
+      // Try JWT first
+      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      if (payload && payload.sub) {
+        return {
+          user: { id: payload.sub, email: payload.email, name: payload.name },
+          error: null
+        };
+      }
+    } catch {
+      // Not a valid JWT — try API token
     }
+    try {
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const tokenData = await dal.tokensDal.findByHash(tokenHash);
+      if (tokenData && !tokenData.revoked) {
+        const user = await dal.usersDal.findById(tokenData.userId);
+        if (user) {
+          return { user: { id: user.id, email: user.email, name: user.name }, error: null };
+        }
+      }
+    } catch {
+      // Not a valid API token either
+    }
+    return { user: null, error: { code: 'invalid_token' } };
   }
 
   async handleJoinPlan(userId, planId, previousPlanId, ws) {

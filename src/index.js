@@ -8,8 +8,7 @@ require('dotenv').config();
 // Import swagger configuration
 const swaggerOptions = require('./config/swagger');
 
-// Import database initialization
-const { initializeDatabase } = require('./db/init');
+// Import database checks
 const { checkDatabaseConnection, getDatabaseInfo, checkExistingUsers } = require('./utils/database-check');
 
 // Import routes
@@ -214,24 +213,15 @@ const startServer = async () => {
   try {
     await logger.api(`Starting agent-planner API server...`);
     
-    // Initialize the database if the environment is development
-    // Skip old migrations in v2 mode — Drizzle handles schema
-    if (process.env.NODE_ENV === 'development' && process.env.AUTH_VERSION !== 'v2') {
-      await logger.api(`Initializing database in development mode`);
-      await initializeDatabase();
-    } else if (process.env.AUTH_VERSION === 'v2') {
-      await logger.api(`v2 mode: skipping legacy migrations (Drizzle manages schema)`);
-    }
+    // Schema is managed by Drizzle (npm run db:push)
+    await logger.api(`Database schema managed by Drizzle ORM`);
     
     // Start the server
     const server = app.listen(port, async () => {
       await logger.api(`Server running on port ${port}`);
       await logger.api(`API Documentation available at http://localhost:${port}/api-docs`);
       await logger.api(`JWT_SECRET is ${process.env.JWT_SECRET ? 'configured' : 'MISSING'}`);
-      await logger.api(`SUPABASE_URL: ${process.env.SUPABASE_URL}`);
-      await logger.api(`SUPABASE_ANON_KEY is ${process.env.SUPABASE_ANON_KEY ? 'configured' : 'MISSING'}`);
-      await logger.api(`SUPABASE_SERVICE_KEY is ${process.env.SUPABASE_SERVICE_KEY ? 'configured' : 'MISSING'}`);
-      
+
       // Check database connection
       const dbStatus = await checkDatabaseConnection();
       if (dbStatus.connected) {
