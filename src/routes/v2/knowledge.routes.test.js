@@ -26,12 +26,18 @@ const mockKnowledgeDal = {
   remove: jest.fn(),
   search: jest.fn(),
   getSimilarityGraph: jest.fn(),
+  listByOwner: jest.fn(),
+  listByScope: jest.fn(),
+  getGraphData: jest.fn(),
+  createWithEmbedding: jest.fn(),
+  semanticSearch: jest.fn(),
+  textSearch: jest.fn(),
 };
 
-jest.mock('../../db/dal/index.mjs', () => ({ knowledgeDal: mockKnowledgeDal }), { virtual: true });
-jest.mock('../../services/embedding.mjs', () => ({
+jest.mock('../../db/dal.cjs', () => ({ knowledgeDal: mockKnowledgeDal }));
+jest.mock('../../services/embeddings', () => ({
   generateEmbedding: jest.fn().mockResolvedValue(new Array(1536).fill(0)),
-}), { virtual: true });
+}));
 
 const knowledgeRoutes = require('./knowledge.routes');
 
@@ -52,13 +58,13 @@ describe('Knowledge v2 Routes', () => {
 
   describe('GET /api/knowledge', () => {
     it('returns knowledge entries', async () => {
-      mockKnowledgeDal.findAll.mockResolvedValue({ entries: [{ id: 'k1', title: 'Test' }], count: 1 });
+      mockKnowledgeDal.listByOwner.mockResolvedValue([{ id: 'k1', title: 'Test' }]);
       const res = await request(app).get('/api/knowledge');
       expect(res.status).toBe(200);
     });
 
     it('returns 500 on error', async () => {
-      mockKnowledgeDal.findAll.mockRejectedValue(new Error('db error'));
+      mockKnowledgeDal.listByOwner.mockRejectedValue(new Error('db error'));
       const res = await request(app).get('/api/knowledge');
       expect(res.status).toBe(500);
     });
@@ -66,7 +72,7 @@ describe('Knowledge v2 Routes', () => {
 
   describe('POST /api/knowledge', () => {
     it('creates a knowledge entry', async () => {
-      mockKnowledgeDal.create.mockResolvedValue({ id: 'k-new', title: 'Test' });
+      mockKnowledgeDal.createWithEmbedding.mockResolvedValue({ id: 'k-new', title: 'Test' });
       const res = await request(app).post('/api/knowledge').send({
         title: 'Test', content: 'Content', entryType: 'note',
       });

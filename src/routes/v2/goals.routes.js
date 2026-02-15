@@ -8,10 +8,10 @@ const router = express.Router();
 const { authenticate } = require('../../middleware/auth.middleware');
 const logger = require('../../utils/logger');
 
-// Lazy-load DAL (ESM)
-async function getDal() {
-  const dal = await import('../../db/dal/index.mjs');
-  return dal.goalsDal;
+// DAL (via CJS bridge)
+const dal = require('../../db/dal.cjs');
+function getDal() {
+  return Promise.resolve(dal.goalsDal);
 }
 
 const VALID_TYPES = ['outcome', 'constraint', 'metric', 'principle'];

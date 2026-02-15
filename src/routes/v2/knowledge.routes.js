@@ -11,9 +11,9 @@ const router = express.Router();
 const { authenticate } = require('../../middleware/auth.middleware');
 const logger = require('../../utils/logger');
 
-// Lazy-load ESM DAL + services
+// DAL (via CJS bridge)
+const dal = require('../../db/dal.cjs');
 async function getDal() {
-  const dal = await import('../../db/dal/index.mjs');
   return dal.knowledgeDal;
 }
 

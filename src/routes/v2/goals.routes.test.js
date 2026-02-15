@@ -31,8 +31,8 @@ const mockGoalsDal = {
   getEvaluations: jest.fn(),
 };
 
-// Mock ESM DAL import
-jest.mock('../../db/dal/index.mjs', () => ({ goalsDal: mockGoalsDal }), { virtual: true });
+// Mock DAL via CJS bridge
+jest.mock('../../db/dal.cjs', () => ({ goalsDal: mockGoalsDal }));
 
 const goalsRoutes = require('./goals.routes');
 
