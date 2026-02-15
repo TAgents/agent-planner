@@ -324,10 +324,18 @@ const listPublicPlans = async (req, res, next) => {
 
     const results = await Promise.all(paginated.map(async (p) => {
       const owner = await dal.usersDal.findById(p.ownerId);
+      const nodes = await dal.nodesDal.listByPlan(p.id);
+      const task_count = nodes.length;
+      const completed_count = nodes.filter(n => n.status === 'completed').length;
+      const completion_percentage = task_count > 0 ? Math.round((completed_count / task_count) * 100) : 0;
       return {
         ...snakePlan(p),
         owner: owner ? { id: owner.id, name: owner.name } : null,
-        progress: await calculatePlanProgress(p.id),
+        progress: completion_percentage,
+        task_count,
+        completed_count,
+        completion_percentage,
+        star_count: p.starCount || 0,
       };
     }));
 
