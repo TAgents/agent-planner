@@ -218,11 +218,12 @@ services:
       - api
       - frontend
       - mcp
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
 
-  # ─── Certbot ───────────────────────────────────────────────
+  # ─── Certbot (auto-renewal every 12h) ─────────────────────
   certbot:
     image: certbot/certbot
-    restart: "no"
+    restart: unless-stopped
     volumes:
       - certbot-conf:/etc/letsencrypt
       - certbot-www:/var/www/certbot
