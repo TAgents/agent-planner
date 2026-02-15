@@ -1,7 +1,8 @@
 /**
  * Hatchet Client Utility
- * 
- * Proxy layer for Hatchet's admin API.
+ *
+ * Proxy layer for Hatchet workflow management.
+ * Uses the v1 SDK client API (c.runs, c.workflows, c.events).
  * Returns empty arrays when Hatchet is unavailable.
  */
 import logger from './logger.js';
@@ -33,8 +34,7 @@ export async function listWorkflowRuns(opts = {}) {
   try {
     const c = await getClient();
     if (!c) return { rows: [], pagination: { total: 0 } };
-    const admin = c.admin;
-    const result = await admin.listWorkflowRuns({
+    const result = await c.runs.list({
       status: opts.status,
       limit: opts.limit || 20,
       offset: opts.offset || 0,
@@ -50,7 +50,7 @@ export async function getWorkflowRun(runId) {
   try {
     const c = await getClient();
     if (!c) return null;
-    const result = await c.admin.getWorkflowRun(runId);
+    const result = await c.runs.get(runId);
     return result;
   } catch (err) {
     await logger.error('Hatchet getWorkflowRun error:', err);
@@ -62,7 +62,7 @@ export async function listWorkflows() {
   try {
     const c = await getClient();
     if (!c) return [];
-    const result = await c.admin.listWorkflows();
+    const result = await c.workflows.list();
     return result;
   } catch (err) {
     await logger.error('Hatchet listWorkflows error:', err);
@@ -74,7 +74,7 @@ export async function listEvents(opts = {}) {
   try {
     const c = await getClient();
     if (!c) return { rows: [], pagination: { total: 0 } };
-    const result = await c.admin.listEvents({
+    const result = await c.events.list({
       limit: opts.limit || 20,
       offset: opts.offset || 0,
     });
@@ -89,7 +89,7 @@ export async function triggerWorkflow(workflowName, input = {}) {
   try {
     const c = await getClient();
     if (!c) return { triggered: false, message: 'Hatchet not configured' };
-    const result = await c.admin.runWorkflow(workflowName, input);
+    const result = await c.runNoWait(workflowName, input);
     return { triggered: true, workflowRunId: result?.workflowRunId || null };
   } catch (err) {
     await logger.error('Hatchet triggerWorkflow error:', err);
