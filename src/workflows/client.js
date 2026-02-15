@@ -1,20 +1,18 @@
 /**
  * Hatchet Workflow Engine Client
  * 
- * Provides a singleton HatchetClient instance for workflow orchestration.
- * Only initializes when HATCHET_CLIENT_TOKEN is set.
- * Uses HatchetClient.init() (v1 API) for auto-configuration from token.
+ * Uses Hatchet.init() (v0 API) which auto-reads HATCHET_CLIENT_TOKEN from env.
  */
 const logger = require('../utils/logger');
 
-let hatchetClient = null;
+let hatchetInstance = null;
 
 /**
- * Get or create the Hatchet client singleton
- * @returns {import('@hatchet-dev/typescript-sdk').HatchetClient|null}
+ * Get or create the Hatchet singleton
+ * @returns {import('@hatchet-dev/typescript-sdk').Hatchet|null}
  */
 function getHatchetClient() {
-  if (hatchetClient) return hatchetClient;
+  if (hatchetInstance) return hatchetInstance;
 
   const token = process.env.HATCHET_CLIENT_TOKEN;
   if (!token) {
@@ -23,40 +21,25 @@ function getHatchetClient() {
   }
 
   try {
-    const { HatchetClient } = require('@hatchet-dev/typescript-sdk');
-
-    // HatchetClient.init() reads HATCHET_CLIENT_TOKEN from env automatically
-    hatchetClient = HatchetClient.init();
-
+    const { Hatchet } = require('@hatchet-dev/typescript-sdk');
+    hatchetInstance = Hatchet.init();
     logger.api('Hatchet: Client initialized successfully');
-    return hatchetClient;
+    return hatchetInstance;
   } catch (err) {
     logger.error('Hatchet: Failed to initialize client', err);
-    hatchetClient = null;
+    hatchetInstance = null;
     return null;
   }
 }
 
-/**
- * Check if Hatchet is available
- */
 function isHatchetEnabled() {
   return !!process.env.HATCHET_CLIENT_TOKEN;
 }
 
-/**
- * Gracefully shut down the Hatchet client
- */
 async function shutdownHatchet() {
-  if (hatchetClient) {
-    try {
-      // HatchetClient doesn't have an explicit close, but workers do
-      logger.api('Hatchet: Client shutdown');
-      hatchetClient = null;
-      initPromise = null;
-    } catch (err) {
-      logger.error('Hatchet: Shutdown error', err);
-    }
+  if (hatchetInstance) {
+    logger.api('Hatchet: Client shutdown');
+    hatchetInstance = null;
   }
 }
 

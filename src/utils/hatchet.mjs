@@ -21,7 +21,7 @@ async function getClient() {
 
   try {
     const { Hatchet } = await import('@hatchet-dev/typescript-sdk');
-    client = Hatchet.init({ token });
+    client = Hatchet.init();
     return client;
   } catch (err) {
     await logger.warn('Failed to initialize Hatchet client:', err.message);

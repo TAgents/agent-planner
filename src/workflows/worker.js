@@ -1,8 +1,8 @@
 /**
  * Hatchet Worker
  * 
- * Registers all task workflows and starts the worker process.
- * Can be run standalone or integrated into the API server.
+ * Registers all workflows via worker.registerWorkflow() (v0 API)
+ * and starts the worker process.
  */
 const logger = require('../utils/logger');
 const { getHatchetClient, isHatchetEnabled } = require('./client');
@@ -10,29 +10,26 @@ const { getHatchetClient, isHatchetEnabled } = require('./client');
 let worker = null;
 
 /**
- * Register all workflows and return the task definitions
+ * Collect all workflow definitions from workflow files
  */
-function registerAllWorkflows() {
-  const { registerPlanWorkflows } = require('./plan.workflows');
-  const { registerNodeWorkflows } = require('./node.workflows');
-  const { registerAgentWorkflows } = require('./agent.workflows');
-  const { registerGoalEvaluationWorkflow } = require('./goalEvaluation.workflow');
-  const { createMemorySyncWorkflow } = require('./memorySync.workflow');
+function getAllWorkflows() {
+  const { getPlanWorkflows } = require('./plan.workflows');
+  const { getNodeWorkflows } = require('./node.workflows');
+  const { getAgentWorkflows } = require('./agent.workflows');
+  const { getGoalEvaluationWorkflows } = require('./goalEvaluation.workflow');
+  const { getMemorySyncWorkflows } = require('./memorySync.workflow');
 
-  const planTasks = registerPlanWorkflows();
-  const nodeTasks = registerNodeWorkflows();
-  const agentTasks = registerAgentWorkflows();
-  const goalTasks = registerGoalEvaluationWorkflow();
-
-  // Memory sync workflow (may return null if Hatchet not configured)
-  const memorySyncWorkflow = createMemorySyncWorkflow();
-  const memoryTasks = memorySyncWorkflow ? { 'openclaw-memory-sync': memorySyncWorkflow } : {};
-
-  return { ...planTasks, ...nodeTasks, ...agentTasks, ...goalTasks, ...memoryTasks };
+  return [
+    ...getPlanWorkflows(),
+    ...getNodeWorkflows(),
+    ...getAgentWorkflows(),
+    ...getGoalEvaluationWorkflows(),
+    ...getMemorySyncWorkflows(),
+  ];
 }
 
 /**
- * Start the Hatchet worker with all registered task workflows
+ * Start the Hatchet worker with all registered workflows
  */
 async function startWorker() {
   if (!isHatchetEnabled()) {
@@ -44,17 +41,16 @@ async function startWorker() {
     const hatchet = getHatchetClient();
     if (!hatchet) return null;
 
-    // Register workflows (tasks are registered on the client)
-    const tasks = registerAllWorkflows();
-    const taskNames = Object.keys(tasks);
+    worker = await hatchet.worker('agent-planner-worker');
 
-    // Create and start worker
-    worker = await hatchet.worker('agent-planner-worker', {
-      maxRuns: 10,
-    });
+    const workflows = getAllWorkflows();
+    for (const wf of workflows) {
+      await worker.registerWorkflow(wf);
+    }
 
     await worker.start();
-    logger.api(`Hatchet worker: Started with ${taskNames.length} tasks: ${taskNames.join(', ')}`);
+    const names = workflows.map(w => w.id);
+    logger.api(`Hatchet worker: Started with ${names.length} workflows: ${names.join(', ')}`);
 
     return worker;
   } catch (err) {
@@ -63,9 +59,6 @@ async function startWorker() {
   }
 }
 
-/**
- * Stop the worker gracefully
- */
 async function stopWorker() {
   if (worker) {
     try {
@@ -82,10 +75,11 @@ function getWorker() {
   return worker;
 }
 
-module.exports = { startWorker, stopWorker, getWorker, registerAllWorkflows };
+module.exports = { startWorker, stopWorker, getWorker, getAllWorkflows };
 
 // Standalone mode
 if (require.main === module) {
+  require('dotenv').config();
   (async () => {
     logger.api('Starting Hatchet worker standalone...');
     await startWorker();
