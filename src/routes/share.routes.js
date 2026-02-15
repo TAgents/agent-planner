@@ -146,8 +146,7 @@ router.post('/:id/share', authenticate, async (req, res) => {
         .insert({
           plan_id: planId,
           user_id: existingUser.id,
-          role: role,
-          added_by: userId
+          role: role
         });
 
       if (collabError) {
@@ -487,8 +486,7 @@ router.post('/accept/:token', authenticate, async (req, res) => {
       .insert({
         plan_id: invite.plan_id,
         user_id: userId,
-        role: invite.role,
-        added_by: invite.invited_by
+        role: invite.role
       });
 
     if (collabError) {
