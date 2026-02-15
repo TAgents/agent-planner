@@ -74,7 +74,9 @@ export const planCollaborators = pgTable('plan_collaborators', {
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   role: text('role').notNull().default('viewer'),  // viewer | editor | admin
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-});
+}, (table) => [
+  unique('plan_collaborators_plan_user_unique').on(table.planId, table.userId),
+]);
 
 // ─── Plan Comments ───────────────────────────────────────────────
 export const planComments = pgTable('plan_comments', {
