@@ -59,8 +59,8 @@ router.get('/runs/:runId', authenticate, async (req, res) => {
 router.get('/templates', authenticate, async (req, res) => {
   try {
     const hatchet = await getHatchet();
-    const workflows = await hatchet.listWorkflows();
-    res.json({ workflows });
+    const result = await hatchet.listWorkflows();
+    res.json({ workflows: result.rows || result || [] });
   } catch (err) {
     await logger.error('List workflow templates error:', err);
     res.status(500).json({ error: 'Failed to list workflow templates' });
