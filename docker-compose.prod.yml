@@ -100,6 +100,7 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
+      AUTH_VERSION: v2
       PORT: "3000"
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN}
