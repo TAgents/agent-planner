@@ -1,8 +1,7 @@
 /**
- * Integration tests for OpenClaw / MCP tools
+ * Integration tests for MCP tools and memory sync
  */
 const { getToolDefinitions, executeTool } = require('../../src/mcp/tools');
-const { OpenClawAdapter } = require('../../src/adapters/openclaw.adapter');
 const { scanMemoryFiles, computeHash } = require('../../src/utils/memorySync');
 const fs = require('fs');
 const path = require('path');
@@ -36,42 +35,6 @@ describe('MCP Tool Bridge', () => {
     expect(names).toContain('agentplanner_evaluate_goal');
     expect(names).toContain('agentplanner_log_knowledge');
     expect(names).toContain('agentplanner_get_plan_status');
-  });
-});
-
-describe('OpenClaw Adapter', () => {
-  test('isConfigured returns false without token', async () => {
-    const adapter = new OpenClawAdapter();
-    // Ensure no token
-    const origToken = process.env.OPENCLAW_API_TOKEN;
-    delete process.env.OPENCLAW_API_TOKEN;
-    const freshAdapter = new OpenClawAdapter();
-    expect(await freshAdapter.isConfigured('any-user')).toBe(false);
-    if (origToken) process.env.OPENCLAW_API_TOKEN = origToken;
-  });
-
-  test('deliver returns error without token', async () => {
-    const adapter = new OpenClawAdapter();
-    adapter.apiToken = '';
-    const result = await adapter.deliver({ event: 'test', userId: 'u1' });
-    expect(result.success).toBe(false);
-    expect(result.reason).toContain('not configured');
-  });
-
-  test('_buildPrompt generates structured prompt', () => {
-    const adapter = new OpenClawAdapter();
-    const prompt = adapter._buildPrompt({
-      event: 'agent.task.dispatch',
-      plan: { id: 'p1', title: 'Test Plan' },
-      task: { id: 't1', title: 'Test Task', status: 'in_progress', description: 'Do the thing' },
-      goals: [{ title: 'Ship MVP', type: 'outcome', priority: 1 }],
-      knowledge: [{ title: 'API docs', content: 'REST endpoints...' }],
-    });
-    expect(prompt).toContain('Test Plan');
-    expect(prompt).toContain('Test Task');
-    expect(prompt).toContain('Ship MVP');
-    expect(prompt).toContain('API docs');
-    expect(prompt).toContain('agentplanner_complete_task');
   });
 });
 

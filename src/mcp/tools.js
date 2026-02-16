@@ -1,8 +1,7 @@
 /**
  * MCP Tool Bridge — Tool definitions for agents to interact with AgentPlanner
  * 
- * These tools are registered with the MCP server so that OpenClaw agents
- * (or any MCP-compatible agent) can:
+ * These tools are registered with the MCP server so that AI agents can:
  * - Complete tasks
  * - Evaluate goals
  * - Log knowledge/insights
@@ -121,7 +120,7 @@ const tools = [
       try {
         const evaluation = await dal.goalEvaluationsDal.create({
           goalId,
-          evaluatedBy: 'agent:openclaw',
+          evaluatedBy: 'agent:mcp',
           score,
           reasoning,
           suggestedActions: suggestedActions || [],

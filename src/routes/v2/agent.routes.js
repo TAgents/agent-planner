@@ -1,8 +1,8 @@
 /**
- * OpenClaw Integration Routes
- * 
- * - MCP tool listing and execution
- * - Agent callback endpoint for OpenClaw sessions
+ * Agent Integration Routes
+ *
+ * - MCP tool listing and execution for external agents
+ * - Agent callback endpoint for session completion
  */
 const express = require('express');
 const router = express.Router();
@@ -10,7 +10,7 @@ const { authenticate } = require('../../middleware/auth.middleware');
 const { getToolDefinitions, executeTool } = require('../../mcp/tools');
 const logger = require('../../utils/logger');
 
-// GET /api/v2/openclaw/tools — list available MCP tools
+// GET /api/v2/agent/tools — list available MCP tools
 router.get('/tools', authenticate, async (req, res) => {
   try {
     const tools = getToolDefinitions();
@@ -21,7 +21,7 @@ router.get('/tools', authenticate, async (req, res) => {
   }
 });
 
-// POST /api/v2/openclaw/tools/:toolName — execute an MCP tool
+// POST /api/v2/agent/tools/:toolName — execute an MCP tool
 router.post('/tools/:toolName', authenticate, async (req, res) => {
   try {
     const result = await executeTool(req.params.toolName, req.body);
@@ -32,13 +32,13 @@ router.post('/tools/:toolName', authenticate, async (req, res) => {
   }
 });
 
-// POST /api/v2/openclaw/callback — webhook callback from OpenClaw agent sessions
+// POST /api/v2/agent/callback — webhook callback from agent sessions
 router.post('/callback', async (req, res) => {
   try {
     const { sessionId, status, result, metadata } = req.body;
 
     // Verify callback token if configured
-    const callbackToken = process.env.OPENCLAW_CALLBACK_TOKEN;
+    const callbackToken = process.env.AGENT_CALLBACK_TOKEN;
     if (callbackToken) {
       const authHeader = req.headers.authorization;
       if (!authHeader || authHeader !== `Bearer ${callbackToken}`) {
@@ -46,7 +46,7 @@ router.post('/callback', async (req, res) => {
       }
     }
 
-    await logger.api(`OpenClaw callback: session=${sessionId} status=${status}`);
+    await logger.api(`Agent callback: session=${sessionId} status=${status}`);
 
     // Process the agent's response
     if (metadata?.taskId && status === 'completed') {
@@ -57,10 +57,10 @@ router.post('/callback', async (req, res) => {
           planNodeId: metadata.taskId,
           content: `Agent session ${sessionId} completed: ${result?.summary || '(no summary)'}`,
           logType: 'progress',
-          metadata: { sessionId, source: 'openclaw-callback' },
+          metadata: { sessionId, source: 'agent-callback' },
         });
       } catch (dbErr) {
-        await logger.error(`OpenClaw callback DB error: ${dbErr.message}`);
+        await logger.error(`Agent callback DB error: ${dbErr.message}`);
       }
     }
 
@@ -71,13 +71,13 @@ router.post('/callback', async (req, res) => {
         requestId: sessionId,
         nodeId: metadata?.taskId,
         response: result?.summary,
-        adapter: 'openclaw',
+        adapter: metadata?.adapter || 'unknown',
       });
     } catch { /* best effort */ }
 
     res.json({ received: true });
   } catch (err) {
-    await logger.error('OpenClaw callback error:', err);
+    await logger.error('Agent callback error:', err);
     res.status(500).json({ error: 'Callback processing failed' });
   }
 });

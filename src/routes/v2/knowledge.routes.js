@@ -20,7 +20,7 @@ async function getEmbeddingService() {
 
 const VALID_ENTRY_TYPES = ['decision', 'learning', 'context', 'constraint', 'reference', 'note'];
 const VALID_SCOPES = ['global', 'plan', 'task'];
-const VALID_SOURCES = ['agent', 'human', 'import', 'openclaw'];
+const VALID_SOURCES = ['agent', 'human', 'import'];
 
 // ─── LIST ────────────────────────────────────────────────────────
 // GET /api/knowledge

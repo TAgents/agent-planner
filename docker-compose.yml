@@ -35,8 +35,6 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-agentplanner}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-agentplanner}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}
-      OPENCLAW_GATEWAY_URL: ${OPENCLAW_GATEWAY_URL:-http://openclaw:7680}
-      OPENCLAW_API_TOKEN: ${OPENCLAW_API_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
       - "${API_PORT:-3000}:3000"
@@ -58,20 +56,5 @@ services:
     environment:
       REACT_APP_API_URL: ${API_BASE_URL:-http://localhost:3000}
 
-  # ─── OpenClaw Profile: Agent Runtime ───────────────────────
-  openclaw:
-    image: ghcr.io/openclaw/openclaw:latest
-    restart: unless-stopped
-    profiles: [openclaw]
-    depends_on: [api]
-    ports:
-      - "${OPENCLAW_PORT:-7680}:7680"
-    volumes:
-      - openclaw-workspace:/workspace
-    environment:
-      OPENCLAW_API_URL: http://api:3000
-      OPENCLAW_API_TOKEN: ${OPENCLAW_API_TOKEN:-}
-
 volumes:
   pgdata:
-  openclaw-workspace:

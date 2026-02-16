@@ -9,7 +9,6 @@ networks:
 
 volumes:
   pgdata:
-  openclaw-workspace:
   certbot-conf:
   certbot-www:
   backup-data:
@@ -53,8 +52,6 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET}
       FRONTEND_URL: https://${DOMAIN}
-      OPENCLAW_GATEWAY_URL: ${OPENCLAW_GATEWAY_URL:-http://openclaw:7680}
-      OPENCLAW_API_TOKEN: ${OPENCLAW_API_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
@@ -147,14 +144,3 @@ services:
     volumes:
       - backup-data:/backups
 
-  # ─── OpenClaw (optional — remove if not needed) ────────────
-  openclaw:
-    image: ghcr.io/openclaw/openclaw:latest
-    restart: always
-    networks: [internal]
-    depends_on: [api]
-    volumes:
-      - openclaw-workspace:/workspace
-    environment:
-      OPENCLAW_API_URL: http://api:3000
-      OPENCLAW_API_TOKEN: ${OPENCLAW_API_TOKEN:-}

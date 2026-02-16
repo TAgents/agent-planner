@@ -31,7 +31,7 @@ const organizationRoutes = require('./routes/organization.routes');
 const goalRoutes = require('./routes/goal.routes');
 const goalsV2Routes = require('./routes/v2/goals.routes');
 const knowledgeV2Routes = require('./routes/v2/knowledge.routes');
-const openclawV2Routes = require('./routes/v2/openclaw.routes');
+const agentV2Routes = require('./routes/v2/agent.routes');
 const contextRoutes = require('./routes/context.routes');
 const decisionRoutes = require('./routes/decision.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
@@ -138,7 +138,7 @@ app.use('/goals/v2', generalLimiter, goalsV2Routes);
 
 app.use('/knowledge', generalLimiter, knowledgeV2Routes);
 app.use('/knowledge/search', searchLimiter);  // stricter limit for semantic search
-app.use('/v2/openclaw', generalLimiter, openclawV2Routes);
+app.use('/v2/agent', generalLimiter, agentV2Routes);
 
 // Agent context routes (leaf-up context loading)
 app.use('/context', generalLimiter, contextRoutes);
