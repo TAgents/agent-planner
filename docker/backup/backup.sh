@@ -13,17 +13,10 @@ PGPASSWORD="${POSTGRES_PASSWORD}" pg_dump \
   -h postgres -U "${POSTGRES_USER}" "${POSTGRES_DB}" \
   | gzip > "${BACKUP_DIR}/main_${TIMESTAMP}.sql.gz"
 
-# Hatchet database
-echo "Backing up hatchet database..."
-PGPASSWORD="${HATCHET_DB_PASSWORD}" pg_dump \
-  -h hatchet-postgres -U hatchet hatchet \
-  | gzip > "${BACKUP_DIR}/hatchet_${TIMESTAMP}.sql.gz"
-
 # Upload to GCS
 if [ -n "${GCS_BUCKET:-}" ]; then
   echo "Uploading to gs://${GCS_BUCKET}/..."
   gsutil -m cp "${BACKUP_DIR}/main_${TIMESTAMP}.sql.gz" "gs://${GCS_BUCKET}/main_${TIMESTAMP}.sql.gz"
-  gsutil -m cp "${BACKUP_DIR}/hatchet_${TIMESTAMP}.sql.gz" "gs://${GCS_BUCKET}/hatchet_${TIMESTAMP}.sql.gz"
   echo "Upload complete."
 else
   echo "GCS_BUCKET not set, skipping upload."
