@@ -1,22 +1,19 @@
 /**
- * Notification Service v2 — Uses adapter system (with optional Hatchet)
- * 
- * Tries to emit via Hatchet first; falls back to direct adapter delivery.
+ * Notification Service v2 — Uses adapter system with messageBus pub/sub
  */
-const { emitEvent } = require('../workflows/messaging.workflow');
 const { deliverToAll } = require('../adapters');
+const { publish } = require('./messageBus');
 const logger = require('../utils/logger');
 
-// Whether to use Hatchet for event dispatch
-const USE_HATCHET = !!process.env.HATCHET_CLIENT_TOKEN;
-
 async function notify(payload) {
-  if (USE_HATCHET) {
-    const sent = await emitEvent('notification:send', payload);
-    if (sent) return;
-  }
-  // Direct delivery fallback
+  // Deliver directly via adapters
   await deliverToAll(payload);
+  // Also publish to messageBus for any listeners
+  try {
+    await publish('notifications', payload);
+  } catch (err) {
+    // best effort — messageBus may not be initialized in tests
+  }
 }
 
 async function notifyStatusChange(node, plan, actor, oldStatus, newStatus) {
@@ -25,7 +22,6 @@ async function notifyStatusChange(node, plan, actor, oldStatus, newStatus) {
     'completed': 'task.completed',
   };
 
-  // Only notify on meaningful transitions
   const event = eventMap[newStatus];
   if (!event && newStatus !== 'in_progress') return;
 
@@ -48,19 +44,6 @@ async function notifyStatusChange(node, plan, actor, oldStatus, newStatus) {
 async function notifyAgentRequested(node, plan, actor, ownerId) {
   const requestType = node.agent_requested;
 
-  if (USE_HATCHET) {
-    await emitEvent('agent:request:created', {
-      planId: plan.id,
-      nodeId: node.id,
-      requestType,
-      message: node.agent_request_message,
-      userId: ownerId,
-      requestedBy: actor.name,
-    });
-    return;
-  }
-
-  // Direct delivery
   await notify({
     event: `task.${requestType}_requested`,
     userId: ownerId,
