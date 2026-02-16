@@ -20,7 +20,7 @@ export const goals = pgTable('goals', {
 export const goalLinks = pgTable('goal_links', {
   id: uuid('id').primaryKey().defaultRandom(),
   goalId: uuid('goal_id').notNull().references(() => goals.id, { onDelete: 'cascade' }),
-  linkedType: text('linked_type').notNull(),   // plan | task | agent | workflow
+  linkedType: text('linked_type').notNull(),   // plan | task | agent
   linkedId: uuid('linked_id').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 }, (table) => ({

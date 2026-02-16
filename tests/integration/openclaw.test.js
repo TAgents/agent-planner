@@ -3,7 +3,7 @@
  */
 const { getToolDefinitions, executeTool } = require('../../src/mcp/tools');
 const { OpenClawAdapter } = require('../../src/adapters/openclaw.adapter');
-const { scanMemoryFiles, computeHash } = require('../../src/workflows/memorySync.workflow');
+const { scanMemoryFiles, computeHash } = require('../../src/utils/memorySync');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');

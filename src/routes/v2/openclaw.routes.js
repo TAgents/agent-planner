@@ -64,10 +64,10 @@ router.post('/callback', async (req, res) => {
       }
     }
 
-    // Emit event for downstream processing
+    // Publish event for downstream processing
     try {
-      const { emitEvent } = require('../../workflows/messaging.workflow');
-      await emitEvent('agent:response:received', {
+      const messageBus = require('../../services/messageBus');
+      await messageBus.publish('agent:response:received', {
         requestId: sessionId,
         nodeId: metadata?.taskId,
         response: result?.summary,

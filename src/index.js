@@ -31,7 +31,6 @@ const organizationRoutes = require('./routes/organization.routes');
 const goalRoutes = require('./routes/goal.routes');
 const goalsV2Routes = require('./routes/v2/goals.routes');
 const knowledgeV2Routes = require('./routes/v2/knowledge.routes');
-const workflowsV2Routes = require('./routes/v2/workflows.routes');
 const openclawV2Routes = require('./routes/v2/openclaw.routes');
 const contextRoutes = require('./routes/context.routes');
 const decisionRoutes = require('./routes/decision.routes');
@@ -139,7 +138,6 @@ app.use('/goals/v2', generalLimiter, goalsV2Routes);
 
 app.use('/knowledge', generalLimiter, knowledgeV2Routes);
 app.use('/knowledge/search', searchLimiter);  // stricter limit for semantic search
-app.use('/workflows', generalLimiter, workflowsV2Routes);
 app.use('/v2/openclaw', generalLimiter, openclawV2Routes);
 
 // Agent context routes (leaf-up context loading)
@@ -211,6 +209,13 @@ app.use(async (err, req, res, next) => {
 // Initialize database and start server
 const startServer = async () => {
   try {
+    // Initialize messageBus for Postgres LISTEN/NOTIFY pub/sub
+    const messageBus = require('./services/messageBus');
+    if (process.env.DATABASE_URL) {
+      await messageBus.init(process.env.DATABASE_URL);
+      await logger.api('MessageBus initialized (Postgres LISTEN/NOTIFY)');
+    }
+
     await logger.api(`Starting agent-planner API server...`);
     
     // Schema is managed by Drizzle (npm run db:push)

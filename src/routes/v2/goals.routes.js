@@ -13,7 +13,7 @@ const goalsDal = require('../../db/dal.cjs').goalsDal;
 
 const VALID_TYPES = ['outcome', 'constraint', 'metric', 'principle'];
 const VALID_STATUSES = ['active', 'achieved', 'paused', 'abandoned'];
-const VALID_LINK_TYPES = ['plan', 'task', 'agent', 'workflow'];
+const VALID_LINK_TYPES = ['plan', 'task', 'agent'];
 
 // GET /api/goals/tree — must be before /:id
 router.get('/tree', authenticate, async (req, res) => {

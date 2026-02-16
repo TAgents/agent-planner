@@ -28,7 +28,6 @@
     "db:studio": "drizzle-kit studio --config=drizzle.config.mjs"
   },
   "dependencies": {
-    "@hatchet-dev/typescript-sdk": "^1.12.0",
     "@slack/web-api": "^7.14.1",
     "axios": "^1.13.2",
     "bcryptjs": "^2.4.3",
