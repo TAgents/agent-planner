@@ -103,6 +103,9 @@ services:
       PORT: "3000"
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN}
+      HATCHET_CLIENT_HOST_PORT: hatchet:7077
+      HATCHET_CLIENT_TLS_STRATEGY: none
+      HATCHET_CLIENT_API_URL: http://hatchet:8888
       JWT_SECRET: ${JWT_SECRET}
       FRONTEND_URL: https://${DOMAIN}
       OPENCLAW_GATEWAY_URL: ${OPENCLAW_GATEWAY_URL:-http://openclaw:7680}
@@ -147,7 +150,9 @@ services:
     environment:
       NODE_ENV: production
       HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN}
+      HATCHET_CLIENT_HOST_PORT: hatchet:7077
       HATCHET_CLIENT_TLS_STRATEGY: none
+      HATCHET_CLIENT_API_URL: http://hatchet:8888
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
       DISCORD_TOKEN: ${DISCORD_TOKEN:-}
       API_BASE_URL: http://api:3000
