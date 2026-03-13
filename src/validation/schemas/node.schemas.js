@@ -55,8 +55,8 @@ const updateNode = z.object({
  * Move node request body
  */
 const moveNode = z.object({
-  parent_id: uuid.describe('New parent node ID'),
-  order_index: positiveInt.optional().describe('New position among siblings')
+  parent_id: optionalUuid.describe('New parent node ID'),
+  order_index: positiveInt.nullable().optional().describe('New position among siblings')
 }).strict();
 
 /**

@@ -63,8 +63,11 @@ const port = process.env.PORT || 3000;
 app.use(cors({
   origin: [
     'http://localhost:3001',
+    'http://localhost:8080',
     'https://agentplanner.io',
-    'https://www.agentplanner.io'
+    'https://www.agentplanner.io',
+    'https://talkingagents.com',
+    'https://www.talkingagents.com'
   ],
   credentials: true
 }));
@@ -139,7 +142,6 @@ app.use('/goals/v2', generalLimiter, goalsV2Routes);
 app.use('/knowledge', generalLimiter, knowledgeV2Routes);
 app.use('/knowledge/search', searchLimiter);  // stricter limit for semantic search
 app.use('/v2/agent', generalLimiter, agentV2Routes);
-
 // Agent context routes (leaf-up context loading)
 app.use('/context', generalLimiter, contextRoutes);
 
