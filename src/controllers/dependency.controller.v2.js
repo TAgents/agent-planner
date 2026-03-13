@@ -11,6 +11,14 @@ const checkPlanAccess = async (planId, userId, roles = []) => {
   return roles.includes(role);
 };
 
+function classifyPgError(err) {
+  const pgError = err.cause || err;
+  const msg = pgError.message || err.message || '';
+  if (pgError.code === '23505' || msg.includes('unique') || msg.includes('duplicate')) return 'duplicate';
+  if (pgError.code === '23514' || msg.includes('node_deps_no_self_ref')) return 'self_ref';
+  return null;
+}
+
 const snakeDep = (d) => ({
   id: d.id,
   source_node_id: d.sourceNodeId,
@@ -77,15 +85,9 @@ const createDependency = async (req, res, next) => {
 
     res.status(201).json(snakeDep(dep));
   } catch (error) {
-    // Drizzle wraps postgres-js errors; check both the error and its cause
-    const pgError = error.cause || error;
-    const msg = pgError.message || error.message || '';
-    if (pgError.code === '23505' || msg.includes('unique') || msg.includes('duplicate')) {
-      return res.status(409).json({ error: 'This dependency edge already exists' });
-    }
-    if (pgError.code === '23514' || msg.includes('node_deps_no_self_ref')) {
-      return res.status(400).json({ error: 'A node cannot depend on itself' });
-    }
+    const pgErrType = classifyPgError(error);
+    if (pgErrType === 'duplicate') return res.status(409).json({ error: 'This dependency edge already exists' });
+    if (pgErrType === 'self_ref') return res.status(400).json({ error: 'A node cannot depend on itself' });
     next(error);
   }
 };
@@ -275,6 +277,109 @@ const getCriticalPath = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /dependencies/cross-plan
+ * Create a dependency edge between nodes in different plans
+ */
+const createCrossPlanDependency = async (req, res, next) => {
+  try {
+    const { source_node_id, target_node_id, dependency_type, weight, metadata } = req.body;
+    const userId = req.user.id;
+
+    if (!source_node_id || !target_node_id) {
+      return res.status(400).json({ error: 'source_node_id and target_node_id are required' });
+    }
+
+    // Look up both nodes
+    const [source, target] = await Promise.all([
+      dal.nodesDal.findById(source_node_id),
+      dal.nodesDal.findById(target_node_id),
+    ]);
+    if (!source) return res.status(404).json({ error: 'Source node not found' });
+    if (!target) return res.status(404).json({ error: 'Target node not found' });
+
+    // Verify user has editor+ access to both plans
+    const [srcAccess, tgtAccess] = await Promise.all([
+      checkPlanAccess(source.planId, userId, ['owner', 'admin', 'editor']),
+      checkPlanAccess(target.planId, userId, ['owner', 'admin', 'editor']),
+    ]);
+    if (!srcAccess) return res.status(403).json({ error: 'No editor access to source plan' });
+    if (!tgtAccess) return res.status(403).json({ error: 'No editor access to target plan' });
+
+    const depType = dependency_type || 'blocks';
+
+    // Cycle detection works across plans already (recursive CTE is global)
+    const { hasCycle, cyclePath } = await dal.dependenciesDal.wouldCreateCycle(
+      source_node_id, target_node_id, [depType]
+    );
+    if (hasCycle) {
+      return res.status(409).json({
+        error: 'Adding this dependency would create a cycle',
+        cycle_path: cyclePath,
+      });
+    }
+
+    const dep = await dal.dependenciesDal.create({
+      sourceNodeId: source_node_id,
+      targetNodeId: target_node_id,
+      dependencyType: depType,
+      weight: weight ?? 1,
+      metadata: {
+        ...(metadata || {}),
+        cross_plan: true,
+        source_plan_id: source.planId,
+        target_plan_id: target.planId,
+      },
+      createdBy: userId,
+    });
+
+    res.status(201).json({
+      ...snakeDep(dep),
+      source_plan_id: source.planId,
+      target_plan_id: target.planId,
+      cross_plan: true,
+    });
+  } catch (error) {
+    const pgErrType = classifyPgError(error);
+    if (pgErrType === 'duplicate') return res.status(409).json({ error: 'This dependency edge already exists' });
+    if (pgErrType === 'self_ref') return res.status(400).json({ error: 'A node cannot depend on itself' });
+    next(error);
+  }
+};
+
+/**
+ * GET /dependencies/cross-plan?plan_ids=id1,id2,...
+ * List all cross-plan dependency edges between specified plans
+ */
+const listCrossPlanDependencies = async (req, res, next) => {
+  try {
+    const { plan_ids } = req.query;
+    const userId = req.user.id;
+
+    if (!plan_ids) {
+      return res.status(400).json({ error: 'plan_ids query parameter is required (comma-separated)' });
+    }
+
+    const planIds = plan_ids.split(',').map(id => id.trim()).filter(Boolean);
+    if (planIds.length < 2) {
+      return res.status(400).json({ error: 'At least 2 plan_ids required for cross-plan query' });
+    }
+
+    // Verify user has access to all plans
+    const accessChecks = await Promise.all(
+      planIds.map(pid => checkPlanAccess(pid, userId))
+    );
+    if (accessChecks.some(ok => !ok)) {
+      return res.status(403).json({ error: 'No access to one or more plans' });
+    }
+
+    const edges = await dal.dependenciesDal.listCrossPlan(planIds);
+    res.json({ edges, count: edges.length });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createDependency,
   deleteDependency,
@@ -284,4 +389,6 @@ module.exports = {
   getDownstream,
   getImpact,
   getCriticalPath,
+  createCrossPlanDependency,
+  listCrossPlanDependencies,
 };

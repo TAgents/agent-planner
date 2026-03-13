@@ -1,4 +1,4 @@
-import { eq, and, isNull, isNotNull, inArray, sql } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 import { db } from '../connection.mjs';
 import { nodeDependencies } from '../schema/dependencies.mjs';
 import { planNodes } from '../schema/plans.mjs';
@@ -335,6 +335,34 @@ export const dependenciesDal = {
     return result[0];
   },
 
+  // ─── Cross-plan dependencies ─────────────────────────────────────
+
+  /**
+   * List all dependency edges that cross plan boundaries between the given plans.
+   * An edge is "cross-plan" when source and target nodes belong to different plans.
+   * @param {string[]} planIds - Plan IDs to include
+   */
+  async listCrossPlan(planIds) {
+    if (!planIds || planIds.length < 2) return [];
+    const planIdsArr = pgArray(planIds);
+    const result = await db.execute(sql`
+      SELECT
+        nd.id, nd.source_node_id, nd.target_node_id,
+        nd.dependency_type, nd.weight, nd.metadata,
+        nd.created_by, nd.created_at, nd.updated_at,
+        src.plan_id AS source_plan_id, src.title AS source_title, src.status AS source_status,
+        tgt.plan_id AS target_plan_id, tgt.title AS target_title, tgt.status AS target_status
+      FROM node_dependencies nd
+      JOIN plan_nodes src ON src.id = nd.source_node_id
+      JOIN plan_nodes tgt ON tgt.id = nd.target_node_id
+      WHERE src.plan_id = ANY(${planIdsArr})
+        AND tgt.plan_id = ANY(${planIdsArr})
+        AND src.plan_id != tgt.plan_id
+      ORDER BY nd.created_at DESC
+    `);
+    return result;
+  },
+
   // ─── Goal-targeted dependencies (achieves edges) ────────────────
 
   /**
@@ -348,7 +376,12 @@ export const dependenciesDal = {
     })
       .from(nodeDependencies)
       .innerJoin(planNodes, eq(nodeDependencies.sourceNodeId, planNodes.id))
-      .where(eq(nodeDependencies.targetGoalId, goalId));
+      .where(
+        and(
+          eq(nodeDependencies.targetGoalId, goalId),
+          eq(nodeDependencies.dependencyType, 'achieves'),
+        )
+      );
   },
 
   /**
@@ -418,6 +451,7 @@ export const dependenciesDal = {
       FROM goal_path gp
       JOIN plan_nodes pn ON pn.id = gp.node_id
       ORDER BY gp.node_id, gp.depth ASC
+      LIMIT 500
     `);
 
     // Compute completion stats
@@ -439,30 +473,4 @@ export const dependenciesDal = {
     };
   },
 
-  /**
-   * Calculate goal progress from its dependency graph.
-   * Completion = percentage of achieves-path tasks completed,
-   * with critical-path tasks weighted higher.
-   * @param {string} goalId
-   */
-  async getGoalProgress(goalId) {
-    const { nodes, stats } = await this.getGoalPath(goalId);
-
-    if (nodes.length === 0) {
-      return { progress: 0, stats, critical_path_progress: 0 };
-    }
-
-    // Identify direct achievers (depth=1) for weighted scoring
-    const directAchievers = nodes.filter(n => n.depth === 1);
-    const directCompleted = directAchievers.filter(n => n.status === 'completed').length;
-    const directProgress = directAchievers.length > 0
-      ? Math.round((directCompleted / directAchievers.length) * 100)
-      : 0;
-
-    return {
-      progress: stats.completion_percentage,
-      direct_progress: directProgress,
-      stats,
-    };
-  },
 };

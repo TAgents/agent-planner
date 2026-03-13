@@ -18,6 +18,30 @@ const VALID_TYPES = ['outcome', 'constraint', 'metric', 'principle'];
 const VALID_STATUSES = ['active', 'achieved', 'paused', 'abandoned'];
 const VALID_LINK_TYPES = ['plan', 'task', 'agent'];
 
+// Max concurrent Graphiti queries to avoid overwhelming the sidecar
+const KNOWLEDGE_QUERY_CONCURRENCY = 10;
+
+/**
+ * Fetch goal and verify ownership. Returns goal or sends error response.
+ */
+async function requireGoalAccess(req, res) {
+  const goal = await goalsDal.findById(req.params.id);
+  if (!goal) { res.status(404).json({ error: 'Goal not found' }); return null; }
+  if (goal.ownerId !== req.user.id) { res.status(403).json({ error: 'Access denied' }); return null; }
+  return goal;
+}
+
+/**
+ * Classify Postgres constraint violations into user-friendly responses.
+ */
+function classifyPgError(err) {
+  const pgError = err.cause || err;
+  const msg = pgError.message || err.message || '';
+  if (pgError.code === '23505' || msg.includes('unique') || msg.includes('duplicate')) return 'duplicate';
+  if (pgError.code === '23514' || msg.includes('node_deps_no_self_ref')) return 'self_ref';
+  return null;
+}
+
 // GET /api/goals/tree — must be before /:id
 router.get('/tree', authenticate, async (req, res) => {
   try {
@@ -74,13 +98,8 @@ router.post('/', authenticate, async (req, res) => {
 // GET /api/goals/:id
 router.get('/:id', authenticate, async (req, res) => {
   try {
-    const dal = goalsDal;
-    const goal = await dal.findById(req.params.id);
-    if (!goal) return res.status(404).json({ error: 'Goal not found' });
-    // Basic access check
-    if (goal.ownerId !== req.user.id) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
     res.json(goal);
   } catch (err) {
     await logger.error('Get goal error:', err);
@@ -91,10 +110,8 @@ router.get('/:id', authenticate, async (req, res) => {
 // PUT /api/goals/:id
 router.put('/:id', authenticate, async (req, res) => {
   try {
-    const dal = goalsDal;
-    const existing = await dal.findById(req.params.id);
-    if (!existing) return res.status(404).json({ error: 'Goal not found' });
-    if (existing.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+    const existing = await requireGoalAccess(req, res);
+    if (!existing) return;
 
     const { title, description, type, status, successCriteria, priority, parentGoalId } = req.body;
     const updates = {};
@@ -112,7 +129,7 @@ router.put('/:id', authenticate, async (req, res) => {
     if (priority !== undefined) updates.priority = priority;
     if (parentGoalId !== undefined) updates.parentGoalId = parentGoalId;
 
-    const goal = await dal.update(req.params.id, updates);
+    const goal = await goalsDal.update(req.params.id, updates);
     res.json(goal);
   } catch (err) {
     await logger.error('Update goal error:', err);
@@ -123,12 +140,10 @@ router.put('/:id', authenticate, async (req, res) => {
 // DELETE /api/goals/:id (soft delete)
 router.delete('/:id', authenticate, async (req, res) => {
   try {
-    const dal = goalsDal;
-    const existing = await dal.findById(req.params.id);
-    if (!existing) return res.status(404).json({ error: 'Goal not found' });
-    if (existing.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+    const existing = await requireGoalAccess(req, res);
+    if (!existing) return;
 
-    const goal = await dal.softDelete(req.params.id);
+    const goal = await goalsDal.softDelete(req.params.id);
     res.json({ success: true, goal });
   } catch (err) {
     await logger.error('Delete goal error:', err);
@@ -211,9 +226,8 @@ router.get('/:id/evaluations', authenticate, async (req, res) => {
 // GET /api/goals/:id/path — traverse backward from goal through achieves→blocks edges
 router.get('/:id/path', authenticate, async (req, res) => {
   try {
-    const goal = await goalsDal.findById(req.params.id);
-    if (!goal) return res.status(404).json({ error: 'Goal not found' });
-    if (goal.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
 
     const maxDepth = Number(req.query.max_depth) || 20;
     const result = await dependenciesDal.getGoalPath(req.params.id, maxDepth);
@@ -227,12 +241,22 @@ router.get('/:id/path', authenticate, async (req, res) => {
 // GET /api/goals/:id/progress — calculate goal progress from dependency graph
 router.get('/:id/progress', authenticate, async (req, res) => {
   try {
-    const goal = await goalsDal.findById(req.params.id);
-    if (!goal) return res.status(404).json({ error: 'Goal not found' });
-    if (goal.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
 
-    const result = await dependenciesDal.getGoalProgress(req.params.id);
-    res.json({ goal_id: req.params.id, ...result });
+    const { nodes, stats } = await dependenciesDal.getGoalPath(req.params.id);
+    const directAchievers = nodes.filter(n => n.depth === 1);
+    const directCompleted = directAchievers.filter(n => n.status === 'completed').length;
+    const directProgress = directAchievers.length > 0
+      ? Math.round((directCompleted / directAchievers.length) * 100)
+      : 0;
+
+    res.json({
+      goal_id: req.params.id,
+      progress: stats.completion_percentage,
+      direct_progress: directProgress,
+      stats,
+    });
   } catch (err) {
     await logger.error('Goal progress error:', err);
     res.status(500).json({ error: 'Failed to get goal progress' });
@@ -242,9 +266,8 @@ router.get('/:id/progress', authenticate, async (req, res) => {
 // GET /api/goals/:id/achievers — list tasks that achieve this goal
 router.get('/:id/achievers', authenticate, async (req, res) => {
   try {
-    const goal = await goalsDal.findById(req.params.id);
-    if (!goal) return res.status(404).json({ error: 'Goal not found' });
-    if (goal.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
 
     const rows = await dependenciesDal.listByGoal(req.params.id);
     const tasks = rows.map(r => ({
@@ -271,12 +294,12 @@ router.post('/:id/achievers', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'source_node_id is required' });
     }
 
-    const goal = await goalsDal.findById(req.params.id);
+    const [goal, node] = await Promise.all([
+      goalsDal.findById(req.params.id),
+      nodesDal.findById(source_node_id),
+    ]);
     if (!goal) return res.status(404).json({ error: 'Goal not found' });
     if (goal.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
-
-    // Verify the source node exists
-    const node = await nodesDal.findById(source_node_id);
     if (!node) return res.status(404).json({ error: 'Source node not found' });
 
     const dep = await dependenciesDal.create({
@@ -296,9 +319,8 @@ router.post('/:id/achievers', authenticate, async (req, res) => {
       weight: dep.weight,
     });
   } catch (err) {
-    const pgError = err.cause || err;
-    const msg = pgError.message || err.message || '';
-    if (pgError.code === '23505' || msg.includes('unique') || msg.includes('duplicate')) {
+    const pgErrType = classifyPgError(err);
+    if (pgErrType === 'duplicate') {
       return res.status(409).json({ error: 'This achieves edge already exists' });
     }
     await logger.error('Create achieves edge error:', err);
@@ -309,9 +331,8 @@ router.post('/:id/achievers', authenticate, async (req, res) => {
 // DELETE /api/goals/:id/achievers/:depId — remove an achieves edge
 router.delete('/:id/achievers/:depId', authenticate, async (req, res) => {
   try {
-    const goal = await goalsDal.findById(req.params.id);
-    if (!goal) return res.status(404).json({ error: 'Goal not found' });
-    if (goal.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
 
     const dep = await dependenciesDal.findById(req.params.depId);
     if (!dep || dep.targetGoalId !== req.params.id) {
@@ -329,9 +350,8 @@ router.delete('/:id/achievers/:depId', authenticate, async (req, res) => {
 // GET /api/goals/:id/knowledge-gaps — detect knowledge gaps across goal path tasks
 router.get('/:id/knowledge-gaps', authenticate, async (req, res) => {
   try {
-    const goal = await goalsDal.findById(req.params.id);
-    if (!goal) return res.status(404).json({ error: 'Goal not found' });
-    if (goal.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
 
     if (!graphitiBridge.isAvailable()) {
       return res.json({
@@ -354,46 +374,36 @@ router.get('/:id/knowledge-gaps', authenticate, async (req, res) => {
       });
     }
 
-    // Query Graphiti for each incomplete task to check knowledge coverage
+    // Query Graphiti for incomplete tasks — cap concurrency to avoid overwhelming sidecar
     const orgId = req.user.organizationId;
-    const incompleteTasks = nodes.filter(n => n.status !== 'completed');
+    const incompleteTasks = nodes.filter(n => n.status !== 'completed').slice(0, KNOWLEDGE_QUERY_CONCURRENCY);
 
-    const results = await Promise.all(
-      incompleteTasks.map(async (task) => {
-        const query = [task.title, task.description].filter(Boolean).join(' ');
-        try {
-          const facts = await graphitiBridge.queryForContext(task.plan_id, query, orgId, 3);
-          return {
-            node_id: task.node_id,
-            title: task.title,
-            status: task.status,
-            depth: task.depth,
-            fact_count: facts.length,
-            has_knowledge: facts.length > 0,
-            top_facts: facts.slice(0, 2).map(f => f.content),
-          };
-        } catch {
-          return {
-            node_id: task.node_id,
-            title: task.title,
-            status: task.status,
-            depth: task.depth,
-            fact_count: 0,
-            has_knowledge: false,
-            top_facts: [],
-          };
-        }
-      })
-    );
+    async function queryTaskKnowledge(task) {
+      const query = [task.title, task.description].filter(Boolean).join(' ');
+      try {
+        const facts = await graphitiBridge.queryForContext(task.plan_id, query, orgId, 3);
+        return {
+          node_id: task.node_id, title: task.title, status: task.status, depth: task.depth,
+          fact_count: facts.length, has_knowledge: facts.length > 0,
+          top_facts: facts.slice(0, 2).map(f => f.content),
+        };
+      } catch {
+        return {
+          node_id: task.node_id, title: task.title, status: task.status, depth: task.depth,
+          fact_count: 0, has_knowledge: false, top_facts: [],
+        };
+      }
+    }
 
+    const results = await Promise.all(incompleteTasks.map(queryTaskKnowledge));
     const gaps = results.filter(r => !r.has_knowledge);
     const covered = results.filter(r => r.has_knowledge).length;
 
-    // Also check goal-level knowledge (success criteria)
-    let goalKnowledge = [];
+    // Check goal-level knowledge (success criteria) — batch with tasks
+    let goalKnowledge;
     if (goal.successCriteria && Array.isArray(goal.successCriteria)) {
       goalKnowledge = await Promise.all(
-        goal.successCriteria.map(async (criterion) => {
+        goal.successCriteria.slice(0, 5).map(async (criterion) => {
           const query = typeof criterion === 'string' ? criterion : JSON.stringify(criterion);
           try {
             const facts = await graphitiBridge.queryForContext(null, query, orgId, 2);
@@ -414,7 +424,7 @@ router.get('/:id/knowledge-gaps', authenticate, async (req, res) => {
         covered,
         percentage: results.length > 0 ? Math.round((covered / results.length) * 100) : 100,
       },
-      success_criteria_coverage: goalKnowledge.length > 0 ? goalKnowledge : undefined,
+      success_criteria_coverage: goalKnowledge?.length > 0 ? goalKnowledge : undefined,
     });
   } catch (err) {
     await logger.error('Knowledge gaps error:', err);

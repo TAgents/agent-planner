@@ -57,4 +57,5 @@ export const nodeDependencies = pgTable('node_dependencies', {
   index('idx_node_deps_target_goal').on(table.targetGoalId),
   index('idx_node_deps_source_type').on(table.sourceNodeId, table.dependencyType),
   index('idx_node_deps_target_type').on(table.targetNodeId, table.dependencyType),
+  index('idx_node_deps_target_goal_type').on(table.targetGoalId, table.dependencyType),
 ]);
