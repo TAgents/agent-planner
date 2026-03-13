@@ -1,7 +1,8 @@
-import { eq, and, inArray, sql } from 'drizzle-orm';
+import { eq, and, isNull, isNotNull, inArray, sql } from 'drizzle-orm';
 import { db } from '../connection.mjs';
 import { nodeDependencies } from '../schema/dependencies.mjs';
 import { planNodes } from '../schema/plans.mjs';
+import { goals } from '../schema/goals.mjs';
 
 /**
  * Build a Postgres array literal for use in ANY() clauses.
@@ -332,5 +333,136 @@ export const dependenciesDal = {
         (SELECT COUNT(*) FROM node_dependencies WHERE target_node_id = ${nodeId}) AS upstream_count
     `);
     return result[0];
+  },
+
+  // ─── Goal-targeted dependencies (achieves edges) ────────────────
+
+  /**
+   * List all tasks that achieve a goal (upstream contributors).
+   * @param {string} goalId
+   */
+  async listByGoal(goalId) {
+    return db.select({
+      dependency: nodeDependencies,
+      node: planNodes,
+    })
+      .from(nodeDependencies)
+      .innerJoin(planNodes, eq(nodeDependencies.sourceNodeId, planNodes.id))
+      .where(eq(nodeDependencies.targetGoalId, goalId));
+  },
+
+  /**
+   * List all goals that a node contributes to (achieves edges from this node).
+   * @param {string} nodeId
+   */
+  async listGoalsByNode(nodeId) {
+    return db.select({
+      dependency: nodeDependencies,
+      goal: goals,
+    })
+      .from(nodeDependencies)
+      .innerJoin(goals, eq(nodeDependencies.targetGoalId, goals.id))
+      .where(
+        and(
+          eq(nodeDependencies.sourceNodeId, nodeId),
+          eq(nodeDependencies.dependencyType, 'achieves'),
+        )
+      );
+  },
+
+  /**
+   * Traverse backward from a goal through all 'achieves' edges to find
+   * contributing tasks, then recursively through their 'blocks' dependencies.
+   * Returns all tasks on the path with statuses, blockers, and completion stats.
+   * @param {string} goalId
+   * @param {number} maxDepth
+   */
+  async getGoalPath(goalId, maxDepth = 20) {
+    const result = await db.execute(sql`
+      WITH RECURSIVE goal_path AS (
+        -- Layer 1: tasks directly achieving the goal
+        SELECT
+          nd.source_node_id AS node_id,
+          nd.dependency_type,
+          nd.weight,
+          1 AS depth,
+          ARRAY[nd.source_node_id] AS path
+        FROM node_dependencies nd
+        WHERE nd.target_goal_id = ${goalId}
+          AND nd.dependency_type = 'achieves'
+        UNION
+        -- Layer 2+: upstream blockers of those tasks
+        SELECT
+          nd.source_node_id,
+          nd.dependency_type,
+          nd.weight,
+          gp.depth + 1,
+          gp.path || nd.source_node_id
+        FROM node_dependencies nd
+        JOIN goal_path gp ON nd.target_node_id = gp.node_id
+        WHERE gp.depth < ${maxDepth}
+          AND nd.dependency_type IN ('blocks', 'requires')
+          AND nd.target_node_id IS NOT NULL
+          AND NOT nd.source_node_id = ANY(gp.path)
+      )
+      SELECT DISTINCT ON (gp.node_id)
+        gp.node_id,
+        gp.dependency_type,
+        gp.weight,
+        gp.depth,
+        pn.title,
+        pn.status,
+        pn.node_type,
+        pn.task_mode,
+        pn.plan_id
+      FROM goal_path gp
+      JOIN plan_nodes pn ON pn.id = gp.node_id
+      ORDER BY gp.node_id, gp.depth ASC
+    `);
+
+    // Compute completion stats
+    const total = result.length;
+    const completed = result.filter(n => n.status === 'completed').length;
+    const blocked = result.filter(n => n.status === 'blocked').length;
+    const inProgress = result.filter(n => n.status === 'in_progress').length;
+
+    return {
+      nodes: result,
+      stats: {
+        total,
+        completed,
+        blocked,
+        in_progress: inProgress,
+        not_started: total - completed - blocked - inProgress,
+        completion_percentage: total > 0 ? Math.round((completed / total) * 100) : 0,
+      },
+    };
+  },
+
+  /**
+   * Calculate goal progress from its dependency graph.
+   * Completion = percentage of achieves-path tasks completed,
+   * with critical-path tasks weighted higher.
+   * @param {string} goalId
+   */
+  async getGoalProgress(goalId) {
+    const { nodes, stats } = await this.getGoalPath(goalId);
+
+    if (nodes.length === 0) {
+      return { progress: 0, stats, critical_path_progress: 0 };
+    }
+
+    // Identify direct achievers (depth=1) for weighted scoring
+    const directAchievers = nodes.filter(n => n.depth === 1);
+    const directCompleted = directAchievers.filter(n => n.status === 'completed').length;
+    const directProgress = directAchievers.length > 0
+      ? Math.round((directCompleted / directAchievers.length) * 100)
+      : 0;
+
+    return {
+      progress: stats.completion_percentage,
+      direct_progress: directProgress,
+      stats,
+    };
   },
 };

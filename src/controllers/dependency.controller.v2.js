@@ -15,6 +15,7 @@ const snakeDep = (d) => ({
   id: d.id,
   source_node_id: d.sourceNodeId,
   target_node_id: d.targetNodeId,
+  target_goal_id: d.targetGoalId || null,
   dependency_type: d.dependencyType,
   weight: d.weight,
   metadata: d.metadata,

@@ -10,6 +10,9 @@ const logger = require('../../utils/logger');
 
 // DAL (via CJS bridge) — access methods directly via proxy
 const goalsDal = require('../../db/dal.cjs').goalsDal;
+const dependenciesDal = require('../../db/dal.cjs').dependenciesDal;
+const nodesDal = require('../../db/dal.cjs').nodesDal;
+const graphitiBridge = require('../../services/graphitiBridge');
 
 const VALID_TYPES = ['outcome', 'constraint', 'metric', 'principle'];
 const VALID_STATUSES = ['active', 'achieved', 'paused', 'abandoned'];
@@ -200,6 +203,222 @@ router.get('/:id/evaluations', authenticate, async (req, res) => {
   } catch (err) {
     await logger.error('Get evaluations error:', err);
     res.status(500).json({ error: 'Failed to get evaluations' });
+  }
+});
+
+// ─── Goal dependency traversal ────────────────────────────────
+
+// GET /api/goals/:id/path — traverse backward from goal through achieves→blocks edges
+router.get('/:id/path', authenticate, async (req, res) => {
+  try {
+    const goal = await goalsDal.findById(req.params.id);
+    if (!goal) return res.status(404).json({ error: 'Goal not found' });
+    if (goal.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+
+    const maxDepth = Number(req.query.max_depth) || 20;
+    const result = await dependenciesDal.getGoalPath(req.params.id, maxDepth);
+    res.json(result);
+  } catch (err) {
+    await logger.error('Goal path error:', err);
+    res.status(500).json({ error: 'Failed to get goal path' });
+  }
+});
+
+// GET /api/goals/:id/progress — calculate goal progress from dependency graph
+router.get('/:id/progress', authenticate, async (req, res) => {
+  try {
+    const goal = await goalsDal.findById(req.params.id);
+    if (!goal) return res.status(404).json({ error: 'Goal not found' });
+    if (goal.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+
+    const result = await dependenciesDal.getGoalProgress(req.params.id);
+    res.json({ goal_id: req.params.id, ...result });
+  } catch (err) {
+    await logger.error('Goal progress error:', err);
+    res.status(500).json({ error: 'Failed to get goal progress' });
+  }
+});
+
+// GET /api/goals/:id/achievers — list tasks that achieve this goal
+router.get('/:id/achievers', authenticate, async (req, res) => {
+  try {
+    const goal = await goalsDal.findById(req.params.id);
+    if (!goal) return res.status(404).json({ error: 'Goal not found' });
+    if (goal.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+
+    const rows = await dependenciesDal.listByGoal(req.params.id);
+    const tasks = rows.map(r => ({
+      dependency_id: r.dependency.id,
+      node_id: r.node.id,
+      title: r.node.title,
+      status: r.node.status,
+      node_type: r.node.nodeType,
+      dependency_type: r.dependency.dependencyType,
+      weight: r.dependency.weight,
+    }));
+    res.json({ tasks, count: tasks.length });
+  } catch (err) {
+    await logger.error('Goal achievers error:', err);
+    res.status(500).json({ error: 'Failed to list goal achievers' });
+  }
+});
+
+// POST /api/goals/:id/achievers — create an achieves edge from a node to this goal
+router.post('/:id/achievers', authenticate, async (req, res) => {
+  try {
+    const { source_node_id, weight, metadata } = req.body;
+    if (!source_node_id) {
+      return res.status(400).json({ error: 'source_node_id is required' });
+    }
+
+    const goal = await goalsDal.findById(req.params.id);
+    if (!goal) return res.status(404).json({ error: 'Goal not found' });
+    if (goal.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+
+    // Verify the source node exists
+    const node = await nodesDal.findById(source_node_id);
+    if (!node) return res.status(404).json({ error: 'Source node not found' });
+
+    const dep = await dependenciesDal.create({
+      sourceNodeId: source_node_id,
+      targetGoalId: req.params.id,
+      dependencyType: 'achieves',
+      weight: weight ?? 1,
+      metadata: metadata || {},
+      createdBy: req.user.id,
+    });
+
+    res.status(201).json({
+      id: dep.id,
+      source_node_id: dep.sourceNodeId,
+      target_goal_id: dep.targetGoalId,
+      dependency_type: dep.dependencyType,
+      weight: dep.weight,
+    });
+  } catch (err) {
+    const pgError = err.cause || err;
+    const msg = pgError.message || err.message || '';
+    if (pgError.code === '23505' || msg.includes('unique') || msg.includes('duplicate')) {
+      return res.status(409).json({ error: 'This achieves edge already exists' });
+    }
+    await logger.error('Create achieves edge error:', err);
+    res.status(500).json({ error: 'Failed to create achieves edge' });
+  }
+});
+
+// DELETE /api/goals/:id/achievers/:depId — remove an achieves edge
+router.delete('/:id/achievers/:depId', authenticate, async (req, res) => {
+  try {
+    const goal = await goalsDal.findById(req.params.id);
+    if (!goal) return res.status(404).json({ error: 'Goal not found' });
+    if (goal.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+
+    const dep = await dependenciesDal.findById(req.params.depId);
+    if (!dep || dep.targetGoalId !== req.params.id) {
+      return res.status(404).json({ error: 'Achieves edge not found for this goal' });
+    }
+
+    await dependenciesDal.delete(req.params.depId);
+    res.json({ deleted: true, id: req.params.depId });
+  } catch (err) {
+    await logger.error('Delete achieves edge error:', err);
+    res.status(500).json({ error: 'Failed to delete achieves edge' });
+  }
+});
+
+// GET /api/goals/:id/knowledge-gaps — detect knowledge gaps across goal path tasks
+router.get('/:id/knowledge-gaps', authenticate, async (req, res) => {
+  try {
+    const goal = await goalsDal.findById(req.params.id);
+    if (!goal) return res.status(404).json({ error: 'Goal not found' });
+    if (goal.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+
+    if (!graphitiBridge.isAvailable()) {
+      return res.json({
+        available: false,
+        message: 'Knowledge graph not available',
+        tasks: [],
+        gaps: [],
+        coverage: { total: 0, covered: 0, percentage: 0 },
+      });
+    }
+
+    // Get all tasks on the goal path
+    const { nodes } = await dependenciesDal.getGoalPath(req.params.id);
+    if (nodes.length === 0) {
+      return res.json({
+        available: true,
+        tasks: [],
+        gaps: [],
+        coverage: { total: 0, covered: 0, percentage: 100 },
+      });
+    }
+
+    // Query Graphiti for each incomplete task to check knowledge coverage
+    const orgId = req.user.organizationId;
+    const incompleteTasks = nodes.filter(n => n.status !== 'completed');
+
+    const results = await Promise.all(
+      incompleteTasks.map(async (task) => {
+        const query = [task.title, task.description].filter(Boolean).join(' ');
+        try {
+          const facts = await graphitiBridge.queryForContext(task.plan_id, query, orgId, 3);
+          return {
+            node_id: task.node_id,
+            title: task.title,
+            status: task.status,
+            depth: task.depth,
+            fact_count: facts.length,
+            has_knowledge: facts.length > 0,
+            top_facts: facts.slice(0, 2).map(f => f.content),
+          };
+        } catch {
+          return {
+            node_id: task.node_id,
+            title: task.title,
+            status: task.status,
+            depth: task.depth,
+            fact_count: 0,
+            has_knowledge: false,
+            top_facts: [],
+          };
+        }
+      })
+    );
+
+    const gaps = results.filter(r => !r.has_knowledge);
+    const covered = results.filter(r => r.has_knowledge).length;
+
+    // Also check goal-level knowledge (success criteria)
+    let goalKnowledge = [];
+    if (goal.successCriteria && Array.isArray(goal.successCriteria)) {
+      goalKnowledge = await Promise.all(
+        goal.successCriteria.map(async (criterion) => {
+          const query = typeof criterion === 'string' ? criterion : JSON.stringify(criterion);
+          try {
+            const facts = await graphitiBridge.queryForContext(null, query, orgId, 2);
+            return { criterion: query, has_knowledge: facts.length > 0, fact_count: facts.length };
+          } catch {
+            return { criterion: query, has_knowledge: false, fact_count: 0 };
+          }
+        })
+      );
+    }
+
+    res.json({
+      available: true,
+      tasks: results,
+      gaps,
+      coverage: {
+        total: results.length,
+        covered,
+        percentage: results.length > 0 ? Math.round((covered / results.length) * 100) : 100,
+      },
+      success_criteria_coverage: goalKnowledge.length > 0 ? goalKnowledge : undefined,
+    });
+  } catch (err) {
+    await logger.error('Knowledge gaps error:', err);
+    res.status(500).json({ error: 'Failed to detect knowledge gaps' });
   }
 });
 
