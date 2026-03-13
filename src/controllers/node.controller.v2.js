@@ -49,6 +49,7 @@ const snakeNode = (n) => ({
   assigned_agent_id: n.assignedAgentId,
   assigned_agent_at: n.assignedAgentAt,
   assigned_agent_by: n.assignedAgentBy,
+  task_mode: n.taskMode,
 });
 
 const snakeNodeMinimal = (n) => ({
@@ -58,6 +59,7 @@ const snakeNodeMinimal = (n) => ({
   title: n.title,
   status: n.status,
   order_index: n.orderIndex,
+  task_mode: n.taskMode,
 });
 
 /**
@@ -122,6 +124,7 @@ const createNode = async (req, res, next) => {
       parent_id: parentId, node_type: nodeType, title, description,
       status, order_index: orderIndex, due_date: dueDate,
       context, agent_instructions: agentInstructions, metadata,
+      task_mode: taskMode,
     } = req.body;
     const userId = req.user.id;
 
@@ -132,6 +135,12 @@ const createNode = async (req, res, next) => {
     if (!nodeType) return res.status(400).json({ error: 'Node type is required' });
     if (!title) return res.status(400).json({ error: 'Node title is required' });
     if (nodeType === 'root') return res.status(400).json({ error: 'Cannot create additional root nodes' });
+
+    // Validate task_mode
+    const validTaskModes = ['research', 'plan', 'implement', 'free'];
+    if (taskMode && !validTaskModes.includes(taskMode)) {
+      return res.status(400).json({ error: `Invalid task_mode. Must be one of: ${validTaskModes.join(', ')}` });
+    }
 
     // Determine parent
     let parentIdToUse = parentId;
@@ -167,6 +176,7 @@ const createNode = async (req, res, next) => {
         context: context || description || '',
         agentInstructions: agentInstructions || null,
         metadata: metadata || {},
+        taskMode: taskMode || 'free',
       });
     } catch (dbError) {
       // Handle unique constraint violation — return existing node instead of duplicating
@@ -210,6 +220,7 @@ const updateNode = async (req, res, next) => {
       node_type: nodeType, title, description, status,
       order_index: orderIndex, due_date: dueDate,
       context, agent_instructions: agentInstructions, metadata,
+      task_mode: taskMode,
     } = req.body;
     const userId = req.user.id;
 
@@ -228,6 +239,12 @@ const updateNode = async (req, res, next) => {
       return res.status(400).json({ error: 'Cannot change root node type' });
     }
 
+    // Validate task_mode
+    const validTaskModes = ['research', 'plan', 'implement', 'free'];
+    if (taskMode !== undefined && !validTaskModes.includes(taskMode)) {
+      return res.status(400).json({ error: `Invalid task_mode. Must be one of: ${validTaskModes.join(', ')}` });
+    }
+
     const updates = {};
     if (nodeType !== undefined) updates.nodeType = nodeType;
     if (title !== undefined) updates.title = title;
@@ -238,6 +255,7 @@ const updateNode = async (req, res, next) => {
     if (context !== undefined) updates.context = context;
     if (agentInstructions !== undefined) updates.agentInstructions = agentInstructions;
     if (metadata !== undefined) updates.metadata = metadata;
+    if (taskMode !== undefined) updates.taskMode = taskMode;
 
     const updated = await dal.nodesDal.update(nodeId, updates);
     const result = snakeNode(updated);
@@ -401,7 +419,7 @@ const updateNodeStatus = async (req, res, next) => {
 
     if (!status) return res.status(400).json({ error: 'Status is required' });
 
-    const validStatuses = ['not_started', 'in_progress', 'completed', 'blocked'];
+    const validStatuses = ['not_started', 'in_progress', 'completed', 'blocked', 'plan_ready'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: `Invalid status. Valid: ${validStatuses.join(', ')}` });
     }
@@ -495,7 +513,7 @@ const moveNode = async (req, res, next) => {
 const addLogEntry = async (req, res, next) => {
   try {
     const { id: planId, nodeId } = req.params;
-    const { content, log_type, actor_type } = req.body;
+    const { content, log_type, actor_type, tags } = req.body;
     const userId = req.user.id;
 
     if (!(await checkPlanAccess(planId, userId))) {
@@ -509,7 +527,7 @@ const addLogEntry = async (req, res, next) => {
 
     if (!content) return res.status(400).json({ error: 'Log content is required' });
 
-    const validLogTypes = ['progress', 'reasoning', 'challenge', 'decision'];
+    const validLogTypes = ['progress', 'reasoning', 'challenge', 'decision', 'comment'];
     const logType = log_type || 'progress';
     if (!validLogTypes.includes(logType)) {
       return res.status(400).json({ error: `Invalid log type. Valid: ${validLogTypes.join(', ')}` });
@@ -520,12 +538,13 @@ const addLogEntry = async (req, res, next) => {
     const log = await dal.logsDal.create({
       planNodeId: nodeId, userId, content,
       logType, metadata,
+      ...(tags && { tags }),
     });
 
     const result = {
       id: log.id, content: log.content, log_type: log.logType,
       created_at: log.createdAt, plan_node_id: log.planNodeId,
-      user_id: log.userId, metadata: log.metadata,
+      user_id: log.userId, metadata: log.metadata, tags: log.tags,
     };
 
     const userName = req.user.name || req.user.email;
@@ -707,9 +726,93 @@ const getSuggestedAgents = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /plans/:id/nodes/rpi-chain
+ * Create a Research→Plan→Implement chain with dependency edges
+ */
+const createRpiChain = async (req, res, next) => {
+  try {
+    const { id: planId } = req.params;
+    const { title, description, parent_id: parentId } = req.body;
+    const userId = req.user.id;
+
+    if (!(await checkPlanAccess(planId, userId, ['owner', 'admin', 'editor']))) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+    if (!title) return res.status(400).json({ error: 'Title is required' });
+
+    // Determine parent
+    let parentIdToUse = parentId;
+    if (!parentIdToUse) {
+      const root = await dal.nodesDal.getRoot(planId);
+      if (!root) return res.status(500).json({ error: 'Plan structure is invalid' });
+      parentIdToUse = root.id;
+    }
+
+    const siblings = await dal.nodesDal.getChildren(parentIdToUse);
+    const baseOrder = siblings.length > 0 ? Math.max(...siblings.map(s => s.orderIndex)) + 1 : 0;
+
+    // Create three tasks
+    const research = await dal.nodesDal.create({
+      planId, parentId: parentIdToUse, nodeType: 'task',
+      title: `Research: ${title}`, description: description || '',
+      status: 'not_started', orderIndex: baseOrder,
+      context: `Research phase for: ${title}`, taskMode: 'research', metadata: {},
+    });
+    const plan = await dal.nodesDal.create({
+      planId, parentId: parentIdToUse, nodeType: 'task',
+      title: `Plan: ${title}`, description: '',
+      status: 'not_started', orderIndex: baseOrder + 1,
+      context: `Planning phase for: ${title}`, taskMode: 'plan', metadata: {},
+    });
+    const implement = await dal.nodesDal.create({
+      planId, parentId: parentIdToUse, nodeType: 'task',
+      title: `Implement: ${title}`, description: '',
+      status: 'not_started', orderIndex: baseOrder + 2,
+      context: `Implementation phase for: ${title}`, taskMode: 'implement', metadata: {},
+    });
+
+    // Create dependency edges: research blocks plan, plan blocks implement
+    const edge1 = await dal.dependenciesDal.create({
+      sourceNodeId: research.id, targetNodeId: plan.id,
+      dependencyType: 'blocks', weight: 1, createdBy: userId, metadata: {},
+    });
+    const edge2 = await dal.dependenciesDal.create({
+      sourceNodeId: plan.id, targetNodeId: implement.id,
+      dependencyType: 'blocks', weight: 1, createdBy: userId, metadata: {},
+    });
+
+    // Log creation
+    await dal.logsDal.create({
+      planNodeId: research.id, userId,
+      content: `Created RPI chain "${title}"`, logType: 'progress',
+    });
+
+    // Broadcast
+    const userName = req.user.name || req.user.email;
+    const message = createNodeCreatedMessage(snakeNode(research), userId, userName);
+    await broadcastPlanUpdate(planId, message);
+
+    res.status(201).json({
+      chain: {
+        research: snakeNode(research),
+        plan: snakeNode(plan),
+        implement: snakeNode(implement),
+      },
+      dependencies: [
+        { id: edge1.id, source: research.id, target: plan.id, type: 'blocks' },
+        { id: edge2.id, source: plan.id, target: implement.id, type: 'blocks' },
+      ],
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getNodes, getNode, createNode, updateNode, deleteNode,
   addComment, getComments, getNodeContext, getNodeAncestry,
   updateNodeStatus, moveNode, addLogEntry, getNodeLogs,
   requestAgent, clearAgentRequest, assignAgent, unassignAgent, getSuggestedAgents,
+  createRpiChain,
 };

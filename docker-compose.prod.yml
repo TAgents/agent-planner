@@ -9,6 +9,7 @@ networks:
 
 volumes:
   pgdata:
+  falkordb-data:
   certbot-conf:
   certbot-www:
   backup-data:
@@ -53,6 +54,7 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       FRONTEND_URL: https://${DOMAIN}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GRAPHITI_INTERNAL_URL: http://graphiti:8000
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
       interval: 15s
@@ -76,6 +78,49 @@ services:
       resources:
         limits:
           memory: 128M
+
+  # ─── FalkorDB (Graph Database — internal only) ──────────────
+  falkordb:
+    image: falkordb/falkordb:latest
+    restart: always
+    networks: [internal]
+    volumes:
+      - falkordb-data:/data
+    environment:
+      BROWSER: "0"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ─── Graphiti MCP (Knowledge Graph — internal only) ────────
+  graphiti:
+    image: zepai/knowledge-graph-mcp:standalone
+    restart: always
+    networks: [internal]
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    environment:
+      FALKORDB_URI: redis://falkordb:6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GRAPHITI_GROUP_ID: default
+      SEMAPHORE_LIMIT: "10"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   # ─── MCP Server ───────────────────────────────────────────
   mcp:

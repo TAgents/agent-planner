@@ -122,4 +122,23 @@ const optionalAuthenticate = async (req, res, next) => {
   }
 };
 
-module.exports = { authenticate, optionalAuthenticate };
+/**
+ * Require system admin — must be used after authenticate
+ */
+const requireAdmin = async (req, res, next) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const user = await dal.usersDal.findById(req.user.id);
+    if (!user || !user.isAdmin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    next();
+  } catch (error) {
+    await logger.error('Admin check error', error);
+    return res.status(500).json({ error: 'Authorization check failed' });
+  }
+};
+
+module.exports = { authenticate, optionalAuthenticate, requireAdmin };

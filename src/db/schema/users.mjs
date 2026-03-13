@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, varchar, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, varchar, boolean } from 'drizzle-orm/pg-core';
 
 // ─── Users ───────────────────────────────────────────────────────
 export const users = pgTable('users', {
@@ -13,6 +13,9 @@ export const users = pgTable('users', {
   githubUsername: varchar('github_username', { length: 255 }),
   githubAvatarUrl: text('github_avatar_url'),
   githubProfileUrl: text('github_profile_url'),
+
+  // System admin
+  isAdmin: boolean('is_admin').notNull().default(false),
 
   // Agent metadata
   capabilityTags: text('capability_tags').array().default([]),

@@ -1,20 +1,22 @@
-# Planning System API
+# AgentPlanner API v2.0
 
-A collaborative planning system that facilitates interactions between humans and AI agents through a unified interface.
+A collaborative planning system for humans and AI agents. Features dependency graph with cycle detection, progressive context engine with token budgeting, RPI (Research/Plan/Implement) task chains, and reasoning services for automated scheduling and impact analysis.
 
 ## Overview
 
-The Planning System API stores plan data in a Supabase database and provides a REST API for accessing and manipulating plans. The system is designed to enable seamless collaboration between humans and LLM agents, without creating artificial distinctions between them in the architecture.
+AgentPlanner stores plans as hierarchical trees of nodes (phases, tasks, milestones) in PostgreSQL, connected by a dependency graph. AI agents access plans through the MCP protocol or REST API, and receive exactly the right amount of context via the progressive context engine. The system is designed for seamless human-AI collaboration without architectural distinctions between them.
 
 ## Core Features
 
-- 🏗️ **Hierarchical plan structures** with phases, tasks, and milestones
-- 🤖 **Rich context for AI agent collaboration** with detailed descriptions and instructions
-- 👥 **Equal status for human and AI collaborators** in the system architecture
-- 📊 **Detailed progress tracking and logging** with activity feeds
-- 🔍 **Advanced search capabilities** across plans and nodes
-- 🔐 **Secure authentication** using Supabase Auth with API token support
-- 📚 **Knowledge stores** for capturing decisions and learnings
+- **Hierarchical plans** with phases, tasks, milestones, and flexible tree structure
+- **Dependency graph** with cycle detection, upstream/downstream traversal, impact analysis, and critical path
+- **Progressive context engine** with 4-layer depth and token budgeting for efficient agent context loading
+- **RPI chains** (Research/Plan/Implement) with automatic dependency wiring and research output compaction
+- **Reasoning services** for status propagation, bottleneck detection, topological scheduling, and decomposition alerts
+- **Real-time collaboration** via WebSocket with presence tracking and plan change broadcasts
+- **MCP integration** for AI agents via stdio or HTTP/SSE transport
+- **Knowledge stores** for capturing decisions, learnings, and constraints
+- **Secure authentication** with JWT and API tokens
 
 ## Getting Started
 
@@ -145,17 +147,32 @@ npm run docs:all         # Generate and validate documentation
 ```
 agent-planner/
 ├── src/
-│   ├── index.js           # Main application entry point
-│   ├── config/            # Configuration files
-│   │   └── swagger.js     # Swagger/OpenAPI configuration
-│   ├── controllers/       # Route controllers
-│   ├── routes/           # API route definitions with swagger annotations
-│   ├── middleware/       # Express middleware
-│   ├── schemas/          # Shared OpenAPI schema definitions
-│   └── db/              # Database initialization and migrations
-├── docs/                # Generated documentation
-├── scripts/             # Utility scripts
-└── tests/              # Test files
+│   ├── index.js              # Express app, middleware, route mounting, WebSocket init
+│   ├── config/
+│   │   └── swagger.js        # OpenAPI/Swagger configuration (v2.0)
+│   ├── controllers/          # Request handling (v2 current, v1 legacy)
+│   ├── routes/               # Express routers with Swagger JSDoc annotations
+│   │   ├── dependency.routes.js   # Dependency graph endpoints
+│   │   ├── reasoning.routes.js    # Bottleneck, RPI chains, scheduling
+│   │   ├── context.routes.js      # Progressive context + suggest + compact
+│   │   └── ...
+│   ├── services/             # Business logic services
+│   │   ├── contextEngine.js  # Progressive context assembly (4 layers)
+│   │   ├── compaction.js     # Research output compaction
+│   │   ├── reasoning.js      # Status propagation, bottlenecks, scheduling
+│   │   ├── messageBus.js     # PostgreSQL LISTEN/NOTIFY event bus
+│   │   └── ...
+│   ├── db/
+│   │   ├── schema/*.mjs      # Drizzle ORM table definitions
+│   │   ├── dal/*.mjs         # Data Access Layer modules (18 files)
+│   │   ├── dal.cjs           # CJS/ESM bridge proxy
+│   │   └── sql/*.sql         # Migration files
+│   ├── middleware/            # Auth, rate limiting, debug
+│   ├── adapters/              # Notification adapters (Slack, Webhook, Console)
+│   └── websocket/             # Real-time collaboration
+├── docs/                      # Documentation (API.md, ARCHITECTURE.md, etc.)
+├── scripts/                   # Migration runner, doc generation
+└── tests/                     # Jest + Supertest test suites
 ```
 
 ### Adding New Endpoints
@@ -190,21 +207,24 @@ npm run docs:all
 
 ## Database Schema
 
-The system uses PostgreSQL (via Supabase) with the following main tables:
+The system uses PostgreSQL 17 (with pgvector) via Drizzle ORM. Main tables:
+
 - `users` - User accounts
-- `plans` - Plan definitions
-- `plan_nodes` - Hierarchical plan structure
-- `plan_collaborators` - User access to plans
+- `plans` - Plan definitions (visibility: private/public/unlisted)
+- `plan_nodes` - Hierarchical plan structure (node_type, status, task_mode, agent_instructions)
+- `node_dependencies` - Dependency edges (blocks/requires/relates_to) with cycle detection
+- `plan_collaborators` - User access to plans with roles (owner/admin/editor/viewer)
+- `plan_node_logs` - Activity logs (progress/reasoning/challenge/decision/comment)
 - `plan_comments` - Comments on nodes
-- `plan_node_logs` - Activity tracking
-- `plan_node_labels` - Tags for nodes
-- `api_tokens` - API authentication tokens
+- `api_tokens` - API tokens (SHA-256 hashed)
 - `node_assignments` - User assignments to nodes
+- `decisions` - Decision requests and resolutions
+- `knowledge_entries` - Knowledge store with vector embeddings
+- `goals` - Goals and goal-plan links
+- `organizations` - Multi-tenant organizations
 - `user_presence` - Real-time presence tracking
 - `audit_logs` - Activity audit trail
-- `schema_migrations` - Migration tracking (managed automatically)
-
-Row Level Security (RLS) policies ensure users can only access their own data and plans they collaborate on.
+- `schema_migrations` - Migration tracking
 
 ### Database Migrations
 
@@ -249,27 +269,31 @@ All authentication emails are handled automatically by Supabase:
 
 ## Documentation
 
+### Architecture & Design
+
+- **[Architecture & Design](docs/ARCHITECTURE.md)** - Comprehensive guide to the API architecture, dependency graph, progressive context engine, RPI chains, and reasoning services
+
 ### Integration Guides
 
-- **[OpenClaw Integration](docs/OPENCLAW_INTEGRATION.md)** - Complete guide for AI agent integration
+- **[Agent Integration](docs/AGENT_INTEGRATION.md)** - How AI agents integrate with AgentPlanner (MCP, REST, Slack)
 - **[Slack Integration](docs/SLACK_INTEGRATION.md)** - Real-time notifications via Slack
-- **[API Reference](docs/API.md)** - REST API documentation
+- **[API Reference](docs/API.md)** - Complete REST API endpoint reference (v2.0)
 - **[Rate Limiting](docs/RATE_LIMITING.md)** - API rate limits and best practices
 
 ### For AI Agents
 
 AgentPlanner supports three integration methods:
 
-1. **REST API** - Direct HTTP calls (simplest)
-2. **MCP Tools** - Model Context Protocol for richer integration
+1. **MCP Tools** (recommended) - Model Context Protocol with 40+ tools for plans, dependencies, context, and analysis
+2. **REST API** - Direct HTTP calls for agents that don't support MCP
 3. **Slack** - Receive real-time notifications in Slack channels
 
 Key features for agents:
-- **Agent Request System** - Humans can request agent assistance on tasks (`POST /plans/{id}/nodes/{nodeId}/request-agent`)
-- **Decision Requests** - Agents can request human decisions when blocked (`POST /plans/{id}/decisions`)
-- **Slack Notifications** - Agent requests and decisions posted to configured Slack channels
-
-See [OpenClaw Integration Guide](docs/OPENCLAW_INTEGRATION.md) for complete setup instructions.
+- **Progressive Context** - `get_task_context` with depth 1-4 and token budgeting
+- **Dependency-aware Scheduling** - `suggest_next_tasks` finds ready tasks where all blockers are completed
+- **RPI Chains** - `create_rpi_chain` decomposes complex tasks into Research/Plan/Implement with automatic dependency wiring
+- **Impact Analysis** - `analyze_impact` shows what happens if a task is delayed, blocked, or removed
+- **Research Compaction** - Completed research outputs are auto-compacted for downstream context efficiency
 
 ## Related Projects
 

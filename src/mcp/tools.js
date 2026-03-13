@@ -137,61 +137,7 @@ const tools = [
     },
   },
 
-  {
-    name: 'agentplanner_log_knowledge',
-    description: 'Log a knowledge entry (decision, learning, insight, or context).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string', description: 'Brief title for the knowledge entry' },
-        content: { type: 'string', description: 'Full content/description' },
-        entryType: {
-          type: 'string',
-          enum: ['decision', 'learning', 'context', 'constraint', 'reference', 'note'],
-          description: 'Type of knowledge entry',
-        },
-        tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags' },
-        planId: { type: 'string', description: 'Optional related plan ID' },
-        goalId: { type: 'string', description: 'Optional related goal ID' },
-      },
-      required: ['title', 'content', 'entryType'],
-    },
-    handler: async ({ title, content, entryType, tags, planId, goalId }) => {
-      try {
-        // Generate embedding for semantic search
-        let embedding;
-        try {
-          const embeddings = require('../services/embeddings');
-          embedding = await embeddings.generateEmbedding(`${title}\n\n${content}`);
-        } catch {
-          // Embedding generation is optional — knowledge still gets stored
-        }
-
-        const entry = await dal.knowledgeDal.create({
-          title,
-          content,
-          entryType,
-          source: 'agent',
-          sourceRef: planId || goalId || undefined,
-          tags: tags || [],
-          embedding,
-          metadata: {
-            createdVia: 'mcp',
-            planId,
-            goalId,
-          },
-        });
-
-        return {
-          success: true,
-          message: `Knowledge entry '${title}' created`,
-          entryId: entry.id,
-        };
-      } catch (err) {
-        return { success: false, error: err.message };
-      }
-    },
-  },
+  // agentplanner_log_knowledge removed — use Graphiti knowledge graph via API proxy instead
 
   {
     name: 'agentplanner_get_plan_status',

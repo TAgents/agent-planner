@@ -36,6 +36,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GRAPHITI_INTERNAL_URL: ${GRAPHITI_INTERNAL_URL:-http://graphiti:8000}
     ports:
       - "${API_PORT:-3000}:3000"
     volumes:
@@ -56,5 +57,43 @@ services:
     environment:
       REACT_APP_API_URL: ${API_BASE_URL:-http://localhost:3000}
 
+  # ─── FalkorDB (Graph Database) ─────────────────────────────
+  falkordb:
+    image: falkordb/falkordb:latest
+    restart: unless-stopped
+    profiles: [core]
+    environment:
+      BROWSER: "0"
+    ports:
+      - "${FALKORDB_PORT:-6380}:6379"
+    volumes:
+      - falkordb-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ─── Graphiti MCP (Knowledge Graph) ────────────────────────
+  graphiti:
+    image: zepai/knowledge-graph-mcp:standalone
+    restart: unless-stopped
+    profiles: [core]
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    environment:
+      FALKORDB_URI: redis://falkordb:6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GRAPHITI_GROUP_ID: default
+      SEMAPHORE_LIMIT: "10"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
 volumes:
   pgdata:
+  falkordb-data:

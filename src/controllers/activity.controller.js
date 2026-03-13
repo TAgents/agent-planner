@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const { plansDal, nodesDal, logsDal, commentsDal, decisionsDal, knowledgeDal } = require('../db/dal.cjs');
+const { plansDal, nodesDal, logsDal, commentsDal, decisionsDal } = require('../db/dal.cjs');
 
 /**
  * Get all activity logs for a plan

@@ -33,7 +33,8 @@ const createNode = z.object({
   due_date: dateString.describe('Due date in ISO 8601 format'),
   context: optionalString(50000).describe('Additional context for the node'),
   agent_instructions: optionalString(50000).describe('Instructions for AI agents'),
-  metadata: metadata
+  metadata: metadata,
+  task_mode: z.enum(['research', 'plan', 'implement', 'free']).optional().describe('RPI workflow mode')
 }).strict();
 
 /**
@@ -48,7 +49,8 @@ const updateNode = z.object({
   due_date: dateString,
   context: optionalString(50000),
   agent_instructions: optionalString(50000),
-  metadata: metadata
+  metadata: metadata,
+  task_mode: z.enum(['research', 'plan', 'implement', 'free']).optional().describe('RPI workflow mode')
 }).strict();
 
 /**
@@ -85,7 +87,8 @@ const actorType = z.enum(['human', 'agent'], {
 const addLog = z.object({
   content: nonEmptyString(50000).describe('Log content'),
   log_type: logType.optional().default('comment'),
-  actor_type: actorType.optional().describe('Whether this action was by a human or agent')
+  actor_type: actorType.optional().describe('Whether this action was by a human or agent'),
+  tags: z.array(z.string().max(50)).max(20).optional().describe('Tags for categorization')
 }).strict();
 
 /**

@@ -11,7 +11,6 @@ export { commentsDal } from './comments.dal.mjs';
 export { tokensDal } from './tokens.dal.mjs';
 export { goalsDal } from './goals.dal.mjs';
 export { decisionsDal } from './decisions.dal.mjs';
-export { knowledgeDal } from './knowledge.dal.mjs';
 export { agentsDal } from './agents.dal.mjs';
 export { auditDal } from './audit.dal.mjs';
 export { organizationsDal } from './organizations.dal.mjs';
@@ -19,3 +18,7 @@ export { searchDal } from './search.dal.mjs';
 export { heartbeatsDal } from './heartbeats.dal.mjs';
 export { invitesDal } from './invites.dal.mjs';
 export { slackDal, webhooksDal } from './integrations.dal.mjs';
+export { dependenciesDal } from './dependencies.dal.mjs';
+
+// Raw SQL client for admin queries
+export { sql as rawSql } from '../connection.mjs';

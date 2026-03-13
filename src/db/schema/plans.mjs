@@ -39,11 +39,14 @@ export const planNodes = pgTable('plan_nodes', {
   nodeType: text('node_type').notNull(),       // root | phase | task | milestone
   title: text('title').notNull(),
   description: text('description'),
-  status: text('status').notNull().default('not_started'), // not_started | in_progress | completed | blocked
+  status: text('status').notNull().default('not_started'), // not_started | in_progress | completed | blocked | plan_ready
   orderIndex: integer('order_index').notNull().default(0),
   dueDate: timestamp('due_date', { withTimezone: true }),
   context: text('context'),
   agentInstructions: text('agent_instructions'),
+  // RPI workflow: research | plan | implement | free (default)
+  taskMode: text('task_mode').default('free'),
+
   metadata: jsonb('metadata').default({}),
 
   // Agent request fields

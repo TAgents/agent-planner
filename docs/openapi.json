@@ -2,29 +2,13 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Agent Planner API",
-    "version": "1.0.0",
-    "description": "A collaborative planning system for humans and AI agents",
-    "contact": {
-      "name": "API Support",
-      "email": "support@example.com"
-    },
-    "license": {
-      "name": "MIT",
-      "url": "https://opensource.org/licenses/MIT"
-    }
+    "version": "2.0.0",
+    "description": "Collaborative planning API for humans and AI agents"
   },
   "servers": [
     {
       "url": "http://localhost:3000",
-      "description": "Current environment"
-    },
-    {
-      "url": "http://localhost:3000",
       "description": "Local development"
-    },
-    {
-      "url": "https://api.agent-planner.com",
-      "description": "Production"
     }
   ],
   "components": {
@@ -32,81 +16,12 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "bearerFormat": "JWT",
-        "description": "Supabase JWT token"
+        "bearerFormat": "JWT"
       },
-      "apiKey": {
+      "apiKeyAuth": {
         "type": "apiKey",
         "in": "header",
-        "name": "Authorization",
-        "description": "API Key authentication (format: ApiKey <token>)"
-      }
-    },
-    "responses": {
-      "Unauthorized": {
-        "description": "Authentication required",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            },
-            "example": {
-              "error": "Authentication required"
-            }
-          }
-        }
-      },
-      "Forbidden": {
-        "description": "Access denied",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            },
-            "example": {
-              "error": "You do not have permission to access this resource"
-            }
-          }
-        }
-      },
-      "NotFound": {
-        "description": "Resource not found",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            },
-            "example": {
-              "error": "Resource not found"
-            }
-          }
-        }
-      },
-      "BadRequest": {
-        "description": "Invalid request",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            },
-            "example": {
-              "error": "Invalid request parameters"
-            }
-          }
-        }
-      },
-      "InternalError": {
-        "description": "Internal server error",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            },
-            "example": {
-              "error": "An internal server error occurred"
-            }
-          }
-        }
+        "name": "Authorization"
       }
     },
     "schemas": {
@@ -175,36 +90,230 @@
           }
         }
       },
-      "Artifact": {
+      "DecisionOption": {
+        "type": "object",
+        "properties": {
+          "option": {
+            "type": "string",
+            "description": "The option being proposed"
+          },
+          "pros": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Advantages of this option"
+          },
+          "cons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Disadvantages of this option"
+          },
+          "recommendation": {
+            "type": "boolean",
+            "description": "Whether this is the recommended option"
+          }
+        }
+      },
+      "DecisionRequest": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
             "format": "uuid"
           },
-          "plan_node_id": {
+          "plan_id": {
             "type": "string",
             "format": "uuid"
           },
-          "name": {
+          "node_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "title": {
             "type": "string"
           },
-          "content_type": {
+          "context": {
             "type": "string"
           },
-          "url": {
-            "type": "string"
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionOption"
+            }
+          },
+          "urgency": {
+            "type": "string",
+            "enum": [
+              "blocking",
+              "can_continue",
+              "informational"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "decided",
+              "expired",
+              "cancelled"
+            ]
+          },
+          "decision": {
+            "type": "string",
+            "nullable": true
+          },
+          "rationale": {
+            "type": "string",
+            "nullable": true
           },
           "created_at": {
             "type": "string",
             "format": "date-time"
           },
-          "created_by": {
+          "decided_at": {
             "type": "string",
-            "format": "uuid"
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "GitHubRepo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "GitHub repository ID"
           },
-          "metadata": {
-            "type": "object"
+          "name": {
+            "type": "string",
+            "description": "Repository name"
+          },
+          "full_name": {
+            "type": "string",
+            "description": "Full repository name (owner/name)"
+          },
+          "owner": {
+            "type": "string",
+            "description": "Repository owner login"
+          },
+          "description": {
+            "type": "string",
+            "description": "Repository description"
+          },
+          "html_url": {
+            "type": "string",
+            "description": "GitHub URL"
+          },
+          "private": {
+            "type": "boolean",
+            "description": "Whether the repo is private"
+          },
+          "language": {
+            "type": "string",
+            "description": "Primary programming language"
+          },
+          "stargazers_count": {
+            "type": "integer",
+            "description": "Number of stars"
+          },
+          "forks_count": {
+            "type": "integer",
+            "description": "Number of forks"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last updated timestamp"
+          },
+          "default_branch": {
+            "type": "string",
+            "description": "Default branch name"
+          }
+        }
+      },
+      "GitHubRepoContent": {
+        "type": "object",
+        "properties": {
+          "readme": {
+            "type": "string",
+            "nullable": true,
+            "description": "README content (markdown)"
+          },
+          "file_structure": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "file",
+                    "dir"
+                  ]
+                },
+                "path": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "languages": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Languages used in the repo with byte counts"
+          }
+        }
+      },
+      "GitHubIssue": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "number": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "html_url": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "GitHubConnectionStatus": {
+        "type": "object",
+        "properties": {
+          "connected": {
+            "type": "boolean",
+            "description": "Whether GitHub is connected"
+          },
+          "github_username": {
+            "type": "string",
+            "nullable": true
+          },
+          "github_avatar_url": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -246,8 +355,7 @@
               "in_progress",
               "completed",
               "blocked"
-            ],
-            "default": "not_started"
+            ]
           },
           "order_index": {
             "type": "integer"
@@ -272,10 +380,6 @@
             "type": "string",
             "nullable": true
           },
-          "acceptance_criteria": {
-            "type": "string",
-            "nullable": true
-          },
           "metadata": {
             "type": "object"
           },
@@ -285,27 +389,20 @@
               "$ref": "#/components/schemas/Node"
             }
           }
-        },
-        "required": [
-          "title",
-          "node_type"
-        ]
+        }
       },
       "Plan": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
-            "format": "uuid",
-            "example": "123e4567-e89b-12d3-a456-426614174000"
+            "format": "uuid"
           },
           "title": {
-            "type": "string",
-            "example": "Q1 Product Launch"
+            "type": "string"
           },
           "description": {
-            "type": "string",
-            "example": "Complete product launch plan for Q1"
+            "type": "string"
           },
           "status": {
             "type": "string",
@@ -314,280 +411,23 @@
               "active",
               "completed",
               "archived"
-            ],
-            "default": "draft"
+            ]
           },
           "created_at": {
             "type": "string",
             "format": "date-time"
           },
           "updated_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "metadata": {
-            "type": "object",
-            "additionalProperties": true
-          },
-          "owner_id": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "required": [
-          "title"
-        ]
-      },
-      "Comment": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "plan_node_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "user_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "content": {
-            "type": "string"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "comment_type": {
-            "type": "string",
-            "enum": [
-              "human",
-              "agent",
-              "system"
-            ]
-          }
-        }
-      },
-      "LogEntry": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "plan_node_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "user_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "content": {
-            "type": "string"
-          },
-          "log_type": {
-            "type": "string",
-            "enum": [
-              "progress",
-              "reasoning",
-              "challenge",
-              "decision"
-            ]
-          },
-          "created_at": {
             "type": "string",
             "format": "date-time"
           },
           "metadata": {
             "type": "object"
-          },
-          "tags": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "ApiToken": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "user_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string"
-          },
-          "permissions": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "read",
-                "write",
-                "admin"
-              ]
-            }
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "last_used": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "revoked": {
-            "type": "boolean",
-            "default": false
-          }
-        }
-      },
-      "User": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "email": {
-            "type": "string",
-            "format": "email"
-          },
-          "name": {
-            "type": "string"
-          },
-          "organization": {
-            "type": "string"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "Error": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string",
-            "description": "Error message"
-          },
-          "details": {
-            "type": "object",
-            "description": "Additional error details"
-          }
-        }
-      },
-      "PaginatedResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "type": "array",
-            "items": {
-              "type": "object"
-            }
-          },
-          "pagination": {
-            "type": "object",
-            "properties": {
-              "page": {
-                "type": "integer"
-              },
-              "limit": {
-                "type": "integer"
-              },
-              "total": {
-                "type": "integer"
-              },
-              "pages": {
-                "type": "integer"
-              }
-            }
           }
         }
       }
     }
   },
-  "tags": [
-    {
-      "name": "Authentication",
-      "description": "User authentication and session management"
-    },
-    {
-      "name": "Plans",
-      "description": "Plan management operations"
-    },
-    {
-      "name": "Nodes",
-      "description": "Plan node operations"
-    },
-    {
-      "name": "Artifacts",
-      "description": "Artifact management"
-    },
-    {
-      "name": "Activity",
-      "description": "Activity tracking and logs"
-    },
-    {
-      "name": "Search",
-      "description": "Search operations"
-    },
-    {
-      "name": "Tokens",
-      "description": "API token management"
-    },
-    {
-      "name": "Upload",
-      "description": "File upload operations"
-    },
-    {
-      "name": "Users",
-      "description": "User management"
-    },
-    {
-      "name": "Health",
-      "description": "System health and status"
-    },
-    {
-      "name": "Collaboration",
-      "description": "Real-time collaboration and presence endpoints"
-    },
-    {
-      "name": "Debug",
-      "description": "Debug endpoints (not for production use)"
-    },
-    {
-      "name": "API Tokens",
-      "description": "API token management endpoints (DEPRECATED)"
-    },
-    {
-      "name": "User",
-      "description": "User profile management"
-    },
-    {
-      "name": "System",
-      "description": "System and utility endpoints"
-    }
-  ],
   "paths": {
     "/activity/feed": {
       "get": {
@@ -735,6 +575,7 @@
     "/activity/plans/{id}/timeline": {
       "get": {
         "summary": "Get a chronological timeline of significant events for a plan",
+        "description": "Returns a unified timeline including:\n- Plan creation\n- Node/task creation\n- Status changes\n- Decision requests (with urgency and actor type)\n- Decision resolutions (with rationale)\n- Knowledge entries added\n\nEach event has a type: plan_created, node_created, log, decision_requested, decision_resolved, knowledge_added\n",
         "tags": [
           "Activity"
         ],
@@ -756,7 +597,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Plan timeline"
+            "description": "Plan timeline with all events sorted chronologically"
           },
           "401": {
             "description": "Authentication required"
@@ -909,463 +750,6 @@
           },
           "404": {
             "description": "Node not found"
-          }
-        }
-      }
-    },
-    "/plans/{id}/nodes/{nodeId}/artifacts": {
-      "post": {
-        "summary": "Add an artifact to a node",
-        "tags": [
-          "Artifacts"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The plan ID"
-          },
-          {
-            "in": "path",
-            "name": "nodeId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The node ID"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "name",
-                  "content_type",
-                  "url"
-                ],
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "description": "Name of the artifact"
-                  },
-                  "content_type": {
-                    "type": "string",
-                    "description": "MIME type or content type of the artifact"
-                  },
-                  "url": {
-                    "type": "string",
-                    "description": "URL or reference to the artifact content"
-                  },
-                  "metadata": {
-                    "type": "object",
-                    "description": "Additional metadata for the artifact"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Artifact added successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Artifact"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid input"
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "403": {
-            "description": "Access denied"
-          },
-          "404": {
-            "description": "Node not found"
-          }
-        }
-      },
-      "get": {
-        "summary": "List artifacts for a node",
-        "tags": [
-          "Artifacts"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The plan ID"
-          },
-          {
-            "in": "path",
-            "name": "nodeId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The node ID"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of artifacts for the node",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Artifact"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "403": {
-            "description": "Access denied"
-          },
-          "404": {
-            "description": "Node not found"
-          }
-        }
-      }
-    },
-    "/plans/{id}/nodes/{nodeId}/artifacts/{artifactId}": {
-      "get": {
-        "summary": "Get a specific artifact",
-        "tags": [
-          "Artifacts"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The plan ID"
-          },
-          {
-            "in": "path",
-            "name": "nodeId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The node ID"
-          },
-          {
-            "in": "path",
-            "name": "artifactId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The artifact ID"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Artifact details",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Artifact"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "403": {
-            "description": "Access denied"
-          },
-          "404": {
-            "description": "Artifact not found"
-          }
-        }
-      },
-      "put": {
-        "summary": "Update an artifact",
-        "tags": [
-          "Artifacts"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The plan ID"
-          },
-          {
-            "in": "path",
-            "name": "nodeId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The node ID"
-          },
-          {
-            "in": "path",
-            "name": "artifactId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The artifact ID"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "description": "Name of the artifact"
-                  },
-                  "content_type": {
-                    "type": "string",
-                    "description": "MIME type or content type of the artifact"
-                  },
-                  "url": {
-                    "type": "string",
-                    "description": "URL or reference to the artifact content"
-                  },
-                  "metadata": {
-                    "type": "object",
-                    "description": "Additional metadata for the artifact"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Artifact updated successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Artifact"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid input"
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "403": {
-            "description": "Access denied"
-          },
-          "404": {
-            "description": "Artifact not found"
-          }
-        }
-      },
-      "delete": {
-        "summary": "Delete an artifact",
-        "tags": [
-          "Artifacts"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The plan ID"
-          },
-          {
-            "in": "path",
-            "name": "nodeId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The node ID"
-          },
-          {
-            "in": "path",
-            "name": "artifactId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The artifact ID"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Artifact deleted successfully"
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "403": {
-            "description": "Access denied"
-          },
-          "404": {
-            "description": "Artifact not found"
-          }
-        }
-      }
-    },
-    "/plans/{id}/artifacts": {
-      "get": {
-        "summary": "List all artifacts across the plan",
-        "tags": [
-          "Artifacts"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The plan ID"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of all artifacts in the plan",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Artifact"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "403": {
-            "description": "Access denied"
-          },
-          "404": {
-            "description": "Plan not found"
-          }
-        }
-      }
-    },
-    "/api/artifacts/download": {
-      "get": {
-        "summary": "Download an artifact file",
-        "tags": [
-          "Artifacts"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "in": "query",
-            "name": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The file path to download"
-          },
-          {
-            "in": "query",
-            "name": "filename",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The filename to use for the download"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "File stream for download",
-            "content": {
-              "application/octet-stream": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid path or not a file"
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "404": {
-            "description": "File not found"
           }
         }
       }
@@ -1562,6 +946,62 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "summary": "Refresh access token using refresh token",
+        "tags": [
+          "Authentication"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "refresh_token"
+                ],
+                "properties": {
+                  "refresh_token": {
+                    "type": "string",
+                    "description": "The refresh token from login"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token refreshed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": {
+                      "type": "string"
+                    },
+                    "refresh_token": {
+                      "type": "string"
+                    },
+                    "expires_at": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refresh token is required"
+          },
+          "401": {
+            "description": "Invalid or expired refresh token"
           }
         }
       }
@@ -2373,23 +1813,1458 @@
         }
       }
     },
-    "/debug/tokens": {
+    "/context/progressive": {
       "get": {
-        "summary": "Debug endpoint to view all tokens for current user including revoked ones",
         "tags": [
-          "Debug"
+          "Context"
+        ],
+        "summary": "Progressive context assembly for agent tasks",
+        "description": "Assembles context in 4 progressive layers:\n- Layer 1 (depth=1): Task focus — node details + recent logs\n- Layer 2 (depth=2): Local neighborhood — parent, siblings, direct dependencies\n- Layer 3 (depth=3): Knowledge — plan-scoped knowledge entries\n- Layer 4 (depth=4): Extended — plan overview, ancestry, goals, transitive dependencies\n",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "depth",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4,
+              "default": 2
+            }
+          },
+          {
+            "in": "query",
+            "name": "token_budget",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "description": "Max estimated tokens (0 = unlimited)"
+          },
+          {
+            "in": "query",
+            "name": "log_limit",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_research",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "description": "Include research outputs from RPI chain siblings"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Progressive context assembled"
+          }
+        }
+      }
+    },
+    "/context/suggest": {
+      "get": {
+        "tags": [
+          "Context"
+        ],
+        "summary": "Suggest next actionable tasks for a plan",
+        "description": "Returns tasks that are ready to work on — all upstream dependencies are\ncompleted. Prioritizes RPI research tasks and high-impact tasks that\nunblock the most downstream work.\n",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 5
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Suggested tasks"
+          }
+        }
+      }
+    },
+    "/plans/{id}/decisions": {
+      "get": {
+        "summary": "List decision requests for a plan",
+        "tags": [
+          "Decisions"
         ],
         "security": [
           {
             "bearerAuth": []
           }
         ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Plan UUID"
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "decided",
+                "expired",
+                "cancelled"
+              ]
+            },
+            "description": "Filter by status"
+          },
+          {
+            "in": "query",
+            "name": "urgency",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "blocking",
+                "can_continue",
+                "informational"
+              ]
+            },
+            "description": "Filter by urgency"
+          },
+          {
+            "in": "query",
+            "name": "node_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Filter by node"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Token debug information"
+            "description": "List of decision requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DecisionRequest"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new decision request",
+        "tags": [
+          "Decisions"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title",
+                  "context"
+                ],
+                "properties": {
+                  "node_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Optional node this decision relates to"
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Brief title for the decision"
+                  },
+                  "context": {
+                    "type": "string",
+                    "maxLength": 5000,
+                    "description": "Full context explaining what needs to be decided"
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DecisionOption"
+                    },
+                    "description": "Structured options with pros/cons"
+                  },
+                  "urgency": {
+                    "type": "string",
+                    "enum": [
+                      "blocking",
+                      "can_continue",
+                      "informational"
+                    ],
+                    "default": "can_continue"
+                  },
+                  "expires_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Optional expiration timestamp"
+                  },
+                  "requested_by_agent_name": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "description": "Name of the agent requesting"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Decision request created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionRequest"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plans/{id}/decisions/pending-count": {
+      "get": {
+        "summary": "Get count of pending decisions for a plan",
+        "tags": [
+          "Decisions"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pending_count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plans/{id}/decisions/{decisionId}": {
+      "get": {
+        "summary": "Get a single decision request",
+        "tags": [
+          "Decisions"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "decisionId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Decision request details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionRequest"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update a decision request (before resolution)",
+        "tags": [
+          "Decisions"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "decisionId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "context": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DecisionOption"
+                    }
+                  },
+                  "urgency": {
+                    "type": "string",
+                    "enum": [
+                      "blocking",
+                      "can_continue",
+                      "informational"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated decision request"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a decision request (plan owners only)",
+        "tags": [
+          "Decisions"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "decisionId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Decision request deleted"
+          }
+        }
+      }
+    },
+    "/plans/{id}/decisions/{decisionId}/resolve": {
+      "post": {
+        "summary": "Resolve a decision request",
+        "tags": [
+          "Decisions"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "decisionId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "decision"
+                ],
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": "The decision made"
+                  },
+                  "rationale": {
+                    "type": "string",
+                    "maxLength": 5000,
+                    "description": "Explanation for the decision"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Decision resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionRequest"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plans/{id}/decisions/{decisionId}/cancel": {
+      "post": {
+        "summary": "Cancel a decision request",
+        "tags": [
+          "Decisions"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "decisionId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Decision cancelled"
+          }
+        }
+      }
+    },
+    "/plans/{planId}/dependencies": {
+      "get": {
+        "summary": "List all dependency edges in a plan",
+        "tags": [
+          "Dependencies"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of dependency edges"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a dependency edge between two nodes",
+        "tags": [
+          "Dependencies"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "source_node_id",
+                  "target_node_id"
+                ],
+                "properties": {
+                  "source_node_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "target_node_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "dependency_type": {
+                    "type": "string",
+                    "enum": [
+                      "blocks",
+                      "requires",
+                      "relates_to"
+                    ],
+                    "default": "blocks"
+                  },
+                  "weight": {
+                    "type": "integer",
+                    "default": 1
+                  },
+                  "metadata": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Dependency created"
+          },
+          "409": {
+            "description": "Cycle detected or duplicate edge"
+          }
+        }
+      }
+    },
+    "/plans/{planId}/dependencies/{depId}": {
+      "delete": {
+        "summary": "Delete a dependency edge",
+        "tags": [
+          "Dependencies"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "depId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dependency deleted"
+          }
+        }
+      }
+    },
+    "/plans/{planId}/nodes/{nodeId}/dependencies": {
+      "get": {
+        "summary": "List dependencies for a specific node",
+        "tags": [
+          "Dependencies"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "direction",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "upstream",
+                "downstream",
+                "both"
+              ],
+              "default": "both"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Node dependencies"
+          }
+        }
+      }
+    },
+    "/plans/{planId}/nodes/{nodeId}/upstream": {
+      "get": {
+        "summary": "Get all upstream (blocking) nodes via recursive traversal",
+        "tags": [
+          "Dependencies"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_depth",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Upstream nodes"
+          }
+        }
+      }
+    },
+    "/plans/{planId}/nodes/{nodeId}/downstream": {
+      "get": {
+        "summary": "Get all downstream (dependent) nodes via recursive traversal",
+        "tags": [
+          "Dependencies"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_depth",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Downstream nodes"
+          }
+        }
+      }
+    },
+    "/plans/{planId}/nodes/{nodeId}/impact": {
+      "get": {
+        "summary": "Analyze impact of a node being delayed, blocked, or removed",
+        "tags": [
+          "Dependencies"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scenario",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "delay",
+                "block",
+                "remove"
+              ],
+              "default": "block"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Impact analysis results"
+          }
+        }
+      }
+    },
+    "/plans/{planId}/critical-path": {
+      "get": {
+        "summary": "Find the critical path (longest dependency chain) in a plan",
+        "tags": [
+          "Dependencies"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Critical path with ordered nodes and total weight"
+          }
+        }
+      }
+    },
+    "/github/status": {
+      "get": {
+        "summary": "Check GitHub connection status",
+        "description": "Check if the current user has GitHub connected",
+        "tags": [
+          "GitHub"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connection status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubConnectionStatus"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Authentication required"
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/github/repos": {
+      "get": {
+        "summary": "List user's GitHub repositories",
+        "description": "Get all repositories accessible to the authenticated user",
+        "tags": [
+          "GitHub"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of repositories",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "repos": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GitHubRepo"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "GitHub not connected"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/github/repos/{owner}/{name}": {
+      "get": {
+        "summary": "Get repository details",
+        "description": "Get detailed information about a specific repository",
+        "tags": [
+          "GitHub"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Repository owner"
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Repository name"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Repository details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubRepo"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      }
+    },
+    "/github/repos/{owner}/{name}/content": {
+      "get": {
+        "summary": "Get repository content",
+        "description": "Get README, file structure, and languages for a repository",
+        "tags": [
+          "GitHub"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Repository owner"
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Repository name"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Repository content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubRepoContent"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      }
+    },
+    "/github/repos/{owner}/{name}/issues": {
+      "post": {
+        "summary": "Create a GitHub issue",
+        "description": "Create a new issue in the specified repository",
+        "tags": [
+          "GitHub"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Repository owner"
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Repository name"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "description": "Issue title"
+                  },
+                  "body": {
+                    "type": "string",
+                    "description": "Issue body (markdown)"
+                  },
+                  "labels": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Labels to apply"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Issue created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubIssue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "GitHub not connected or invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "No permission to create issues"
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      }
+    },
+    "/github/repos/{owner}/{name}/issues/bulk": {
+      "post": {
+        "summary": "Bulk create GitHub issues from plan tasks",
+        "description": "Create multiple GitHub issues from plan tasks",
+        "tags": [
+          "GitHub"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Repository owner"
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Repository name"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "tasks",
+                  "planTitle",
+                  "planUrl"
+                ],
+                "properties": {
+                  "tasks": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "title"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "Task ID"
+                        },
+                        "title": {
+                          "type": "string",
+                          "description": "Task title (becomes issue title)"
+                        },
+                        "description": {
+                          "type": "string",
+                          "description": "Task description (includes acceptance criteria if applicable)"
+                        },
+                        "context": {
+                          "type": "string",
+                          "description": "Additional context"
+                        },
+                        "node_type": {
+                          "type": "string",
+                          "enum": [
+                            "phase",
+                            "task",
+                            "milestone"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "not_started",
+                            "in_progress",
+                            "completed",
+                            "blocked"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "planTitle": {
+                    "type": "string",
+                    "description": "Plan title for issue footer"
+                  },
+                  "planUrl": {
+                    "type": "string",
+                    "description": "URL back to the plan"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Issues created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "created": {
+                      "type": "integer",
+                      "description": "Number of issues created"
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "description": "Number of failures"
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "task_id": {
+                            "type": "string"
+                          },
+                          "task_title": {
+                            "type": "string"
+                          },
+                          "issue_number": {
+                            "type": "integer"
+                          },
+                          "issue_url": {
+                            "type": "string"
+                          },
+                          "success": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "errors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "task_id": {
+                            "type": "string"
+                          },
+                          "task_title": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          },
+                          "success": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "GitHub not connected or invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/github/search": {
+      "get": {
+        "summary": "Search GitHub repositories",
+        "description": "Search repositories for autocomplete",
+        "tags": [
+          "GitHub"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2
+            },
+            "description": "Search query (min 2 characters)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "repos": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GitHubRepo"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Query too short"
+          },
+          "401": {
+            "description": "Unauthorized"
           }
         }
       }
@@ -2397,6 +3272,7 @@
     "/plans/{id}/nodes": {
       "get": {
         "summary": "Get all nodes for a plan (tree structure)",
+        "description": "Returns hierarchical tree of nodes. By default returns minimal fields (id, parent_id, node_type, title, status, order_index) for efficient navigation. Use include_details=true for full node data, or use GET /plans/{id}/nodes/{nodeId}/context for detailed information about specific nodes.",
         "tags": [
           "Nodes"
         ],
@@ -2414,6 +3290,16 @@
               "type": "string"
             },
             "description": "The plan ID"
+          },
+          {
+            "in": "query",
+            "name": "include_details",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Include full node details (description, context, agent_instructions, metadata, timestamps). Default is false for minimal response size."
           }
         ],
         "responses": {
@@ -2511,9 +3397,6 @@
                     "type": "string"
                   },
                   "agent_instructions": {
-                    "type": "string"
-                  },
-                  "acceptance_criteria": {
                     "type": "string"
                   },
                   "metadata": {
@@ -2676,9 +3559,6 @@
                   "agent_instructions": {
                     "type": "string"
                   },
-                  "acceptance_criteria": {
-                    "type": "string"
-                  },
                   "metadata": {
                     "type": "object"
                   }
@@ -2757,6 +3637,60 @@
           },
           "404": {
             "description": "Node not found"
+          }
+        }
+      }
+    },
+    "/plans/{id}/nodes/rpi-chain": {
+      "post": {
+        "summary": "Create a Research→Plan→Implement chain with dependency edges",
+        "tags": [
+          "Nodes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "parent_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "RPI chain created with three tasks and two dependency edges"
           }
         }
       }
@@ -3174,6 +4108,14 @@
                       "decision"
                     ],
                     "default": "progress"
+                  },
+                  "actor_type": {
+                    "type": "string",
+                    "enum": [
+                      "human",
+                      "agent"
+                    ],
+                    "description": "Whether this action was performed by a human or an AI agent"
                   }
                 }
               }
@@ -3545,7 +4487,6 @@
                             "enum": [
                               "log",
                               "comment",
-                              "artifact",
                               "assignment",
                               "status_change"
                             ]
@@ -3605,6 +4546,222 @@
           },
           "404": {
             "description": "Node not found"
+          }
+        }
+      }
+    },
+    "/plans/{id}/nodes/{nodeId}/request-agent": {
+      "post": {
+        "summary": "Request agent assistance on a task",
+        "description": "Mark a task as needing agent attention. Agent will pick this up during heartbeat polling.",
+        "tags": [
+          "Nodes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The plan ID"
+          },
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The node ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "request_type"
+                ],
+                "properties": {
+                  "request_type": {
+                    "type": "string",
+                    "enum": [
+                      "start",
+                      "review",
+                      "help",
+                      "continue"
+                    ],
+                    "description": "Type of assistance needed"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000,
+                    "description": "Optional context for the agent"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Agent request created"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Access denied"
+          },
+          "404": {
+            "description": "Node not found"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Clear agent request on a task",
+        "description": "Remove the agent assistance request from a task",
+        "tags": [
+          "Nodes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The plan ID"
+          },
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The node ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent request cleared"
+          },
+          "403": {
+            "description": "Access denied"
+          },
+          "404": {
+            "description": "Node not found"
+          }
+        }
+      }
+    },
+    "/{id}/nodes/{nodeId}/assign-agent": {
+      "post": {
+        "summary": "Assign an agent to a task",
+        "tags": [
+          "Nodes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agent_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Agent assigned"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Unassign an agent from a task",
+        "tags": [
+          "Nodes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Agent unassigned"
+          }
+        }
+      }
+    },
+    "/{id}/nodes/{nodeId}/suggested-agents": {
+      "get": {
+        "summary": "Get suggested agents for a task based on capability tags",
+        "tags": [
+          "Nodes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tags",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated capability tags to match"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of suggested agents"
           }
         }
       }
@@ -3698,6 +4855,341 @@
           },
           "401": {
             "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/plans/public": {
+      "get": {
+        "summary": "List all public plans with pagination and filtering (no authentication required)",
+        "tags": [
+          "Plans"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sortBy",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "recent",
+                "alphabetical",
+                "completion"
+              ],
+              "default": "recent"
+            },
+            "description": "Sort order - recent (by updated_at DESC), alphabetical (by title ASC), or completion (by completion_percentage DESC)"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 12,
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": "Maximum number of plans to return per page"
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            },
+            "description": "Page number for pagination (1-indexed)"
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "completed",
+                "draft",
+                "archived"
+              ]
+            },
+            "description": "Filter plans by status"
+          },
+          {
+            "in": "query",
+            "name": "hasGithubLink",
+            "schema": {
+              "type": "string",
+              "enum": [
+                true,
+                false
+              ]
+            },
+            "description": "Filter plans by GitHub repository presence (true = has repo, false = no repo)"
+          },
+          {
+            "in": "query",
+            "name": "owner",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Filter plans by owner user ID"
+          },
+          {
+            "in": "query",
+            "name": "updatedAfter",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Filter plans updated after this ISO date string"
+          },
+          {
+            "in": "query",
+            "name": "updatedBefore",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Filter plans updated before this ISO date string"
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Search keyword to filter plans by title, description, or owner name/username (case-insensitive)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of public plans with metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "plans": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Plan ID"
+                          },
+                          "title": {
+                            "type": "string",
+                            "description": "Plan title"
+                          },
+                          "description": {
+                            "type": "string",
+                            "description": "Plan description"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "draft",
+                              "active",
+                              "completed",
+                              "archived"
+                            ],
+                            "description": "Plan status"
+                          },
+                          "view_count": {
+                            "type": "integer",
+                            "description": "Number of times the plan has been viewed"
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Creation timestamp"
+                          },
+                          "updated_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Last update timestamp"
+                          },
+                          "github_repo_owner": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "GitHub repository owner"
+                          },
+                          "github_repo_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "GitHub repository name"
+                          },
+                          "owner": {
+                            "type": "object",
+                            "description": "Plan owner information",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "email": {
+                                "type": "string"
+                              },
+                              "github_username": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "avatar_url": {
+                                "type": "string",
+                                "nullable": true
+                              }
+                            }
+                          },
+                          "task_count": {
+                            "type": "integer",
+                            "description": "Total number of tasks in the plan"
+                          },
+                          "completed_count": {
+                            "type": "integer",
+                            "description": "Number of completed tasks"
+                          },
+                          "completion_percentage": {
+                            "type": "integer",
+                            "description": "Completion percentage (0-100)"
+                          }
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "description": "Total number of public plans"
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "description": "Number of plans per page"
+                    },
+                    "page": {
+                      "type": "integer",
+                      "description": "Current page number"
+                    },
+                    "total_pages": {
+                      "type": "integer",
+                      "description": "Total number of pages"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter or sort parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "Invalid sortBy value. Must be one of recent, alphabetical, completion"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/plans/public/{id}": {
+      "get": {
+        "summary": "Get a public plan with full node hierarchy (no authentication required)",
+        "tags": [
+          "Plans"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The plan ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public plan with full hierarchy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "plan": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "view_count": {
+                          "type": "integer"
+                        },
+                        "created_at": {
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "type": "string"
+                        },
+                        "github_repo_owner": {
+                          "type": "string"
+                        },
+                        "github_repo_name": {
+                          "type": "string"
+                        },
+                        "metadata": {
+                          "type": "object"
+                        },
+                        "progress": {
+                          "type": "integer"
+                        },
+                        "owner": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "email": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "structure": {
+                      "type": "object",
+                      "description": "Hierarchical structure of all plan nodes"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Plan not found or not public"
           }
         }
       }
@@ -4240,6 +5732,562 @@
         }
       }
     },
+    "/plans/{id}/public": {
+      "get": {
+        "summary": "Get a public plan (no authentication required)",
+        "tags": [
+          "Plans"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The plan ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public plan details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "view_count": {
+                      "type": "integer"
+                    },
+                    "created_at": {
+                      "type": "string"
+                    },
+                    "updated_at": {
+                      "type": "string"
+                    },
+                    "github_repo_owner": {
+                      "type": "string"
+                    },
+                    "github_repo_name": {
+                      "type": "string"
+                    },
+                    "owner": {
+                      "type": "object"
+                    },
+                    "root_node": {
+                      "type": "object"
+                    },
+                    "progress": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Plan is not public"
+          },
+          "404": {
+            "description": "Plan not found"
+          }
+        }
+      }
+    },
+    "/plans/{id}/visibility": {
+      "put": {
+        "summary": "Update plan visibility settings (public/private)",
+        "tags": [
+          "Plans"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The plan ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "visibility"
+                ],
+                "properties": {
+                  "visibility": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "private"
+                    ],
+                    "description": "Plan visibility setting"
+                  },
+                  "github_repo_owner": {
+                    "type": "string",
+                    "description": "GitHub repository owner (optional)"
+                  },
+                  "github_repo_name": {
+                    "type": "string",
+                    "description": "GitHub repository name (optional)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Visibility updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "visibility": {
+                      "type": "string",
+                      "enum": [
+                        "public",
+                        "private"
+                      ]
+                    },
+                    "is_public": {
+                      "type": "boolean",
+                      "description": "Deprecated - use visibility instead"
+                    },
+                    "github_repo_owner": {
+                      "type": "string"
+                    },
+                    "github_repo_name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input (invalid visibility value)"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Access denied (must be owner)"
+          },
+          "404": {
+            "description": "Plan not found"
+          }
+        }
+      }
+    },
+    "/plans/{id}/github": {
+      "put": {
+        "summary": "Link GitHub repository to plan",
+        "tags": [
+          "Plans"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The plan ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "github_repo_owner",
+                  "github_repo_name"
+                ],
+                "properties": {
+                  "github_repo_owner": {
+                    "type": "string",
+                    "example": "facebook",
+                    "description": "GitHub repository owner (user or organization)"
+                  },
+                  "github_repo_name": {
+                    "type": "string",
+                    "example": "react",
+                    "description": "GitHub repository name"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Repository linked successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "plan": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid repository format or missing required fields"
+          },
+          "403": {
+            "description": "Not plan owner"
+          },
+          "404": {
+            "description": "Plan not found"
+          }
+        }
+      }
+    },
+    "/plans/{id}/view": {
+      "post": {
+        "summary": "Increment view count for a public plan",
+        "tags": [
+          "Plans"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The plan ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "View count incremented",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "view_count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Plan is not public"
+          },
+          "404": {
+            "description": "Plan not found"
+          }
+        }
+      }
+    },
+    "/api/plans/{id}/bottlenecks": {
+      "get": {
+        "summary": "Detect bottleneck nodes",
+        "description": "Analyzes the dependency graph of a plan and identifies bottleneck nodes with high fan-out that may slow down progress.\n",
+        "tags": [
+          "Reasoning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The plan ID"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 5
+            },
+            "description": "Maximum number of bottleneck nodes to return"
+          },
+          {
+            "in": "query",
+            "name": "incomplete_only",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "description": "If true, only consider incomplete nodes as bottlenecks"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of detected bottleneck nodes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bottlenecks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No access to this plan"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/plans/{id}/rpi-chains": {
+      "get": {
+        "summary": "Detect RPI chains",
+        "description": "Identifies Research → Plan → Implement chains within the plan and reports their current status.\n",
+        "tags": [
+          "Reasoning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The plan ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of detected RPI chains",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "chains": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No access to this plan"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/plans/{id}/schedule": {
+      "get": {
+        "summary": "Get topological execution schedule",
+        "description": "Returns tasks in topological (dependency-respecting) execution order, grouped into parallelizable layers.\n",
+        "tags": [
+          "Reasoning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The plan ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Topologically sorted schedule with layer grouping",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schedule": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "layers": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                          "type": "object"
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No access to this plan"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/plans/{id}/decomposition-alerts": {
+      "get": {
+        "summary": "Detect decomposition candidates",
+        "description": "Flags tasks that may be too large or complex and should be decomposed into smaller subtasks.\n",
+        "tags": [
+          "Reasoning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The plan ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tasks that may need decomposition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "alerts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No access to this plan"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
     "/search": {
       "get": {
         "summary": "Global search across all accessible resources",
@@ -4299,12 +6347,6 @@
                           "items": {
                             "type": "object"
                           }
-                        },
-                        "artifacts": {
-                          "type": "array",
-                          "items": {
-                            "type": "object"
-                          }
                         }
                       }
                     },
@@ -4321,9 +6363,6 @@
                           "type": "integer"
                         },
                         "logs": {
-                          "type": "integer"
-                        },
-                        "artifacts": {
                           "type": "integer"
                         },
                         "total": {
@@ -4425,45 +6464,6 @@
         }
       }
     },
-    "/artifacts/search": {
-      "get": {
-        "summary": "Search for artifacts across all accessible plans",
-        "tags": [
-          "Search"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "in": "query",
-            "name": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "Search term"
-          },
-          {
-            "in": "query",
-            "name": "content_type",
-            "schema": {
-              "type": "string"
-            },
-            "description": "Filter by content type (comma-separated for multiple values)"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Search results for artifacts"
-          },
-          "401": {
-            "description": "Authentication required"
-          }
-        }
-      }
-    },
     "/search/plan/{plan_id}": {
       "get": {
         "summary": "Search within a plan using the database search function",
@@ -4522,8 +6522,7 @@
                             "enum": [
                               "node",
                               "comment",
-                              "log",
-                              "artifact"
+                              "log"
                             ]
                           },
                           "title": {
@@ -4563,6 +6562,44 @@
           },
           "404": {
             "description": "Plan not found"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/stats": {
+      "get": {
+        "summary": "Get platform-wide statistics",
+        "description": "Returns the total number of users, plans, and public plans",
+        "tags": [
+          "Stats"
+        ],
+        "responses": {
+          "200": {
+            "description": "Platform statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "users": {
+                      "type": "integer",
+                      "description": "Total number of users"
+                    },
+                    "plans": {
+                      "type": "integer",
+                      "description": "Total number of plans"
+                    },
+                    "publicPlans": {
+                      "type": "integer",
+                      "description": "Total number of public plans"
+                    }
+                  }
+                }
+              }
+            }
           },
           "500": {
             "description": "Server error"
@@ -4758,80 +6795,12 @@
         }
       }
     },
-    "/": {
+    "/users/my-tasks": {
       "get": {
-        "summary": "API root endpoint",
+        "summary": "Get tasks assigned to or requested for the current user/agent",
+        "description": "Returns tasks where:\n- User is assigned (via plan_node_assignments)\n- Agent assistance was requested (agent_requested is set)\n\nUse `requested=true` to filter only agent-requested tasks.\nAgents should poll this endpoint during heartbeat.\n",
         "tags": [
-          "System"
-        ],
-        "responses": {
-          "200": {
-            "description": "Welcome message and documentation link",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string",
-                      "example": "Welcome to the Planning System API"
-                    },
-                    "documentation": {
-                      "type": "string",
-                      "example": "/api-docs"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/health": {
-      "get": {
-        "summary": "Health check endpoint",
-        "description": "Used by monitoring services and orchestration platforms (e.g., Cloud Run) to verify the service is running",
-        "tags": [
-          "System"
-        ],
-        "responses": {
-          "200": {
-            "description": "Service is healthy",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "string",
-                      "enum": [
-                        "healthy"
-                      ],
-                      "example": "healthy"
-                    },
-                    "timestamp": {
-                      "type": "string",
-                      "format": "date-time",
-                      "example": "2024-01-15T10:30:00Z"
-                    },
-                    "service": {
-                      "type": "string",
-                      "example": "agent-planner-api"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/download": {
-      "get": {
-        "summary": "Download an artifact file",
-        "tags": [
-          "Artifacts"
+          "Users"
         ],
         "security": [
           {
@@ -4841,110 +6810,571 @@
         "parameters": [
           {
             "in": "query",
-            "name": "path",
-            "required": true,
+            "name": "requested",
             "schema": {
-              "type": "string"
+              "type": "boolean"
             },
-            "description": "The file path to download",
-            "example": "uploads/artifacts/document.pdf"
+            "description": "Only return tasks with agent_requested set"
           },
           {
             "in": "query",
-            "name": "filename",
-            "required": false,
+            "name": "status",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "not_started",
+                "in_progress",
+                "completed",
+                "blocked"
+              ]
             },
-            "description": "The filename to use for the download (defaults to original filename)",
-            "example": "my-document.pdf"
+            "description": "Filter by task status"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "File stream for download",
+            "description": "List of tasks"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/users/capabilities": {
+      "get": {
+        "summary": "Get capability tags for the current user",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Capability tags"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update capability tags for the current user",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "capability_tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated capability tags"
+          }
+        }
+      }
+    },
+    "/users/capabilities/search": {
+      "get": {
+        "summary": "Search users by capability tags",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tags",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated capability tags"
+          },
+          {
+            "in": "query",
+            "name": "match",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "any",
+                "all"
+              ],
+              "default": "any"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Users matching capability tags"
+          }
+        }
+      }
+    },
+    "/users/{userId}/capabilities": {
+      "get": {
+        "summary": "Get capability tags for a specific user",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Capability tags for the user"
+          }
+        }
+      }
+    },
+    "/knowledge/graphiti/status": {
+      "get": {
+        "summary": "Get Graphiti availability status",
+        "description": "Returns whether the temporal knowledge graph (Graphiti) service is available and connected.",
+        "tags": [
+          "Knowledge - Temporal Graph"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Graphiti status",
             "content": {
-              "application/octet-stream": {
+              "application/json": {
                 "schema": {
-                  "type": "string",
-                  "format": "binary"
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean",
+                      "description": "Whether Graphiti is available"
+                    },
+                    "version": {
+                      "type": "string",
+                      "description": "Graphiti service version"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/knowledge/episodes": {
+      "get": {
+        "summary": "Get recent knowledge episodes",
+        "description": "Retrieves recent temporal knowledge episodes from the Graphiti graph, scoped to the user's organization.",
+        "tags": [
+          "Knowledge - Temporal Graph"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "max_episodes",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "description": "Maximum number of episodes to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of knowledge episodes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "episodes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "group_id": {
+                      "type": "string",
+                      "description": "Organization-scoped group identifier"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Knowledge graph not available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add a knowledge episode",
+        "description": "Adds a new temporal knowledge episode to the Graphiti graph. The episode is scoped to the user's organization.",
+        "tags": [
+          "Knowledge - Temporal Graph"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "content"
+                ],
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "description": "The knowledge content to store"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Optional name/label for the episode"
+                  },
+                  "plan_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Optional plan this episode relates to"
+                  },
+                  "node_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Optional node this episode relates to"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "description": "Additional metadata for the episode"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Episode created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "episode": {
+                      "type": "object"
+                    },
+                    "group_id": {
+                      "type": "string",
+                      "description": "Organization-scoped group identifier"
+                    }
+                  }
                 }
               }
             }
           },
           "400": {
-            "description": "Invalid path or not a file",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "error": "Path parameter is required"
-                }
-              }
-            }
+            "description": "Missing required field (content)"
           },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "404": {
-            "description": "File not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "error": "File not found"
-                }
-              }
-            }
+          "503": {
+            "description": "Knowledge graph not available"
           }
         }
       }
     },
-    "/api-docs": {
-      "get": {
-        "summary": "Interactive API documentation",
-        "description": "Swagger UI interface for exploring and testing the API",
+    "/knowledge/episodes/{episodeId}": {
+      "delete": {
+        "summary": "Delete a knowledge episode",
+        "description": "Deletes a temporal knowledge episode from the Graphiti graph by its ID.",
         "tags": [
-          "System"
+          "Knowledge - Temporal Graph"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "episodeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The episode ID to delete"
+          }
         ],
         "responses": {
           "200": {
-            "description": "HTML page with Swagger UI",
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
+            "description": "Episode deleted"
+          },
+          "503": {
+            "description": "Knowledge graph not available"
           }
         }
       }
     },
-    "/api-docs-json": {
-      "get": {
-        "summary": "OpenAPI specification in JSON format",
+    "/knowledge/graph-search": {
+      "post": {
+        "summary": "Search temporal knowledge graph",
+        "description": "Performs a semantic search across the temporal knowledge graph using Graphiti, returning relevant episodes and facts scoped to the user's organization.",
         "tags": [
-          "System"
+          "Knowledge - Temporal Graph"
         ],
-        "responses": {
-          "200": {
-            "description": "OpenAPI 3.0 specification",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "description": "OpenAPI 3.0 specification object"
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "query"
+                ],
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "The search query"
+                  },
+                  "max_results": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "Maximum number of results to return"
+                  }
                 }
               }
             }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Search results from the temporal knowledge graph"
+          },
+          "400": {
+            "description": "Missing required field (query)"
+          },
+          "503": {
+            "description": "Knowledge graph not available"
+          }
+        }
+      }
+    },
+    "/knowledge/entities": {
+      "post": {
+        "summary": "Search entity nodes",
+        "description": "Searches for entity nodes in the temporal knowledge graph. Entities are extracted concepts, people, systems, or other named items found in episodes.",
+        "tags": [
+          "Knowledge - Temporal Graph"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "query"
+                ],
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "The search query for entities"
+                  },
+                  "max_results": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "Maximum number of results to return"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Matching entity nodes"
+          },
+          "400": {
+            "description": "Missing required field (query)"
+          },
+          "503": {
+            "description": "Knowledge graph not available"
+          }
+        }
+      }
+    },
+    "/knowledge/contradictions": {
+      "post": {
+        "summary": "Detect contradictions in knowledge",
+        "description": "Analyzes the temporal knowledge graph to detect contradictory or conflicting information related to the given query, scoped to the user's organization.",
+        "tags": [
+          "Knowledge - Temporal Graph"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "query"
+                ],
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "The query to check for contradictions"
+                  },
+                  "max_results": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "Maximum number of results to return"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Contradiction detection results"
+          },
+          "400": {
+            "description": "Missing required field (query)"
+          },
+          "503": {
+            "description": "Knowledge graph not available"
           }
         }
       }
     }
-  }
+  },
+  "tags": [
+    {
+      "name": "Activity",
+      "description": "Activity and logging endpoints"
+    },
+    {
+      "name": "Authentication",
+      "description": "User authentication and API token management"
+    },
+    {
+      "name": "Collaboration",
+      "description": "Real-time collaboration and presence endpoints"
+    },
+    {
+      "name": "Dependencies",
+      "description": "Node dependency graph management"
+    },
+    {
+      "name": "Nodes",
+      "description": "Plan node management endpoints"
+    },
+    {
+      "name": "Plans",
+      "description": "Plan management endpoints"
+    },
+    {
+      "name": "Search",
+      "description": "Search and filtering endpoints"
+    },
+    {
+      "name": "API Tokens",
+      "description": "API token management endpoints (DEPRECATED)"
+    },
+    {
+      "name": "Upload",
+      "description": "File upload endpoints"
+    },
+    {
+      "name": "User",
+      "description": "User profile management"
+    }
+  ]
 }

@@ -1,0 +1,134 @@
+# AgentPlanner — Local Release Candidate
+# Runs the full stack locally in containers (Mac/ARM compatible)
+# Usage: docker compose -f docker-compose.local.yml up --build
+#
+# Services: postgres, api, frontend, mcp
+# Ports: API=3000, UI=3001, MCP=3100
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  pgdata-local:
+  falkordb-local:
+
+services:
+  # ─── PostgreSQL 17 + pgvector ────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    networks: [internal]
+    environment:
+      POSTGRES_USER: agentplanner
+      POSTGRES_PASSWORD: localdevpassword
+      POSTGRES_DB: agentplanner
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata-local:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentplanner"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ─── API Server ──────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    networks: [internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      graphiti:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: postgres://agentplanner:localdevpassword@postgres:5432/agentplanner?sslmode=disable
+      JWT_SECRET: local-rc-jwt-secret-not-for-production
+      FRONTEND_URL: http://localhost:3001
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Graphiti bridge (connects to internal Graphiti MCP server)
+      GRAPHITI_INTERNAL_URL: http://graphiti:8000
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ─── Frontend (React via nginx) ──────────────────────────────
+  frontend:
+    build:
+      context: ../agent-planner-ui
+      dockerfile: Dockerfile.prod
+      args:
+        REACT_APP_API_URL: http://localhost:3000
+    restart: unless-stopped
+    networks: [internal]
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "3001:80"
+
+  # ─── FalkorDB (Graph Database — internal only) ──────────────
+  falkordb:
+    image: falkordb/falkordb:latest
+    restart: unless-stopped
+    networks: [internal]
+    volumes:
+      - falkordb-local:/data
+    environment:
+      BROWSER: "0"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ─── Graphiti MCP (Knowledge Graph — internal only) ────────
+  graphiti:
+    image: zepai/knowledge-graph-mcp:standalone
+    restart: unless-stopped
+    networks: [internal]
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    environment:
+      FALKORDB_URI: redis://falkordb:6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GRAPHITI_GROUP_ID: default
+      SEMAPHORE_LIMIT: "10"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ─── MCP Server (HTTP mode) ─────────────────────────────────
+  mcp:
+    build:
+      context: ../agent-planner-mcp
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks: [internal]
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      MCP_TRANSPORT: http
+      API_URL: http://api:3000
+      USER_API_TOKEN: ${MCP_API_TOKEN:-}
+      PORT: "3100"
+      HOST: 0.0.0.0
+      NODE_ENV: production
+    ports:
+      - "3100:3100"

@@ -5,8 +5,8 @@ const swaggerOptions = {
     openapi: '3.0.0',
     info: {
       title: 'Agent Planner API',
-      version: '1.0.0',
-      description: 'A collaborative planning system for humans and AI agents',
+      version: '2.0.0',
+      description: 'A collaborative planning system for humans and AI agents. Features dependency graph with cycle detection, progressive context engine with token budgeting, RPI (Research→Plan→Implement) task chains, and reasoning services for automated scheduling and impact analysis.',
       contact: {
         name: 'API Support',
         email: 'support@example.com'
@@ -157,11 +157,24 @@ const swaggerOptions = {
       {
         name: 'GitHub',
         description: 'GitHub integration operations'
+      },
+      {
+        name: 'Dependencies',
+        description: 'Dependency graph operations — create edges, cycle detection, traversal, impact analysis, critical path'
+      },
+      {
+        name: 'Context',
+        description: 'Progressive context assembly — layered depth, token budgeting, research compaction'
+      },
+      {
+        name: 'Reasoning',
+        description: 'Reasoning services — bottleneck detection, RPI chains, topological scheduling, decomposition alerts'
       }
     ]
   },
   apis: [
     './src/routes/*.js',
+    './src/routes/**/*.js',
     './src/schemas/*.js'
   ]
 };

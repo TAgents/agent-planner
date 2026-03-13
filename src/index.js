@@ -39,6 +39,9 @@ const dashboardRoutes = require('./routes/dashboard.routes');
 // Removed: chat, prompt routes (pre-v2 cleanup)
 const heartbeatRoutes = require('./routes/heartbeat.routes');
 const slackRoutes = require('./routes/slack.routes');
+const dependencyRoutes = require('./routes/dependency.routes');
+const reasoningRoutes = require('./routes/reasoning.routes');
+const adminRoutes = require('./routes/admin.routes');
 // Removed: artifact controller (Phase 0 simplification)
 
 // Import WebSocket collaboration server
@@ -148,6 +151,10 @@ app.use('/context', generalLimiter, contextRoutes);
 // Decision request routes (human-in-the-loop)
 app.use('/plans', generalLimiter, decisionRoutes);
 
+// Dependency graph routes
+app.use('/plans', generalLimiter, dependencyRoutes);
+app.use('/plans', generalLimiter, reasoningRoutes);
+
 // Dashboard routes (home page data)
 app.use('/dashboard', generalLimiter, dashboardRoutes);
 // Removed: handoff routes (pre-v2 cleanup)
@@ -156,6 +163,9 @@ app.use('/', generalLimiter, heartbeatRoutes);
 
 // Slack integration routes
 app.use('/integrations/slack', generalLimiter, slackRoutes);
+
+// Admin
+app.use('/admin', generalLimiter, adminRoutes);
 
 // Removed: artifact download endpoint (Phase 0 simplification)
 const { authenticate } = require('./middleware/auth.middleware');
@@ -219,7 +229,16 @@ const startServer = async () => {
     }
 
     await logger.api(`Starting agent-planner API server...`);
-    
+
+    // Initialize Graphiti bridge (optional — degrades gracefully)
+    const graphitiBridge = require('./services/graphitiBridge');
+    const graphitiReady = await graphitiBridge.init();
+    if (graphitiReady) {
+      await logger.api('Graphiti knowledge graph bridge: CONNECTED');
+    } else {
+      await logger.api('Graphiti knowledge graph bridge: not available (knowledge graph features disabled)');
+    }
+
     // Schema is managed by Drizzle (npm run db:push)
     await logger.api(`Database schema managed by Drizzle ORM`);
     

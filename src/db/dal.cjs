@@ -21,6 +21,15 @@ const handler = {
   get(_, prop) {
     // Allow Promise resolution checks (e.g. Promise.resolve(proxy.foo))
     if (prop === 'then' || prop === 'catch' || prop === 'finally') return undefined;
+
+    // Expose raw SQL client (postgres.js tagged template) for admin queries
+    if (prop === 'rawSql') {
+      return async () => {
+        const dal = await loadDal();
+        return dal.rawSql;
+      };
+    }
+
     return new Proxy({}, {
       get(_, method) {
         // Allow Promise resolution checks on sub-proxies too

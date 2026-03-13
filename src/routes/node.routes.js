@@ -210,6 +210,42 @@ router.post('/:id/nodes', authenticate, ...validate({ params: schemas.node.planI
 
 /**
  * @swagger
+ * /plans/{id}/nodes/rpi-chain:
+ *   post:
+ *     summary: Create a Research→Plan→Implement chain with dependency edges
+ *     tags: [Nodes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [title]
+ *             properties:
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               parent_id:
+ *                 type: string
+ *                 format: uuid
+ *     responses:
+ *       201:
+ *         description: RPI chain created with three tasks and two dependency edges
+ */
+router.post('/:id/nodes/rpi-chain', authenticate, nodeController.createRpiChain);
+
+/**
+ * @swagger
  * /plans/{id}/nodes/{nodeId}:
  *   put:
  *     summary: Update a node

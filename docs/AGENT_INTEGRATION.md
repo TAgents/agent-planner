@@ -129,13 +129,23 @@ The MCP server exposes all planning tools. Agents connect via stdio (local) or H
 
 | Tool | Description |
 |------|-------------|
+| `get_task_context` | **Primary context tool** — progressive depth 1-4 with token budgeting |
+| `suggest_next_tasks` | Dependency-aware task suggestions with RPI recommendations |
+| `create_dependency` | Create dependency edge between nodes (with cycle detection) |
+| `delete_dependency` | Remove a dependency edge |
+| `list_dependencies` | List all dependency edges in a plan |
+| `get_node_dependencies` | Get upstream/downstream dependencies for a node |
+| `analyze_impact` | Impact analysis — what happens if a node is delayed/blocked/removed |
+| `get_critical_path` | Find longest blocking chain through incomplete tasks |
+| `create_rpi_chain` | Create Research→Plan→Implement task chain with dependencies |
+| `get_agent_context` | Legacy focused context for a task (leaf-up traversal) |
+| `get_plan_context` | Plan-level overview with phase summaries |
 | `search` | Search plans and nodes |
 | `list_plans` | List user's plans |
 | `get_plan_structure` | Get full plan tree |
 | `get_plan_summary` | Get compact plan overview |
-| `get_agent_context` | Get focused context for a task (leaf-up) |
-| `create_node` | Add task/phase/milestone |
-| `update_node` | Update node status, title, etc. |
+| `create_node` | Add task/phase/milestone (supports task_mode) |
+| `update_node` | Update node status, title, task_mode, etc. |
 | `batch_update_nodes` | Update multiple nodes at once |
 | `add_log` | Add progress log to a node |
 | `get_logs` | Get logs for a node |
@@ -201,11 +211,12 @@ Returns tasks where a human has requested agent assistance:
 2. SlackAdapter receives message, publishes to messageBus
 3. Agent (running locally) picks up message from Slack
 4. Agent uses MCP tools:
-   - get_agent_context(nodeId) → reads task details, plan context, knowledge
-   - update_node(status: "in_progress")
+   - suggest_next_tasks(planId) → find ready tasks (all blockers completed)
+   - get_task_context(nodeId, depth=2) → reads task, dependencies, siblings, logs
+   - quick_status(taskId, "in_progress")
    - [does the actual work]
    - add_log("Implemented JWT auth with refresh tokens")
-   - update_node(status: "completed")
+   - quick_status(taskId, "completed") → status propagation auto-unblocks downstream
 5. Agent posts to Slack: "Done! Implemented JWT auth with refresh tokens."
 ```
 
@@ -223,6 +234,31 @@ Returns tasks where a human has requested agent assistance:
 6. decision.resolved event fires
 7. Agent picks up resolution, continues work
 ```
+
+### RPI Workflow (Research → Plan → Implement)
+
+For complex tasks, use the RPI decomposition pattern:
+
+```
+1. Human or agent identifies a complex task
+2. create_rpi_chain(planId, parentId, "Auth Service", "Research auth patterns")
+   → Creates 3 linked tasks: Research → Plan → Implement
+   → Automatically creates blocking dependency edges
+3. Agent works Research task:
+   - get_task_context(researchId, depth=2)
+   - Research, log findings as reasoning/decision logs
+   - Mark completed → research output auto-compacted
+4. Plan task becomes unblocked:
+   - Agent gets compacted research as context
+   - Creates implementation plan
+   - Mark plan_ready for human review
+5. Human approves plan → status transitions to completed
+6. Implement task becomes unblocked:
+   - get_task_context(implementId, depth=2) includes compacted research + plan
+   - Agent implements with full context
+```
+
+Task modes: `research` (R), `plan` (P), `implement` (I), `free` (default)
 
 ---
 
@@ -254,11 +290,14 @@ curl -X DELETE "https://agentplanner.io/api/plans/{plan_id}/nodes/{node_id}/requ
 ## Best Practices
 
 ### For Agents
-1. **Read context first** — use `get_agent_context` before acting
-2. **Update status early** — mark `in_progress` when starting
-3. **Log as you go** — add progress logs frequently
-4. **Mark blockers** — set status to `blocked` when stuck
-5. **Request decisions** — don't guess on important choices
+1. **Read context first** — use `get_task_context` (or legacy `get_agent_context`) before acting
+2. **Check dependencies** — use `suggest_next_tasks` to find tasks with all blockers completed
+3. **Update status early** — mark `in_progress` when starting
+4. **Log as you go** — add progress logs frequently (use `reasoning` and `decision` log types for context preservation)
+5. **Mark blockers** — set status to `blocked` when stuck
+6. **Request decisions** — don't guess on important choices
+7. **Use task_mode** — set `research`, `plan`, `implement`, or `free` to signal task intent
+8. **Use `plan_ready`** — mark plan-type tasks as `plan_ready` when they need human approval before proceeding
 
 ### For Platform Adapters
 1. **Use messageBus** — subscribe to `notifications` channel for all events
