@@ -5,7 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth.middleware');
-const { plansDal, nodesDal, decisionsDal, collaboratorsDal, usersDal, logsDal } = require('../db/dal.cjs');
+const { plansDal, nodesDal, decisionsDal, collaboratorsDal, usersDal, logsDal, goalsDal } = require('../db/dal.cjs');
 const logger = require('../utils/logger');
 
 /**
@@ -155,45 +155,43 @@ router.get('/recent-plans', authenticate, async (req, res) => {
 // ─── Active goals ────────────────────────────────────────────────
 router.get('/active-goals', authenticate, async (req, res) => {
   try {
-    res.json({ goals: [] }); // Goals are handled by goal routes
+    const userId = req.user.id;
+    const limit = parseInt(req.query.limit) || 5;
+    const activeGoals = await goalsDal.getActiveGoalsForOwner(userId);
+
+    // Calculate progress from linked plans
+    const goalsWithProgress = await Promise.all(activeGoals.slice(0, limit).map(async (goal) => {
+      const links = await goalsDal.findById(goal.id);
+      const planLinks = (links?.links || []).filter(l => l.linkedType === 'plan');
+      let totalTasks = 0, completedTasks = 0;
+
+      for (const link of planLinks) {
+        try {
+          const nodes = await nodesDal.listByPlan(link.linkedId);
+          const tasks = nodes.filter(n => n.nodeType === 'task');
+          totalTasks += tasks.length;
+          completedTasks += tasks.filter(n => n.status === 'completed').length;
+        } catch (_) { /* plan may not exist */ }
+      }
+
+      const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+      return {
+        id: goal.id,
+        title: goal.title,
+        description: goal.description,
+        status: goal.status,
+        type: goal.type,
+        target_date: goal.targetDate,
+        progress,
+      };
+    }));
+
+    res.json({ goals: goalsWithProgress });
   } catch (error) {
+    await logger.error('Dashboard active goals error:', error);
     res.status(500).json({ error: 'Failed to fetch active goals' });
   }
 });
 
-// ─── Agent activity ──────────────────────────────────────────────
-router.get('/agent-activity', authenticate, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const planIds = await getUserPlanIds(userId);
-
-    if (planIds.length === 0) {
-      return res.json({ agents: [], assignments: [], handoffs: [], recentActivity: [] });
-    }
-
-    // Get assigned nodes
-    const allAssignedNodes = [];
-    for (const planId of planIds) {
-      const nodes = await nodesDal.listByPlan(planId);
-      const assigned = nodes.filter(n => n.assignedAgentId);
-      const plan = await plansDal.findById(planId);
-      assigned.forEach(n => allAssignedNodes.push({ ...n, planTitle: plan?.title }));
-    }
-
-    // Get agent users with capability tags
-    const agentIds = [...new Set(allAssignedNodes.map(n => n.assignedAgentId).filter(Boolean))];
-    const agents = agentIds.length > 0 ? await usersDal.findByIds(agentIds) : [];
-
-    res.json({
-      agents: agents.filter(a => a.capabilityTags?.length > 0),
-      assignments: allAssignedNodes.slice(0, 50),
-      handoffs: [],
-      recentActivity: []
-    });
-  } catch (error) {
-    await logger.error('Dashboard agent activity error:', error);
-    res.status(500).json({ error: 'Failed to fetch agent activity' });
-  }
-});
 
 module.exports = router;

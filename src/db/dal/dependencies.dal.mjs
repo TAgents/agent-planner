@@ -344,7 +344,8 @@ export const dependenciesDal = {
    */
   async listCrossPlan(planIds) {
     if (!planIds || planIds.length < 2) return [];
-    const planIdsArr = pgArray(planIds);
+    const safe = planIds.map(v => v.replace(/'/g, "''"));
+    const uuidArr = sql.raw(`ARRAY['${safe.join("','")}']::uuid[]`);
     const result = await db.execute(sql`
       SELECT
         nd.id, nd.source_node_id, nd.target_node_id,
@@ -355,8 +356,8 @@ export const dependenciesDal = {
       FROM node_dependencies nd
       JOIN plan_nodes src ON src.id = nd.source_node_id
       JOIN plan_nodes tgt ON tgt.id = nd.target_node_id
-      WHERE src.plan_id = ANY(${planIdsArr})
-        AND tgt.plan_id = ANY(${planIdsArr})
+      WHERE src.plan_id = ANY(${uuidArr})
+        AND tgt.plan_id = ANY(${uuidArr})
         AND src.plan_id != tgt.plan_id
       ORDER BY nd.created_at DESC
     `);

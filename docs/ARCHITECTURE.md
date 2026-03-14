@@ -9,6 +9,9 @@ A comprehensive guide to the AgentPlanner backend: how plans, dependencies, prog
 - [Dependency Graph](#dependency-graph)
 - [Progressive Context Engine](#progressive-context-engine)
 - [RPI Chains (Research → Plan → Implement)](#rpi-chains)
+- [Task Claims](#task-claims)
+- [Agent-First Paradigm](#agent-first-paradigm)
+- [Goal Health Dashboard](#goal-health-dashboard)
 - [Reasoning Services](#reasoning-services)
 - [Research Output Compaction](#research-output-compaction)
 - [MCP Integration](#mcp-integration)
@@ -287,6 +290,107 @@ Done
 
 ---
 
+## Task Claims
+
+The task claims system provides exclusive ownership of tasks for multi-agent coordination. When multiple agents operate on the same plan, claims prevent conflicting concurrent work on the same task.
+
+### Claim Lifecycle
+
+```
+Agent calls POST /nodes/:nodeId/claim { agent_id, ttl_minutes? }
+  → Claim created with expiry timestamp
+  → Other agents see the task as claimed and skip it
+  → Agent works on the task
+  → Agent calls DELETE /nodes/:nodeId/claim { agent_id } to release
+  → OR claim auto-expires after TTL (default: 30 minutes)
+```
+
+### Design Principles
+
+- **Optimistic locking** — Claims are advisory. An agent that crashes will have its claim auto-expire via TTL, ensuring no task is permanently locked.
+- **Agent-scoped** — Only the agent that created a claim can release it. Other agents can query the claim status via `GET /nodes/:nodeId/claim`.
+- **TTL-based expiry** — Claims expire automatically after `ttl_minutes`. Agents doing long-running work should periodically renew their claim.
+
+### Multi-Agent Coordination Pattern
+
+```
+1. suggest_next_tasks(plan_id)          → find what's ready
+2. GET /nodes/:nodeId/claim             → check if claimed
+3. POST /nodes/:nodeId/claim            → claim the task
+4. GET /nodes/:nodeId/agent-view        → load context
+5. [do the work, add logs]
+6. PUT /plans/:id/nodes/:nodeId/status  → mark completed
+7. DELETE /nodes/:nodeId/claim          → release claim
+```
+
+### API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/nodes/:nodeId/claim` | Claim a task (body: agent_id, ttl_minutes) |
+| DELETE | `/nodes/:nodeId/claim` | Release a claim (body: agent_id) |
+| GET | `/nodes/:nodeId/claim` | Get active claim for a node |
+
+---
+
+## Agent-First Paradigm
+
+AgentPlanner is designed with an agent-first paradigm: AI agents are first-class participants, not afterthoughts bolted onto a human-centric tool.
+
+### What This Means
+
+- **Agent view endpoint** — `GET /nodes/:nodeId/agent-view?depth=1-4` provides pre-assembled progressive context optimized for agent consumption, so agents do not need to make multiple API calls to gather context.
+- **Task claims** — The claim/release/expiry mechanism treats agents as autonomous workers that need coordination primitives, not just consumers of a read-only API.
+- **Structured context** — The progressive context engine was designed specifically for LLM token budgets. Agents request the depth they need and get exactly that — no more, no less.
+- **MCP as primary interface** — The MCP server is the recommended agent interface, wrapping REST endpoints into tool definitions that LLMs can invoke natively.
+
+### Agent Workflow (Recommended)
+
+```
+1. suggest_next_tasks → find actionable work
+2. claim task         → exclusive ownership
+3. agent-view         → load progressive context (depth 1-4)
+4. do the work        → add logs, create sub-nodes, request decisions
+5. complete task      → auto-unblocks downstream, auto-compacts research
+6. release claim      → free for next agent
+```
+
+---
+
+## Goal Health Dashboard
+
+The goal health dashboard (`GET /goals/v2/dashboard`) provides a high-level view of goal progress by aggregating signals from all linked plans.
+
+### Health Computation
+
+Each goal is assigned a health status based on its linked plans:
+
+| Health | Criteria |
+|--------|----------|
+| `on_track` | Linked plans are progressing — tasks completing, no significant blockers |
+| `at_risk` | Some linked plans have blocked tasks, unresolved decisions, or bottlenecks |
+| `stale` | No meaningful progress detected across linked plans in a configurable time window |
+
+### Goal Briefing
+
+The briefing endpoint (`GET /goals/v2/:goalId/briefing`) provides a deep analysis of a single goal:
+
+- **Critical path** — The longest blocking chain across all linked plans, showing what must complete for the goal to be achieved
+- **Bottlenecks** — High fan-out nodes across linked plans that block the most downstream work
+- **Knowledge status** — Summary of available research, learnings, and knowledge relevant to the goal
+- **Plan progress** — Per-plan breakdown with completion percentages and status distributions
+
+This is designed for human stakeholders reviewing goal health and for agents that need to understand the broader context of their work.
+
+### API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/goals/v2/dashboard` | Goal health dashboard (all goals with health status) |
+| GET | `/goals/v2/:goalId/briefing` | Goal briefing (critical path, bottlenecks, knowledge) |
+
+---
+
 ## Reasoning Services
 
 Backend services (`src/services/reasoning.js`) that analyze the dependency graph and provide automated insights.
@@ -468,8 +572,6 @@ All database access goes through `src/db/dal/` modules. Controllers never import
 | `organizationsDal` | Organizations |
 | `searchDal` | Full-text and semantic search |
 | `auditDal` | Audit trail |
-| `heartbeatsDal` | Agent heartbeats |
-| `agentsDal` | Agent registration |
 
 ### Migrations
 
@@ -564,12 +666,30 @@ src/
 | GET | `/plans/:id/nodes/:nodeId/impact` | Impact analysis |
 | GET | `/plans/:id/critical-path` | Critical path |
 
+### Task Claims
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/nodes/:nodeId/claim` | Claim a task |
+| DELETE | `/nodes/:nodeId/claim` | Release a claim |
+| GET | `/nodes/:nodeId/claim` | Get active claim |
+
+### Agent View
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/nodes/:nodeId/agent-view` | Progressive context for agents (depth 1-4) |
+
 ### Context
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/context/progressive` | Progressive context (depth 1-4) |
 | GET | `/context/suggest` | Suggest next tasks |
 | POST | `/context/compact` | Compact research output |
+
+### Goal Health
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/goals/v2/dashboard` | Goal health dashboard |
+| GET | `/goals/v2/:goalId/briefing` | Goal briefing |
 
 ### Reasoning
 | Method | Path | Description |

@@ -1086,4 +1086,174 @@ router.delete('/:id/nodes/:nodeId/assign-agent', authenticate, nodeController.un
  */
 router.get('/:id/nodes/:nodeId/suggested-agents', authenticate, nodeController.getSuggestedAgents);
 
+/**
+ * Task Claim/Lease Endpoints (multi-agent coordination)
+ */
+const claimsController = require('../controllers/claims.controller.v2');
+
+/**
+ * @swagger
+ * /plans/{id}/nodes/{nodeId}/claim:
+ *   post:
+ *     summary: Claim a task for an agent (lease-based lock)
+ *     description: Creates a time-limited claim on a task to prevent multiple agents from working on it simultaneously. Returns 409 if the task is already claimed.
+ *     tags: [Nodes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The plan ID
+ *       - in: path
+ *         name: nodeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The node ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - agent_id
+ *             properties:
+ *               agent_id:
+ *                 type: string
+ *                 description: Identifier of the agent claiming the task
+ *               ttl_minutes:
+ *                 type: integer
+ *                 default: 30
+ *                 description: Lease duration in minutes (default 30)
+ *     responses:
+ *       201:
+ *         description: Task claimed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                   format: uuid
+ *                 node_id:
+ *                   type: string
+ *                   format: uuid
+ *                 agent_id:
+ *                   type: string
+ *                 plan_id:
+ *                   type: string
+ *                   format: uuid
+ *                 claimed_at:
+ *                   type: string
+ *                   format: date-time
+ *                 expires_at:
+ *                   type: string
+ *                   format: date-time
+ *                 released_at:
+ *                   type: string
+ *                   format: date-time
+ *                   nullable: true
+ *                 created_by:
+ *                   type: string
+ *                   format: uuid
+ *       400:
+ *         description: Missing agent_id
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Node not found
+ *       409:
+ *         description: Task already claimed by another agent
+ */
+router.post('/:id/nodes/:nodeId/claim', authenticate, claimsController.claimTask);
+
+/**
+ * @swagger
+ * /plans/{id}/nodes/{nodeId}/claim:
+ *   delete:
+ *     summary: Release a task claim
+ *     description: Releases the agent's claim on a task, allowing other agents to claim it.
+ *     tags: [Nodes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The plan ID
+ *       - in: path
+ *         name: nodeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The node ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - agent_id
+ *             properties:
+ *               agent_id:
+ *                 type: string
+ *                 description: Identifier of the agent releasing the claim
+ *     responses:
+ *       200:
+ *         description: Claim released successfully
+ *       400:
+ *         description: Missing agent_id
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: No active claim found
+ */
+router.delete('/:id/nodes/:nodeId/claim', authenticate, claimsController.releaseTask);
+
+/**
+ * @swagger
+ * /plans/{id}/nodes/{nodeId}/claim:
+ *   get:
+ *     summary: Get the active claim on a task
+ *     description: Returns the current active claim on a task, or 404 if none exists.
+ *     tags: [Nodes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The plan ID
+ *       - in: path
+ *         name: nodeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The node ID
+ *     responses:
+ *       200:
+ *         description: Active claim details
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: No active claim on this node
+ */
+router.get('/:id/nodes/:nodeId/claim', authenticate, claimsController.getTaskClaim);
+
 module.exports = router;

@@ -171,67 +171,7 @@ const getMyTasks = async (req, res, next) => {
   }
 };
 
-const getCapabilityTags = async (req, res, next) => {
-  try {
-    const userId = req.params.userId || req.user.id;
-    const user = await usersDal.findById(userId);
-    res.json({ capability_tags: user?.capabilityTags || [] });
-  } catch (error) {
-    next(error);
-  }
-};
-
-const updateCapabilityTags = async (req, res, next) => {
-  try {
-    const userId = req.user.id;
-    const { capability_tags } = req.body;
-    if (!Array.isArray(capability_tags)) return res.status(400).json({ error: 'capability_tags must be an array' });
-
-    const normalized = [...new Set(capability_tags.map(t => String(t).toLowerCase().trim()).filter(Boolean))];
-    if (normalized.length > 50) return res.status(400).json({ error: 'Maximum 50 capability tags allowed' });
-
-    const existing = await usersDal.findById(userId);
-    if (existing) {
-      await usersDal.update(userId, { capabilityTags: normalized });
-    } else {
-      await usersDal.create({ id: userId, email: req.user.email, capabilityTags: normalized });
-    }
-
-    res.json({ capability_tags: normalized });
-  } catch (error) {
-    next(error);
-  }
-};
-
-const searchByCapabilities = async (req, res, next) => {
-  try {
-    const { tags, match = 'any', limit = 20 } = req.query;
-    if (!tags) return res.status(400).json({ error: 'tags query parameter is required' });
-
-    const tagList = tags.split(',').map(t => t.toLowerCase().trim()).filter(Boolean);
-    if (tagList.length === 0) return res.status(400).json({ error: 'At least one tag is required' });
-
-    const allUsers = await usersDal.list({ limit: 1000 });
-    const filtered = allUsers.filter(user => {
-      const userTags = user.capabilityTags || [];
-      if (userTags.length === 0) return false;
-      if (match === 'all') return tagList.every(t => userTags.includes(t));
-      return tagList.some(t => userTags.includes(t));
-    }).slice(0, parseInt(limit));
-
-    res.json({
-      results: filtered.map(u => ({
-        id: u.id, email: u.email, name: u.name, avatar_url: u.avatarUrl,
-        capability_tags: u.capabilityTags
-      })),
-      count: filtered.length, tags: tagList, match
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
 module.exports = {
   getUserProfile, updateUserProfile, changePassword, listUsers,
-  searchUsers, getMyTasks, getCapabilityTags, updateCapabilityTags, searchByCapabilities
+  searchUsers, getMyTasks
 };

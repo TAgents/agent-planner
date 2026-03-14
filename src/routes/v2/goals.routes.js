@@ -12,7 +12,10 @@ const logger = require('../../utils/logger');
 const goalsDal = require('../../db/dal.cjs').goalsDal;
 const dependenciesDal = require('../../db/dal.cjs').dependenciesDal;
 const nodesDal = require('../../db/dal.cjs').nodesDal;
+const plansDal = require('../../db/dal.cjs').plansDal;
+const logsDal = require('../../db/dal.cjs').logsDal;
 const graphitiBridge = require('../../services/graphitiBridge');
+const reasoning = require('../../services/reasoning');
 
 const VALID_TYPES = ['outcome', 'constraint', 'metric', 'principle'];
 const VALID_STATUSES = ['active', 'achieved', 'paused', 'abandoned'];
@@ -41,6 +44,189 @@ function classifyPgError(err) {
   if (pgError.code === '23514' || msg.includes('node_deps_no_self_ref')) return 'self_ref';
   return null;
 }
+
+/**
+ * @swagger
+ * /goals/v2/dashboard:
+ *   get:
+ *     summary: Get health dashboard for all user goals
+ *     description: |
+ *       Returns health status for all goals the authenticated user owns,
+ *       including linked plan progress, bottleneck summaries, pending decisions,
+ *       and last agent activity timestamps.
+ *
+ *       Health heuristics:
+ *       - **stale** — no log activity on any linked plan in 3+ days
+ *       - **at_risk** — has bottlenecks OR blocked tasks > 30% OR pending decisions older than 1 day
+ *       - **on_track** — everything else
+ *     tags: [Goals]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Goal dashboard
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 goals:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         format: uuid
+ *                       title:
+ *                         type: string
+ *                       description:
+ *                         type: string
+ *                       type:
+ *                         type: string
+ *                         enum: [outcome, constraint, metric, principle]
+ *                       status:
+ *                         type: string
+ *                         enum: [active, achieved, paused, abandoned]
+ *                       health:
+ *                         type: string
+ *                         enum: [on_track, at_risk, stale]
+ *                       bottleneck_summary:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             node_id:
+ *                               type: string
+ *                             title:
+ *                               type: string
+ *                             status:
+ *                               type: string
+ *                             direct_downstream_count:
+ *                               type: integer
+ *                       knowledge_gap_count:
+ *                         type: integer
+ *                       last_activity:
+ *                         type: string
+ *                         format: date-time
+ *                         nullable: true
+ *                       linked_plan_progress:
+ *                         type: object
+ *                         properties:
+ *                           total_nodes:
+ *                             type: integer
+ *                           completed_nodes:
+ *                             type: integer
+ *                           blocked_nodes:
+ *                             type: integer
+ *                           percent_completed:
+ *                             type: number
+ *                           percent_blocked:
+ *                             type: number
+ *                           linked_plan_count:
+ *                             type: integer
+ *                       pending_decision_count:
+ *                         type: integer
+ *       401:
+ *         description: Not authenticated
+ *       500:
+ *         description: Internal server error
+ */
+router.get('/dashboard', authenticate, async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    // 1. Get all goal data with plan stats in a single SQL query
+    const dashboardRows = await goalsDal.getDashboardData(userId);
+
+    // 2. For each goal with linked plans, detect bottlenecks (parallel, capped)
+    const goalResults = await Promise.all(dashboardRows.map(async (row) => {
+      const totalNodes = row.total_nodes;
+      const completedNodes = row.completed_nodes;
+      const blockedNodes = row.blocked_nodes;
+      const planReadyNodes = row.plan_ready_nodes;
+      const agentRequestNodes = row.agent_request_nodes;
+      const stalePlanReady = row.stale_plan_ready_nodes;
+      const staleAgentRequest = row.stale_agent_request_nodes;
+      const linkedPlanCount = row.linked_plan_count;
+      const lastLogAt = row.last_log_at;
+
+      // Calculate progress percentages
+      const percentCompleted = totalNodes > 0
+        ? Math.round((completedNodes / totalNodes) * 100)
+        : 0;
+      const percentBlocked = totalNodes > 0
+        ? Math.round((blockedNodes / totalNodes) * 100)
+        : 0;
+
+      // Pending decisions = plan_ready + agent_request nodes
+      const pendingDecisionCount = planReadyNodes + agentRequestNodes;
+
+      // Stale pending decisions (older than 1 day)
+      const stalePendingDecisions = stalePlanReady + staleAgentRequest;
+
+      // Detect bottlenecks across linked plans (cap at 5 plans)
+      let bottleneckSummary = [];
+      const planIds = Array.isArray(row.plan_ids) ? row.plan_ids.filter(Boolean) : [];
+      if (planIds.length > 0) {
+        const allBottlenecks = [];
+        for (const planId of planIds.slice(0, 5)) {
+          try {
+            const bottlenecks = await reasoning.detectBottlenecks(planId, { limit: 3, incomplete_only: true });
+            allBottlenecks.push(...bottlenecks);
+          } catch { /* skip plan on error */ }
+        }
+        bottleneckSummary = allBottlenecks
+          .sort((a, b) => b.direct_downstream_count - a.direct_downstream_count)
+          .slice(0, 3);
+      }
+
+      // Determine health status
+      const now = Date.now();
+      const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+      const lastActivityTs = lastLogAt ? new Date(lastLogAt).getTime() : null;
+      const hasLinkedPlans = linkedPlanCount > 0;
+
+      let health = 'on_track';
+
+      if (hasLinkedPlans && (!lastActivityTs || (now - lastActivityTs) > threeDaysMs)) {
+        health = 'stale';
+      } else if (
+        bottleneckSummary.length > 0 ||
+        percentBlocked > 30 ||
+        stalePendingDecisions > 0
+      ) {
+        health = 'at_risk';
+      }
+
+      return {
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        type: row.type,
+        status: row.status,
+        health,
+        bottleneck_summary: bottleneckSummary,
+        knowledge_gap_count: 0, // Requires Graphiti — returned as 0 when unavailable
+        last_activity: lastLogAt || null,
+        linked_plan_progress: {
+          total_nodes: totalNodes,
+          completed_nodes: completedNodes,
+          blocked_nodes: blockedNodes,
+          percent_completed: percentCompleted,
+          percent_blocked: percentBlocked,
+          linked_plan_count: linkedPlanCount,
+        },
+        pending_decision_count: pendingDecisionCount,
+      };
+    }));
+
+    res.json({ goals: goalResults });
+  } catch (err) {
+    await logger.error('Goals dashboard error:', err);
+    next(err);
+  }
+});
 
 // GET /api/goals/tree — must be before /:id
 router.get('/tree', authenticate, async (req, res) => {
@@ -431,5 +617,370 @@ router.get('/:id/knowledge-gaps', authenticate, async (req, res) => {
     res.status(500).json({ error: 'Failed to detect knowledge gaps' });
   }
 });
+
+// ─── Goal Briefing ───────────────────────────────────────────
+// Single-call endpoint that composes multiple services into a comprehensive goal briefing.
+
+/**
+ * @swagger
+ * /goals/v2/{goalId}/briefing:
+ *   get:
+ *     summary: Get a comprehensive goal briefing
+ *     description: >
+ *       Composes goal metadata, progress across linked plans, bottlenecks,
+ *       critical path, knowledge status, recent activity, and pending decisions
+ *       into a single response.
+ *     tags: [Goals]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: goalId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Goal briefing
+ *       404:
+ *         description: Goal not found
+ *       403:
+ *         description: Access denied
+ */
+router.get('/:goalId/briefing', authenticate, async (req, res) => {
+  try {
+    // 1. Load goal and verify access
+    const goal = await goalsDal.findById(req.params.goalId);
+    if (!goal) return res.status(404).json({ error: 'Goal not found' });
+    if (goal.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+
+    // 2. Get linked plans from goal_links
+    const planLinks = (goal.links || []).filter(l => l.linkedType === 'plan');
+    const planIds = planLinks.map(l => l.linkedId);
+
+    // 3. Batch-load plan metadata and nodes for all linked plans in parallel
+    const [planRows, allNodes] = await Promise.all([
+      planIds.length > 0
+        ? Promise.all(planIds.map(id => plansDal.findById(id)))
+        : Promise.resolve([]),
+      planIds.length > 0
+        ? Promise.all(planIds.map(id => nodesDal.listByPlan(id)))
+        : Promise.resolve([]),
+    ]);
+
+    // Build plan lookup (filter out deleted/missing plans)
+    const plansMap = new Map();
+    for (const p of planRows) {
+      if (p) plansMap.set(p.id, p);
+    }
+    const validPlanIds = [...plansMap.keys()];
+
+    // Flatten all nodes across plans, excluding root nodes
+    const flatNodes = allNodes.flat().filter(n => n.nodeType !== 'root');
+
+    // 4. Aggregate progress stats
+    const progress = { total_tasks: 0, completed: 0, in_progress: 0, blocked: 0 };
+    for (const n of flatNodes) {
+      if (n.nodeType === 'task' || n.nodeType === 'milestone') {
+        progress.total_tasks++;
+        if (n.status === 'completed') progress.completed++;
+        else if (n.status === 'in_progress') progress.in_progress++;
+        else if (n.status === 'blocked') progress.blocked++;
+      }
+    }
+    progress.completion_pct = progress.total_tasks > 0
+      ? Math.round((progress.completed / progress.total_tasks) * 100)
+      : 0;
+
+    // 5. Bottlenecks, deps, logs, pending decisions — all in parallel
+    const [bottleneckResults, depsResults, recentLogs, pendingNodes] = await Promise.all([
+      // Bottlenecks for each plan
+      Promise.all(validPlanIds.map(id => reasoning.detectBottlenecks(id, { limit: 3 }))),
+
+      // Dependencies for each plan (needed for critical path)
+      Promise.all(validPlanIds.map(id =>
+        dependenciesDal.listByPlan(id).catch(() => [])
+      )),
+
+      // Recent activity: logs from nodes in linked plans
+      (async () => {
+        const nodeIds = flatNodes.map(n => n.id);
+        if (nodeIds.length === 0) return [];
+        return logsDal.listByNodes(nodeIds, { limit: 10 });
+      })(),
+
+      // Pending decisions: plan_ready nodes or nodes with agent requests
+      (async () => {
+        if (validPlanIds.length === 0) return [];
+        const [planReadyNodes, agentRequestNodes] = await Promise.all([
+          nodesDal.listByPlanIds(validPlanIds, { status: 'plan_ready', limit: 20 }),
+          nodesDal.listByPlanIds(validPlanIds, { agentRequested: true, limit: 20 }),
+        ]);
+        // Deduplicate by node ID
+        const seen = new Set();
+        const combined = [];
+        for (const n of [...planReadyNodes, ...agentRequestNodes]) {
+          if (!seen.has(n.id)) {
+            seen.add(n.id);
+            combined.push(n);
+          }
+        }
+        return combined;
+      })(),
+    ]);
+
+    // 6. Merge bottlenecks across plans, keep top 5 by downstream count
+    const allBottlenecks = bottleneckResults.flat()
+      .sort((a, b) => b.direct_downstream_count - a.direct_downstream_count)
+      .slice(0, 5)
+      .map(b => ({
+        node_id: b.node_id,
+        title: b.title,
+        downstream_count: b.direct_downstream_count,
+      }));
+
+    // 7. Compute critical path (longest chain of blocks edges through incomplete nodes)
+    const criticalPath = computeCriticalPath(flatNodes, depsResults.flat(), plansMap);
+
+    // 8. Knowledge status (Graphiti) — graceful degradation
+    const knowledge = await getKnowledgeStatus(flatNodes, req.user.organizationId);
+
+    // 9. Format recent activity with plan titles
+    const nodeIdToPlan = new Map();
+    for (const n of flatNodes) {
+      nodeIdToPlan.set(n.id, plansMap.get(n.planId));
+    }
+    const recent_activity = recentLogs.map(log => ({
+      type: log.logType || 'log',
+      message: log.content,
+      timestamp: log.createdAt,
+      plan_title: nodeIdToPlan.get(log.planNodeId)?.title || null,
+    }));
+
+    // 10. Format pending decisions
+    const pending_decisions = pendingNodes.map(n => ({
+      node_id: n.id,
+      title: n.title,
+      type: n.status === 'plan_ready' ? 'plan_ready' : 'agent_request',
+    }));
+
+    // 11. Linked plans with per-plan progress
+    const linked_plans = validPlanIds.map(pid => {
+      const plan = plansMap.get(pid);
+      const planNodesList = flatNodes.filter(n => n.planId === pid && (n.nodeType === 'task' || n.nodeType === 'milestone'));
+      const total = planNodesList.length;
+      const done = planNodesList.filter(n => n.status === 'completed').length;
+      return {
+        plan_id: pid,
+        title: plan?.title || null,
+        progress_pct: total > 0 ? Math.round((done / total) * 100) : 0,
+      };
+    });
+
+    // 12. Calculate health
+    const health = calculateHealth(progress, allBottlenecks, flatNodes);
+
+    res.json({
+      goal: {
+        id: goal.id,
+        title: goal.title,
+        type: goal.type,
+        status: goal.status,
+      },
+      health,
+      progress,
+      critical_path: criticalPath,
+      bottlenecks: allBottlenecks,
+      knowledge,
+      recent_activity,
+      pending_decisions,
+      linked_plans,
+    });
+  } catch (err) {
+    await logger.error('Goal briefing error:', err);
+    res.status(500).json({ error: 'Failed to generate goal briefing' });
+  }
+});
+
+/**
+ * Compute the critical path: longest chain of 'blocks' edges through incomplete nodes.
+ * Uses dynamic programming on the DAG to find the longest path.
+ */
+function computeCriticalPath(nodes, depsResults, plansMap) {
+  const incompleteNodes = new Map();
+  for (const n of nodes) {
+    if ((n.nodeType === 'task' || n.nodeType === 'milestone') && n.status !== 'completed') {
+      incompleteNodes.set(n.id, n);
+    }
+  }
+
+  if (incompleteNodes.size === 0) return [];
+
+  // Build adjacency list from blocks edges (source → target)
+  const adj = new Map();        // sourceId → [targetId, ...]
+  const inDegree = new Map();   // nodeId → number of incoming blocks edges
+  for (const id of incompleteNodes.keys()) {
+    adj.set(id, []);
+    inDegree.set(id, 0);
+  }
+
+  for (const row of depsResults) {
+    const dep = row.dependency || row;
+    if (dep.dependencyType !== 'blocks') continue;
+    if (!incompleteNodes.has(dep.sourceNodeId) || !incompleteNodes.has(dep.targetNodeId)) continue;
+    adj.get(dep.sourceNodeId).push(dep.targetNodeId);
+    inDegree.set(dep.targetNodeId, (inDegree.get(dep.targetNodeId) || 0) + 1);
+  }
+
+  // Topological sort (Kahn's algorithm) + longest path via DP
+  const queue = [];
+  const dist = new Map();   // nodeId → longest path length ending here
+  const prev = new Map();   // nodeId → predecessor on longest path
+
+  for (const [id, deg] of inDegree) {
+    if (deg === 0) queue.push(id);
+    dist.set(id, 1);
+    prev.set(id, null);
+  }
+
+  const topoOrder = [];
+  while (queue.length > 0) {
+    const nodeId = queue.shift();
+    topoOrder.push(nodeId);
+    for (const neighbor of (adj.get(nodeId) || [])) {
+      const newDist = (dist.get(nodeId) || 1) + 1;
+      if (newDist > (dist.get(neighbor) || 1)) {
+        dist.set(neighbor, newDist);
+        prev.set(neighbor, nodeId);
+      }
+      inDegree.set(neighbor, (inDegree.get(neighbor) || 1) - 1);
+      if (inDegree.get(neighbor) === 0) queue.push(neighbor);
+    }
+  }
+
+  // Find the node with the longest path
+  let maxDist = 0;
+  let endNode = null;
+  for (const [id, d] of dist) {
+    if (d > maxDist) {
+      maxDist = d;
+      endNode = id;
+    }
+  }
+
+  if (!endNode || maxDist <= 1) return [];
+
+  // Trace back the path
+  const path = [];
+  let current = endNode;
+  while (current) {
+    const n = incompleteNodes.get(current);
+    if (n) {
+      path.unshift({
+        node_id: n.id,
+        title: n.title,
+        status: n.status,
+        plan_title: plansMap.get(n.planId)?.title || null,
+      });
+    }
+    current = prev.get(current);
+  }
+
+  return path;
+}
+
+/**
+ * Query Graphiti for knowledge status related to the goal's tasks.
+ * Gracefully degrades if Graphiti is unavailable.
+ */
+async function getKnowledgeStatus(nodes, orgId) {
+  const defaultResult = {
+    facts_count: 0,
+    contradictions: [],
+    gaps: [],
+  };
+
+  if (!graphitiBridge.isAvailable()) return defaultResult;
+
+  const incompleteTasks = nodes
+    .filter(n => (n.nodeType === 'task' || n.nodeType === 'milestone') && n.status !== 'completed')
+    .slice(0, KNOWLEDGE_QUERY_CONCURRENCY);
+
+  if (incompleteTasks.length === 0) return defaultResult;
+
+  try {
+    // Build a combined query from task titles for a single broad search
+    const combinedQuery = incompleteTasks.map(t => t.title).join('. ');
+    const groupId = graphitiBridge.orgGroupId(orgId);
+
+    const [facts, contradictions] = await Promise.all([
+      graphitiBridge.searchMemory({ query: combinedQuery, group_id: groupId, max_results: 20 }),
+      graphitiBridge.detectContradictions({ query: combinedQuery, group_id: groupId, max_results: 10 }),
+    ]);
+
+    // Count facts
+    let factsCount = 0;
+    if (Array.isArray(facts)) factsCount = facts.length;
+    else if (facts?.facts) factsCount = facts.facts.length;
+    else if (facts?.results) factsCount = facts.results.length;
+
+    // Format contradictions
+    const formattedContradictions = (contradictions?.superseded || []).map(s => ({
+      fact_a: s.fact,
+      fact_b: (contradictions.current || []).find(c => c.name === s.name)?.fact || null,
+      discovered_at: s.expired_at,
+    }));
+
+    // Knowledge gaps: tasks with no relevant facts (quick per-task check)
+    const gapResults = await Promise.all(
+      incompleteTasks.map(async (task) => {
+        const query = task.title;
+        try {
+          const taskFacts = await graphitiBridge.queryForContext(task.planId, query, orgId, 1);
+          return { node_id: task.id, title: task.title, has_knowledge: taskFacts.length > 0 };
+        } catch {
+          return { node_id: task.id, title: task.title, has_knowledge: false };
+        }
+      })
+    );
+    const gaps = gapResults.filter(r => !r.has_knowledge);
+
+    return {
+      facts_count: factsCount,
+      contradictions: formattedContradictions,
+      gaps,
+    };
+  } catch {
+    return defaultResult;
+  }
+}
+
+/**
+ * Calculate goal health based on progress and signals.
+ *  - on_track: good completion rate, few blockers
+ *  - at_risk: high blocked ratio or bottleneck-heavy
+ *  - stale: no recent activity on incomplete tasks
+ */
+function calculateHealth(progress, bottlenecks, nodes) {
+  if (progress.total_tasks === 0) return 'on_track';
+
+  // Stale: check if any incomplete task was updated in the last 7 days
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const incompleteTasks = nodes.filter(n =>
+    (n.nodeType === 'task' || n.nodeType === 'milestone') && n.status !== 'completed'
+  );
+  if (incompleteTasks.length > 0) {
+    const anyRecentActivity = incompleteTasks.some(n =>
+      n.updatedAt && new Date(n.updatedAt).getTime() > sevenDaysAgo
+    );
+    if (!anyRecentActivity) return 'stale';
+  }
+
+  // At risk: >25% blocked or significant bottlenecks
+  const blockedRatio = progress.blocked / progress.total_tasks;
+  if (blockedRatio > 0.25) return 'at_risk';
+  if (bottlenecks.length >= 3 && bottlenecks[0]?.downstream_count >= 5) return 'at_risk';
+
+  return 'on_track';
+}
 
 module.exports = router;

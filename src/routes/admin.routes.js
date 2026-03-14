@@ -34,8 +34,7 @@ router.get('/stats', authenticate, requireAdmin, async (req, res) => {
         (SELECT count(*) FROM plan_nodes)::int AS total_nodes,
         (SELECT count(*) FROM plan_nodes WHERE status = 'completed')::int AS completed_nodes,
         (SELECT count(*) FROM plan_collaborators)::int AS total_collaborators,
-        (SELECT count(*) FROM organizations)::int AS total_organizations,
-        (SELECT count(DISTINCT user_id) FROM agent_heartbeats WHERE last_seen_at > now() - interval '24 hours')::int AS active_agents_24h
+        (SELECT count(*) FROM organizations)::int AS total_organizations
     `;
 
     const topUsers = await sql`

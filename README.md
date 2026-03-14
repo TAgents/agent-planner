@@ -17,6 +17,11 @@ AgentPlanner stores plans as hierarchical trees of nodes (phases, tasks, milesto
 - **MCP integration** for AI agents via stdio or HTTP/SSE transport
 - **Knowledge stores** for capturing decisions, learnings, and constraints
 - **Secure authentication** with JWT and API tokens
+- **Task claim/lease mechanism** for multi-agent coordination with automatic lease expiry
+- **Goal health dashboard** with automatic health classification (healthy, at-risk, critical, stalled)
+- **Goal briefing** with critical path and bottleneck analysis
+- **Agent context transparency** via progressive context viewer showing all 4 layers
+- **Decision queue** for structured agent-to-human handoffs with approve/redirect workflow
 
 ## Getting Started
 

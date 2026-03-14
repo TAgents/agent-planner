@@ -33,11 +33,12 @@ const goalsV2Routes = require('./routes/v2/goals.routes');
 const knowledgeV2Routes = require('./routes/v2/knowledge.routes');
 const agentV2Routes = require('./routes/v2/agent.routes');
 const contextRoutes = require('./routes/context.routes');
+const nodeViewRoutes = require('./routes/node-views.routes');
 const decisionRoutes = require('./routes/decision.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const crossPlanDepsRoutes = require('./routes/cross-plan-deps.routes');
 // Removed: handoff routes (pre-v2 cleanup)
 // Removed: chat, prompt routes (pre-v2 cleanup)
-const heartbeatRoutes = require('./routes/heartbeat.routes');
 const slackRoutes = require('./routes/slack.routes');
 const dependencyRoutes = require('./routes/dependency.routes');
 const reasoningRoutes = require('./routes/reasoning.routes');
@@ -148,18 +149,21 @@ app.use('/v2/agent', generalLimiter, agentV2Routes);
 // Agent context routes (leaf-up context loading)
 app.use('/context', generalLimiter, contextRoutes);
 
+// Node view routes (human-readable agent context)
+app.use('/nodes', generalLimiter, nodeViewRoutes);
+
 // Decision request routes (human-in-the-loop)
 app.use('/plans', generalLimiter, decisionRoutes);
 
 // Dependency graph routes
 app.use('/plans', generalLimiter, dependencyRoutes);
+app.use('/dependencies', generalLimiter, crossPlanDepsRoutes);
 app.use('/plans', generalLimiter, reasoningRoutes);
 
 // Dashboard routes (home page data)
 app.use('/dashboard', generalLimiter, dashboardRoutes);
 // Removed: handoff routes (pre-v2 cleanup)
 // Removed: chat, prompt routes (pre-v2 cleanup)
-app.use('/', generalLimiter, heartbeatRoutes);
 
 // Slack integration routes
 app.use('/integrations/slack', generalLimiter, slackRoutes);

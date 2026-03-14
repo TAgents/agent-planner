@@ -105,6 +105,21 @@ The context engine assembles information in 4 progressive layers, each including
 - `PUT /plans/{id}/nodes/{nodeId}/status` - Update task status
 - `POST /plans/{id}/nodes/{nodeId}/log` - Add progress logs
 
+### Task Claims (Multi-agent coordination)
+
+- `POST /nodes/{nodeId}/claim` - Claim a task for an agent
+- `DELETE /nodes/{nodeId}/claim` - Release a claim
+- `GET /nodes/{nodeId}/claim` - Get active claim for a node
+
+### Agent View (Agent-first context)
+
+- `GET /nodes/{nodeId}/agent-view?depth=1-4` - Progressive context layers for agent consumption
+
+### Goal Health (Goal-level dashboards)
+
+- `GET /goals/v2/dashboard` - Goal health dashboard
+- `GET /goals/v2/{goalId}/briefing` - Goal briefing with critical path and bottlenecks
+
 ### Dependencies (Dependency graph operations)
 
 - `POST /plans/{id}/dependencies` - Create dependency edge
@@ -563,7 +578,7 @@ Assign an agent to a task. **Body:** `{ "agent_id": "uuid" }`
 Unassign an agent from a task.
 
 #### GET /plans/{id}/nodes/{nodeId}/suggested-agents
-Get suggested agents for a task based on capability tags. **Query:** `tags` (comma-separated)
+Get suggested agents for a task. **Query:** `tags` (comma-separated)
 
 ---
 
@@ -674,8 +689,69 @@ Recently updated plans with progress percentages.
 #### GET /dashboard/active-goals
 Active goals (placeholder, use `/goals` for full data).
 
-#### GET /dashboard/agent-activity
-Agent activity: assigned agents, current assignments, capability tags.
+---
+
+### Task Claims
+
+#### POST /nodes/{nodeId}/claim
+Claim a task for exclusive agent work. Prevents multiple agents from working on the same task simultaneously.
+
+**Body:**
+```json
+{
+  "agent_id": "string (required)",
+  "ttl_minutes": 30
+}
+```
+
+`ttl_minutes` is optional and controls how long the claim remains active before auto-expiring. Returns the claim object with expiry timestamp.
+
+#### DELETE /nodes/{nodeId}/claim
+Release an active claim on a task.
+
+**Body:** `{ "agent_id": "string (required)" }`
+
+Only the agent that holds the claim can release it.
+
+#### GET /nodes/{nodeId}/claim
+Get the active claim for a node. Returns the claim object if one exists, or 404 if the node is unclaimed.
+
+---
+
+### Agent View
+
+#### GET /nodes/{nodeId}/agent-view
+Get progressive context layers packaged for agent consumption. Similar to the progressive context endpoint but optimized for the agent-first paradigm.
+
+**Query:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `depth` | 1-4 | 2 | Context depth level (same layers as progressive context) |
+
+Returns structured context suitable for direct agent consumption, including task details, dependencies, knowledge, and plan overview at the requested depth.
+
+---
+
+### Goal Health
+
+#### GET /goals/v2/dashboard
+Goal health dashboard. Returns all active goals with health indicators computed from linked plan progress, stale tasks, and dependency bottlenecks.
+
+Each goal includes a `health` field with one of:
+
+| Health | Description |
+|--------|-------------|
+| `on_track` | Linked plans are progressing normally |
+| `at_risk` | Some linked plans have blocked or stalled tasks |
+| `stale` | No meaningful progress detected in linked plans recently |
+
+#### GET /goals/v2/{goalId}/briefing
+Goal briefing with deep analysis. Returns a comprehensive summary including:
+
+- **Critical path** across all linked plans
+- **Bottlenecks** blocking progress toward the goal
+- **Knowledge status** — available research and knowledge relevant to the goal
+- **Plan progress** breakdowns for each linked plan
 
 ---
 
@@ -691,16 +767,6 @@ Execute an MCP tool by name. Body contains the tool arguments.
 Webhook callback from agent sessions. Authenticates via `AGENT_CALLBACK_TOKEN`.
 
 **Body:** `{ "sessionId": "string", "status": "string", "result": {}, "metadata": { "taskId": "uuid" } }`
-
----
-
-### Heartbeat
-
-#### POST /heartbeat
-Send agent heartbeat. Authenticated.
-
-#### GET /plans/{planId}/agent-status
-Get agent statuses for a plan.
 
 ---
 

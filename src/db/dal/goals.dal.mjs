@@ -1,5 +1,6 @@
-import { eq, and, desc, inArray, isNull } from 'drizzle-orm';
+import { eq, and, desc, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../connection.mjs';
+import { sql as rawSql } from '../connection.mjs';
 import { goals, goalLinks, goalEvaluations } from '../schema/goals.mjs';
 
 export const goalsDal = {
@@ -118,5 +119,88 @@ export const goalsDal = {
     return db.select().from(goals)
       .where(and(eq(goals.ownerId, ownerId), eq(goals.status, 'active')))
       .orderBy(desc(goals.priority));
+  },
+
+  // ─── Dashboard ────────────────────────────────────────────────
+
+  /**
+   * Get dashboard data for all goals owned by a user.
+   * Returns goals with linked plan stats and last activity in as few queries as possible.
+   *
+   * @param {string} userId
+   * @returns {Array} goals with plan_stats and last_activity
+   */
+  async getDashboardData(userId) {
+    const rows = await rawSql`
+      WITH user_goals AS (
+        SELECT g.id, g.title, g.description, g.type, g.status, g.priority,
+               g.created_at, g.updated_at
+        FROM goals g
+        WHERE g.owner_id = ${userId}
+          AND g.status != 'abandoned'
+      ),
+      linked_plans AS (
+        SELECT gl.goal_id,
+               gl.linked_id AS plan_id
+        FROM goal_links gl
+        INNER JOIN user_goals ug ON ug.id = gl.goal_id
+        WHERE gl.linked_type = 'plan'
+      ),
+      plan_node_stats AS (
+        SELECT lp.goal_id,
+               lp.plan_id,
+               COUNT(*) FILTER (WHERE pn.node_type IN ('task', 'milestone')) AS total_nodes,
+               COUNT(*) FILTER (WHERE pn.node_type IN ('task', 'milestone') AND pn.status = 'completed') AS completed_nodes,
+               COUNT(*) FILTER (WHERE pn.node_type IN ('task', 'milestone') AND pn.status = 'blocked') AS blocked_nodes,
+               COUNT(*) FILTER (WHERE pn.node_type IN ('task', 'milestone') AND pn.status = 'plan_ready') AS plan_ready_nodes,
+               COUNT(*) FILTER (WHERE pn.node_type IN ('task', 'milestone') AND pn.agent_requested IS NOT NULL) AS agent_request_nodes,
+               COUNT(*) FILTER (WHERE pn.node_type IN ('task', 'milestone') AND pn.status = 'plan_ready'
+                                  AND pn.updated_at < NOW() - INTERVAL '1 day') AS stale_plan_ready_nodes,
+               COUNT(*) FILTER (WHERE pn.node_type IN ('task', 'milestone') AND pn.agent_requested IS NOT NULL
+                                  AND pn.agent_requested_at < NOW() - INTERVAL '1 day') AS stale_agent_request_nodes
+        FROM linked_plans lp
+        INNER JOIN plan_nodes pn ON pn.plan_id = lp.plan_id
+        GROUP BY lp.goal_id, lp.plan_id
+      ),
+      last_log_activity AS (
+        SELECT lp.goal_id,
+               MAX(pnl.created_at) AS last_log_at
+        FROM linked_plans lp
+        INNER JOIN plan_nodes pn ON pn.plan_id = lp.plan_id
+        INNER JOIN plan_node_logs pnl ON pnl.plan_node_id = pn.id
+        GROUP BY lp.goal_id
+      ),
+      goal_aggregates AS (
+        SELECT pns.goal_id,
+               COALESCE(SUM(pns.total_nodes), 0)::int AS total_nodes,
+               COALESCE(SUM(pns.completed_nodes), 0)::int AS completed_nodes,
+               COALESCE(SUM(pns.blocked_nodes), 0)::int AS blocked_nodes,
+               COALESCE(SUM(pns.plan_ready_nodes), 0)::int AS plan_ready_nodes,
+               COALESCE(SUM(pns.agent_request_nodes), 0)::int AS agent_request_nodes,
+               COALESCE(SUM(pns.stale_plan_ready_nodes), 0)::int AS stale_plan_ready_nodes,
+               COALESCE(SUM(pns.stale_agent_request_nodes), 0)::int AS stale_agent_request_nodes,
+               COUNT(DISTINCT pns.plan_id)::int AS linked_plan_count,
+               json_agg(DISTINCT pns.plan_id) AS plan_ids
+        FROM plan_node_stats pns
+        GROUP BY pns.goal_id
+      )
+      SELECT ug.id, ug.title, ug.description, ug.type, ug.status, ug.priority,
+             ug.created_at, ug.updated_at,
+             COALESCE(ga.total_nodes, 0)::int AS total_nodes,
+             COALESCE(ga.completed_nodes, 0)::int AS completed_nodes,
+             COALESCE(ga.blocked_nodes, 0)::int AS blocked_nodes,
+             COALESCE(ga.plan_ready_nodes, 0)::int AS plan_ready_nodes,
+             COALESCE(ga.agent_request_nodes, 0)::int AS agent_request_nodes,
+             COALESCE(ga.stale_plan_ready_nodes, 0)::int AS stale_plan_ready_nodes,
+             COALESCE(ga.stale_agent_request_nodes, 0)::int AS stale_agent_request_nodes,
+             COALESCE(ga.linked_plan_count, 0)::int AS linked_plan_count,
+             COALESCE(ga.plan_ids, '[]'::json) AS plan_ids,
+             lla.last_log_at
+      FROM user_goals ug
+      LEFT JOIN goal_aggregates ga ON ga.goal_id = ug.id
+      LEFT JOIN last_log_activity lla ON lla.goal_id = ug.id
+      ORDER BY ug.priority DESC, ug.created_at DESC
+    `;
+    return rows;
   },
 };

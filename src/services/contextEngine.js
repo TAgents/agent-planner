@@ -370,6 +370,12 @@ async function suggestNextTasks(planId, { limit = 5 } = {}) {
 
     if (!isReady) continue; // Only suggest ready tasks
 
+    // Exclude tasks that have an active claim (another agent is working on them)
+    try {
+      const activeClaim = await dal.claimsDal.getActiveClaim(task.id);
+      if (activeClaim) continue;
+    } catch { /* non-fatal — if claims table not available, skip filtering */ }
+
     // Determine how many downstream tasks this unblocks
     const unblocks = allDeps.filter(d =>
       d.sourceNodeId === task.id &&
