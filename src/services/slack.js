@@ -101,29 +101,38 @@ async function postMessage(userId, text, blocks) {
   }
 }
 
-async function postAgentRequest(userId, { node, plan, requestType, message }) {
+async function postAgentRequest(userId, { node, plan, requestType, message, plan_url, task_url }) {
   const typeEmoji = { start: '🚀', review: '👀', help: '💡', continue: '▶️' };
   const emoji = typeEmoji[requestType] || '📋';
   const text = `${emoji} Agent request: ${requestType} on "${node.title}" in plan "${plan.title}"`;
 
+  const planLink = plan_url ? `<${plan_url}|${plan.title}>` : plan.title;
+  const taskLink = task_url ? `<${task_url}|${node.title}>` : node.title;
+
   const blocks = [
     { type: 'header', text: { type: 'plain_text', text: `${emoji} Agent Request: ${requestType.charAt(0).toUpperCase() + requestType.slice(1)}` } },
-    { type: 'section', fields: [{ type: 'mrkdwn', text: `*Plan:*\n${plan.title}` }, { type: 'mrkdwn', text: `*Task:*\n${node.title}` }] }
+    { type: 'section', fields: [{ type: 'mrkdwn', text: `*Plan:*\n${planLink}` }, { type: 'mrkdwn', text: `*Task:*\n${taskLink}` }] }
   ];
   if (message) blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*Message:*\n${message}` } });
   if (node.description) blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*Description:*\n${node.description.substring(0, 500)}` } });
+  const linkUrl = task_url || plan_url;
+  if (linkUrl) {
+    blocks.push({ type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: task_url ? 'View Task' : 'View Plan' }, url: linkUrl, action_id: 'view_in_app' }] });
+  }
   blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `Plan ID: \`${plan.id}\` | Task ID: \`${node.id}\`` }] });
 
   return postMessage(userId, text, blocks);
 }
 
-async function postDecisionRequest(userId, { decision, plan }) {
+async function postDecisionRequest(userId, { decision, plan, plan_url, task_url }) {
   const urgencyEmoji = decision.urgency === 'blocking' ? '🔴' : '🟡';
   const text = `${urgencyEmoji} Decision needed: "${decision.title}" in plan "${plan.title}"`;
 
+  const planLink = plan_url ? `<${plan_url}|${plan.title}>` : plan.title;
+
   const blocks = [
     { type: 'header', text: { type: 'plain_text', text: `${urgencyEmoji} Decision Required` } },
-    { type: 'section', fields: [{ type: 'mrkdwn', text: `*Plan:*\n${plan.title}` }, { type: 'mrkdwn', text: `*Urgency:*\n${decision.urgency}` }] },
+    { type: 'section', fields: [{ type: 'mrkdwn', text: `*Plan:*\n${planLink}` }, { type: 'mrkdwn', text: `*Urgency:*\n${decision.urgency}` }] },
     { type: 'section', text: { type: 'mrkdwn', text: `*${decision.title}*\n${decision.context || ''}` } }
   ];
 
@@ -132,6 +141,11 @@ async function postDecisionRequest(userId, { decision, plan }) {
       type: 'section',
       text: { type: 'mrkdwn', text: `*Options:*\n${decision.options.map((o, i) => `${i + 1}. ${typeof o === 'string' ? o : o.label || o.text || JSON.stringify(o)}`).join('\n')}` }
     });
+  }
+
+  const linkUrl = task_url || plan_url;
+  if (linkUrl) {
+    blocks.push({ type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: task_url ? 'View Task' : 'View Plan' }, url: linkUrl, action_id: 'view_in_app' }] });
   }
 
   return postMessage(userId, text, blocks);

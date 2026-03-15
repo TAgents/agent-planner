@@ -25,7 +25,7 @@ class WebSocketAdapter extends BaseAdapter {
   }
 
   async deliver(payload) {
-    const { event, userId, plan, task, request, message } = payload;
+    const { event, userId, plan, task, request, message, plan_url, task_url } = payload;
 
     if (!userId) {
       return { success: false, reason: 'no userId in payload' };
@@ -41,6 +41,8 @@ class WebSocketAdapter extends BaseAdapter {
         task: task ? { id: task.id, title: task.title, status: task.status } : undefined,
         request: request || undefined,
         message,
+        plan_url,
+        task_url,
       },
       metadata: {
         timestamp: new Date().toISOString(),

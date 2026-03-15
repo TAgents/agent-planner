@@ -30,7 +30,7 @@ class SlackAdapter extends BaseAdapter {
   }
 
   async deliver(payload) {
-    const { userId, event, plan, task, request, actor, message } = payload;
+    const { userId, event, plan, task, request, actor, message, plan_url, task_url } = payload;
 
     const settings = await this.getSettings(userId);
     if (!settings) {
@@ -38,7 +38,7 @@ class SlackAdapter extends BaseAdapter {
     }
 
     // Build Slack message blocks
-    const blocks = this._buildBlocks(event, plan, task, request, actor, message);
+    const blocks = this._buildBlocks(event, plan, task, request, actor, message, { plan_url, task_url });
 
     try {
       const { WebClient } = require('@slack/web-api');
@@ -61,7 +61,7 @@ class SlackAdapter extends BaseAdapter {
     }
   }
 
-  _buildBlocks(event, plan, task, request, actor, message) {
+  _buildBlocks(event, plan, task, request, actor, message, urls = {}) {
     const blocks = [];
 
     // Header
@@ -71,9 +71,10 @@ class SlackAdapter extends BaseAdapter {
       text: { type: 'mrkdwn', text: `${emoji} *${message || event}*` },
     });
 
-    // Task details
+    // Task details with link
     if (task) {
-      let taskText = `*Task:* ${task.title}\n*Status:* ${task.status}`;
+      const taskLink = urls.task_url ? `<${urls.task_url}|${task.title}>` : task.title;
+      let taskText = `*Task:* ${taskLink}\n*Status:* ${task.status}`;
       if (task.description) taskText += `\n*Description:* ${task.description.substring(0, 200)}`;
       blocks.push({
         type: 'section',
@@ -81,11 +82,12 @@ class SlackAdapter extends BaseAdapter {
       });
     }
 
-    // Plan context
+    // Plan context with link
     if (plan) {
+      const planLink = urls.plan_url ? `<${urls.plan_url}|${plan.title}>` : `*${plan.title}*`;
       blocks.push({
         type: 'context',
-        elements: [{ type: 'mrkdwn', text: `📋 Plan: *${plan.title}*` }],
+        elements: [{ type: 'mrkdwn', text: `📋 Plan: ${planLink}` }],
       });
     }
 
@@ -94,6 +96,20 @@ class SlackAdapter extends BaseAdapter {
       blocks.push({
         type: 'section',
         text: { type: 'mrkdwn', text: `> ${request.message}` },
+      });
+    }
+
+    // Action button for direct link
+    const linkUrl = urls.task_url || urls.plan_url;
+    if (linkUrl) {
+      blocks.push({
+        type: 'actions',
+        elements: [{
+          type: 'button',
+          text: { type: 'plain_text', text: urls.task_url ? 'View Task' : 'View Plan' },
+          url: linkUrl,
+          action_id: 'view_in_app',
+        }],
       });
     }
 

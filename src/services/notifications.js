@@ -5,6 +5,7 @@
 const { usersDal } = require('../db/dal.cjs');
 const logger = require('../utils/logger');
 const slackService = require('./slack');
+const { planUrl, taskUrl } = require('../utils/urls');
 
 const EVENT_CONFIGS = {
   'task.blocked': { getMessage: (node, plan) => `🚫 Task '${node.title}' is now blocked in plan '${plan.title}'`, defaultEnabled: true },
@@ -66,7 +67,9 @@ async function sendNotification(eventType, { node, plan, actor, userId }) {
       event: eventType,
       timestamp: new Date().toISOString(),
       plan: { id: plan.id, title: plan.title },
+      plan_url: plan.id ? planUrl(plan.id) : undefined,
       task: node ? { id: node.id, title: node.title, status: node.status } : null,
+      task_url: node?.id && plan.id ? taskUrl(plan.id, node.id) : undefined,
       actor: actor ? { name: actor.name || 'Unknown', type: actor.type || 'user' } : null,
       message: eventConfig.getMessage(node || {}, plan, actor)
     };
@@ -101,7 +104,11 @@ async function notifyDecisionRequested(decision, plan, actor, planOwnerId) {
   await sendNotification(eventType, { node: decision, plan, actor, userId: planOwnerId });
 
   try {
-    await slackService.postDecisionRequest(planOwnerId, { decision, plan });
+    await slackService.postDecisionRequest(planOwnerId, {
+      decision, plan,
+      plan_url: plan.id ? planUrl(plan.id) : undefined,
+      task_url: decision.node_id && plan.id ? taskUrl(plan.id, decision.node_id) : undefined,
+    });
   } catch (err) {
     logger.error('Failed to send Slack decision notification:', err);
   }
@@ -120,7 +127,9 @@ async function notifyAgentRequested(node, plan, actor, planOwnerId) {
     await slackService.postAgentRequest(planOwnerId, {
       node, plan,
       requestType: node.agent_requested || node.agentRequested,
-      message: node.agent_request_message || node.agentRequestMessage
+      message: node.agent_request_message || node.agentRequestMessage,
+      plan_url: plan.id ? planUrl(plan.id) : undefined,
+      task_url: node.id && plan.id ? taskUrl(plan.id, node.id) : undefined,
     });
   } catch (err) {
     logger.error('Failed to send Slack agent request notification:', err);

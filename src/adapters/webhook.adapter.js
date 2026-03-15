@@ -32,7 +32,7 @@ class WebhookAdapter extends BaseAdapter {
   }
 
   async deliver(payload) {
-    const { userId, event, plan, task, request, actor, message } = payload;
+    const { userId, event, plan, task, request, actor, message, plan_url, task_url } = payload;
 
     const settings = await this.getSettings(userId);
     if (!settings) {
@@ -48,10 +48,12 @@ class WebhookAdapter extends BaseAdapter {
       event,
       timestamp: new Date().toISOString(),
       plan: plan ? { id: plan.id, title: plan.title } : undefined,
+      plan_url,
       task: task ? {
         id: task.id, title: task.title, description: task.description,
         status: task.status, agent_instructions: task.agent_instructions,
       } : undefined,
+      task_url,
       request: request ? {
         type: request.type, message: request.message,
         requested_at: request.requested_at, requested_by: request.requested_by,
