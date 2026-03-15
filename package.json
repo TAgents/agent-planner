@@ -2,6 +2,7 @@
   "name": "agent-planner",
   "version": "0.1.0",
   "description": "A collaborative planning system for humans and AI agents",
+  "license": "BUSL-1.1",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
