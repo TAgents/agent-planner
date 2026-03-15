@@ -139,9 +139,9 @@ app.use('/invites', generalLimiter, shareRoutes);
 // Organization routes
 app.use('/organizations', generalLimiter, organizationRoutes);
 
-// Goal routes
-app.use('/goals', generalLimiter, goalRoutes);
+// Goal routes (v2 must be before v1 so /goals/v2/* doesn't match v1's /:id)
 app.use('/goals/v2', generalLimiter, goalsV2Routes);
+app.use('/goals', generalLimiter, goalRoutes);
 
 app.use('/knowledge', generalLimiter, knowledgeV2Routes);
 app.use('/knowledge/search', searchLimiter);  // stricter limit for semantic search

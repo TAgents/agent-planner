@@ -346,7 +346,11 @@ async function queryForContext(planId, query, orgId, maxResults = 5) {
       relevance: r.score || r.relevance,
     }));
   }
-  if (result.facts) return result.facts.map(f => ({ content: f, source: 'graphiti' }));
+  if (result.facts) return result.facts.map(f => ({
+    content: f.fact || f.content || String(f),
+    source: 'graphiti',
+    relevance: f.score || f.relevance,
+  }));
   if (result.results) return result.results.map(r => ({
     content: r.fact || r.content || String(r),
     source: 'graphiti',
