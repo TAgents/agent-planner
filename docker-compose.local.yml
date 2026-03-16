@@ -126,7 +126,6 @@ services:
     environment:
       MCP_TRANSPORT: http
       API_URL: http://api:3000
-      USER_API_TOKEN: ${MCP_API_TOKEN:-}
       PORT: "3100"
       HOST: 0.0.0.0
       NODE_ENV: production
