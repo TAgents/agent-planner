@@ -116,7 +116,9 @@ export const plansDal = {
         ))
         .limit(1);
       if (orgMember) {
-        return { hasAccess: true, role: 'viewer', plan };
+        // Map org roles to plan access: owner/admin → admin, member → editor
+        const planRole = (orgMember.role === 'owner' || orgMember.role === 'admin') ? 'admin' : 'editor';
+        return { hasAccess: true, role: planRole, plan };
       }
     }
 
