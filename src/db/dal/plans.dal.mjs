@@ -29,11 +29,12 @@ export const plansDal = {
   },
 
   /**
-   * List plans owned by user + plans they collaborate on
+   * List plans owned by user + plans they collaborate on + org plans
    */
-  async listForUser(userId) {
+  async listForUser(userId, { organizationId } = {}) {
     // Owned plans
     const owned = await db.select().from(plans).where(eq(plans.ownerId, userId));
+    const ownedIds = new Set(owned.map(p => p.id));
 
     // Collaborated plans
     const collabs = await db.select({ planId: planCollaborators.planId, role: planCollaborators.role })
@@ -42,15 +43,29 @@ export const plansDal = {
 
     let shared = [];
     if (collabs.length > 0) {
-      const sharedIds = collabs.map(c => c.planId);
-      shared = await db.select().from(plans).where(inArray(plans.id, sharedIds));
-      shared = shared.map(p => {
-        const c = collabs.find(col => col.planId === p.id);
-        return { ...p, role: c?.role ?? null };
-      });
+      const sharedIds = collabs.map(c => c.planId).filter(id => !ownedIds.has(id));
+      if (sharedIds.length > 0) {
+        shared = await db.select().from(plans).where(inArray(plans.id, sharedIds));
+        shared = shared.map(p => {
+          const c = collabs.find(col => col.planId === p.id);
+          return { ...p, role: c?.role ?? null };
+        });
+      }
+    }
+    const sharedIds = new Set(shared.map(p => p.id));
+
+    // Organization plans (visible to all org members, like goals)
+    let organization = [];
+    if (organizationId) {
+      const orgPlans = await db.select().from(plans)
+        .where(eq(plans.organizationId, organizationId));
+      // Exclude plans already in owned or shared
+      organization = orgPlans
+        .filter(p => !ownedIds.has(p.id) && !sharedIds.has(p.id))
+        .map(p => ({ ...p, role: 'member' }));
     }
 
-    return { owned, shared };
+    return { owned, shared, organization };
   },
 
   /**

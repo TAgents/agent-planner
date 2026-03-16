@@ -13,7 +13,8 @@ const {
 /** snake_case plan for API compat */
 const snakePlan = (p) => ({
   id: p.id, title: p.title, description: p.description,
-  owner_id: p.ownerId, status: p.status, visibility: p.visibility,
+  owner_id: p.ownerId, organization_id: p.organizationId,
+  status: p.status, visibility: p.visibility,
   is_public: p.isPublic, view_count: p.viewCount,
   github_repo_owner: p.githubRepoOwner, github_repo_name: p.githubRepoName,
   github_repo_url: p.githubRepoUrl, github_repo_full_name: p.githubRepoFullName,
@@ -39,7 +40,8 @@ const checkPlanAccess = async (planId, userId, roles = []) => {
 const listPlans = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { owned, shared } = await dal.plansDal.listForUser(userId);
+    const organizationId = req.user.organizationId || null;
+    const { owned, shared, organization = [] } = await dal.plansDal.listForUser(userId, { organizationId });
 
     const ownedResults = await Promise.all(owned.map(async (p) => ({
       ...snakePlan(p), role: 'owner',
@@ -51,8 +53,13 @@ const listPlans = async (req, res, next) => {
       progress: await calculatePlanProgress(p.id),
     })));
 
+    const orgResults = await Promise.all(organization.map(async (p) => ({
+      ...snakePlan(p), role: p.role,
+      progress: await calculatePlanProgress(p.id),
+    })));
+
     // Merge, deduplicate, sort
-    const all = [...ownedResults, ...sharedResults];
+    const all = [...ownedResults, ...sharedResults, ...orgResults];
     const unique = [...new Map(all.map(p => [p.id, p])).values()];
     unique.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
 
@@ -62,16 +69,20 @@ const listPlans = async (req, res, next) => {
 
 const createPlan = async (req, res, next) => {
   try {
-    const { title, description, status, visibility, metadata } = req.body;
+    const { title, description, status, visibility, metadata, organization_id } = req.body;
     const userId = req.user.id;
 
     if (!title) return res.status(400).json({ error: 'Plan title is required' });
+
+    // Use explicit org_id from body, fall back to user's current org
+    const organizationId = organization_id || req.user.organizationId || null;
 
     const plan = await dal.plansDal.create({
       title, description: description || '',
       ownerId: userId, status: status || 'draft',
       visibility: visibility || 'private',
       metadata: metadata || {},
+      organizationId,
     });
 
     // Create root node

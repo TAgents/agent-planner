@@ -27,10 +27,11 @@ const calculatePlanProgress = async (planId) => {
 const listPlans = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { owned: ownedPlans, shared: sharedPlans } = await plansDal.listForUser(userId);
+    const organizationId = req.user.organizationId || null;
+    const { owned: ownedPlans, shared: sharedPlans, organization: orgPlans = [] } = await plansDal.listForUser(userId, { organizationId });
 
     const ownedWithRole = ownedPlans.map(plan => ({ ...plan, role: 'owner' }));
-    const allPlans = [...ownedWithRole, ...sharedPlans];
+    const allPlans = [...ownedWithRole, ...sharedPlans, ...orgPlans];
 
     const plansWithProgress = await Promise.all(
       allPlans.map(async (plan) => {

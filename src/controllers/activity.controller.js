@@ -69,8 +69,9 @@ const getUserActivityFeed = async (req, res, next) => {
     const offset = (pageNum - 1) * limitNum;
 
     // Get all plans the user has access to
-    const { owned, shared } = await plansDal.listForUser(userId);
-    const allPlans = [...owned, ...shared];
+    const organizationId = req.user.organizationId || null;
+    const { owned, shared, organization = [] } = await plansDal.listForUser(userId, { organizationId });
+    const allPlans = [...owned, ...shared, ...organization];
     const planIds = allPlans.map(p => p.id);
     const plansMap = Object.fromEntries(allPlans.map(p => [p.id, p]));
 
