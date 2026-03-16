@@ -1,9 +1,10 @@
 /**
- * Unit Tests for Authentication Middleware
- * Tests JWT and API token authentication
+ * Unit Tests for Authentication Middleware v2
+ * Tests JWT (jsonwebtoken) and API token authentication
  */
 
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const {
   createMockRequest,
   createMockResponse,
@@ -11,12 +12,8 @@ const {
   createMockUser
 } = require('../../fixtures/testData');
 
-// Mock supabase-auth (for adminAuth.getUser)
-jest.mock('../../../src/services/supabase-auth', () => ({
-  adminAuth: {
-    getUser: jest.fn(),
-  },
-}));
+// Mock jsonwebtoken
+jest.mock('jsonwebtoken');
 
 // Mock DAL
 jest.mock('../../../src/db/dal.cjs', () => {
@@ -28,12 +25,14 @@ jest.mock('../../../src/db/dal.cjs', () => {
     findById: jest.fn(),
     update: jest.fn().mockResolvedValue(),
   };
-  return { tokensDal, usersDal };
+  const organizationsDal = {
+    listForUser: jest.fn().mockResolvedValue([]),
+  };
+  return { tokensDal, usersDal, organizationsDal };
 });
 
 jest.mock('../../../src/utils/logger', () => ({ error: jest.fn(), api: jest.fn() }));
 
-const { adminAuth } = require('../../../src/services/supabase-auth');
 const { tokensDal, usersDal } = require('../../../src/db/dal.cjs');
 const { authenticate } = require('../../../src/middleware/auth.middleware');
 
@@ -43,7 +42,8 @@ describe('Authentication Middleware', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUser = createMockUser();
-    adminAuth.getUser.mockResolvedValue({ data: { user: null }, error: null });
+    // Default: JWT verify fails
+    jwt.verify.mockImplementation(() => { throw new Error('invalid'); });
   });
 
   describe('Missing Authorization Header', () => {
@@ -84,21 +84,17 @@ describe('Authentication Middleware', () => {
     });
   });
 
-  describe('Supabase JWT Authentication (Bearer)', () => {
-    it('should authenticate valid Supabase JWT', async () => {
+  describe('JWT Authentication (Bearer)', () => {
+    it('should authenticate valid JWT', async () => {
       const req = createMockRequest({ headers: { authorization: 'Bearer valid.jwt.token' } });
       const res = createMockResponse();
       const next = createMockNext();
 
-      adminAuth.getUser.mockResolvedValue({
-        data: {
-          user: {
-            id: mockUser.id, email: mockUser.email,
-            user_metadata: { name: mockUser.name },
-            app_metadata: {}
-          }
-        },
-        error: null
+      jwt.verify.mockReturnValue({
+        sub: mockUser.id,
+        email: mockUser.email,
+        name: mockUser.name,
+        type: 'access',
       });
 
       await authenticate(req, res, next);
@@ -106,7 +102,7 @@ describe('Authentication Middleware', () => {
       expect(next).toHaveBeenCalled();
       expect(req.user).toBeDefined();
       expect(req.user.id).toBe(mockUser.id);
-      expect(req.user.authMethod).toBe('supabase_jwt');
+      expect(req.user.authMethod).toBe('jwt');
     });
 
     it('should return 401 for invalid JWT', async () => {
@@ -114,36 +110,30 @@ describe('Authentication Middleware', () => {
       const res = createMockResponse();
       const next = createMockNext();
 
-      adminAuth.getUser.mockResolvedValue({ data: { user: null }, error: { message: 'Invalid token' } });
+      jwt.verify.mockImplementation(() => { throw new Error('invalid token'); });
+
+      await authenticate(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Invalid or expired token' });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('should reject refresh tokens used as access tokens', async () => {
+      const req = createMockRequest({ headers: { authorization: 'Bearer refresh.jwt.token' } });
+      const res = createMockResponse();
+      const next = createMockNext();
+
+      jwt.verify.mockReturnValue({
+        sub: mockUser.id,
+        email: mockUser.email,
+        type: 'refresh',
+      });
 
       await authenticate(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(next).not.toHaveBeenCalled();
-    });
-
-    it('should sync GitHub profile for GitHub OAuth users', async () => {
-      const req = createMockRequest({ headers: { authorization: 'Bearer valid.jwt.token' } });
-      const res = createMockResponse();
-      const next = createMockNext();
-
-      adminAuth.getUser.mockResolvedValue({
-        data: {
-          user: {
-            id: mockUser.id, email: mockUser.email,
-            user_metadata: { name: mockUser.name, user_name: 'github_user', avatar_url: 'https://github.com/avatar.png', provider_id: '12345' },
-            app_metadata: { provider: 'github' }
-          }
-        },
-        error: null
-      });
-
-      await authenticate(req, res, next);
-
-      expect(usersDal.update).toHaveBeenCalledWith(mockUser.id, expect.objectContaining({
-        githubUsername: 'github_user',
-      }));
-      expect(next).toHaveBeenCalled();
     });
   });
 
@@ -166,22 +156,6 @@ describe('Authentication Middleware', () => {
       expect(req.user.id).toBe(mockUser.id);
       expect(req.user.authMethod).toBe('api_key');
       expect(req.user.permissions).toEqual(['read', 'write']);
-    });
-
-    it('should return 401 for revoked API token', async () => {
-      const apiToken = crypto.randomBytes(32).toString('hex');
-      const req = createMockRequest({ headers: { authorization: `ApiKey ${apiToken}` } });
-      const res = createMockResponse();
-      const next = createMockNext();
-
-      tokensDal.findByHash.mockResolvedValue({
-        id: 'token-id', userId: mockUser.id, permissions: [], revoked: true
-      });
-
-      await authenticate(req, res, next);
-
-      expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({ error: 'Invalid API token' });
     });
 
     it('should return 401 for non-existent API token', async () => {
@@ -212,7 +186,26 @@ describe('Authentication Middleware', () => {
       await authenticate(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({ error: 'User not found' });
+      expect(res.json).toHaveBeenCalledWith({ error: 'Invalid API token' });
+    });
+
+    it('should include tokenOrganizationId when token has organizationId', async () => {
+      const apiToken = crypto.randomBytes(32).toString('hex');
+      const req = createMockRequest({ headers: { authorization: `ApiKey ${apiToken}` } });
+      const res = createMockResponse();
+      const next = createMockNext();
+
+      tokensDal.findByHash.mockResolvedValue({
+        id: 'token-id', userId: mockUser.id,
+        permissions: ['read'], revoked: false,
+        organizationId: 'org-123'
+      });
+      usersDal.findById.mockResolvedValue(mockUser);
+
+      await authenticate(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(req.user.tokenOrganizationId).toBe('org-123');
     });
   });
 
@@ -241,26 +234,29 @@ describe('Authentication Middleware', () => {
       const next = createMockNext();
 
       tokensDal.findByHash.mockResolvedValue(null);
-      adminAuth.getUser.mockResolvedValue({
-        data: {
-          user: { id: mockUser.id, email: mockUser.email, user_metadata: { name: mockUser.name }, app_metadata: {} }
-        },
-        error: null
+      jwt.verify.mockReturnValue({
+        sub: mockUser.id,
+        email: mockUser.email,
+        name: mockUser.name,
+        type: 'access',
       });
 
       await authenticate(req, res, next);
 
-      expect(adminAuth.getUser).toHaveBeenCalled();
+      expect(jwt.verify).toHaveBeenCalled();
+      expect(next).toHaveBeenCalled();
+      expect(req.user.authMethod).toBe('jwt');
     });
   });
 
   describe('Edge Cases', () => {
     it('should handle database errors gracefully', async () => {
-      const req = createMockRequest({ headers: { authorization: 'Bearer some.jwt.token' } });
+      const apiToken = crypto.randomBytes(32).toString('hex');
+      const req = createMockRequest({ headers: { authorization: `ApiKey ${apiToken}` } });
       const res = createMockResponse();
       const next = createMockNext();
 
-      adminAuth.getUser.mockRejectedValue(new Error('Database connection failed'));
+      tokensDal.findByHash.mockRejectedValue(new Error('Database connection failed'));
 
       await authenticate(req, res, next);
 

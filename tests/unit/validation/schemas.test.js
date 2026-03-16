@@ -283,12 +283,12 @@ describe('Validation Schemas', () => {
     describe('moveNode', () => {
       const schema = schemas.node.moveNode;
 
-      it('should require parent_id', () => {
+      it('should accept move with only order_index (parent_id is optional)', () => {
         const result = schema.safeParse({
-          order_index: 0
+          order_index: 1
         });
 
-        expect(result.success).toBe(false);
+        expect(result.success).toBe(true);
       });
 
       it('should accept valid move data', () => {
@@ -329,7 +329,7 @@ describe('Validation Schemas', () => {
       });
 
       it('should validate log_type enum', () => {
-        const validTypes = ['comment', 'progress', 'reasoning', 'decision', 'blocker', 'resolution'];
+        const validTypes = ['comment', 'progress', 'reasoning', 'decision', 'challenge'];
         
         for (const log_type of validTypes) {
           const result = schema.safeParse({ content: 'Test', log_type });
