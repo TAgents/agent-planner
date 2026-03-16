@@ -97,16 +97,16 @@ export const plansDal = {
       return { hasAccess: true, role: 'owner', plan };
     }
 
+    const roleRank = { viewer: 0, editor: 1, admin: 2, owner: 3 };
+
     const [collab] = await db.select()
       .from(planCollaborators)
       .where(and(eq(planCollaborators.planId, planId), eq(planCollaborators.userId, userId)))
       .limit(1);
 
-    if (collab) {
-      return { hasAccess: true, role: collab.role, plan };
-    }
+    let bestRole = collab ? collab.role : null;
 
-    // Check organization membership
+    // Check organization membership — use the higher of collab vs org role
     if (plan.organizationId) {
       const [orgMember] = await db.select({ role: organizationMembers.role })
         .from(organizationMembers)
@@ -116,10 +116,15 @@ export const plansDal = {
         ))
         .limit(1);
       if (orgMember) {
-        // Map org roles to plan access: owner/admin → admin, member → editor
-        const planRole = (orgMember.role === 'owner' || orgMember.role === 'admin') ? 'admin' : 'editor';
-        return { hasAccess: true, role: planRole, plan };
+        const orgPlanRole = (orgMember.role === 'owner' || orgMember.role === 'admin') ? 'admin' : 'editor';
+        if (!bestRole || (roleRank[orgPlanRole] || 0) > (roleRank[bestRole] || 0)) {
+          bestRole = orgPlanRole;
+        }
       }
+    }
+
+    if (bestRole) {
+      return { hasAccess: true, role: bestRole, plan };
     }
 
     // Check if public
