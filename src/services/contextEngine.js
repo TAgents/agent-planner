@@ -134,6 +134,7 @@ async function assembleContext(nodeId, opts = {}) {
   const tokenBudget = opts.token_budget ?? 0;
   const logLimit = opts.log_limit ?? 10;
   const includeResearch = opts.include_research !== false;
+  const orgId = opts.orgId;
 
   const node = await dal.nodesDal.findById(nodeId);
   if (!node) return null;
@@ -196,7 +197,7 @@ async function assembleContext(nodeId, opts = {}) {
   if (graphitiBridge.isAvailable()) {
     try {
       const searchQuery = [node.title, node.description].filter(Boolean).join(' ');
-      const facts = await graphitiBridge.queryForContext(node.planId, searchQuery);
+      const facts = await graphitiBridge.queryForContext(node.planId, searchQuery, orgId);
       context.knowledge = facts;
     } catch {
       context.knowledge = [];
@@ -325,7 +326,7 @@ async function getRpiChainResearch(node) {
  *
  * Returns tasks ordered by priority: RPI chains first, then by dependency count.
  */
-async function suggestNextTasks(planId, { limit = 5 } = {}) {
+async function suggestNextTasks(planId, { limit = 5, orgId } = {}) {
   const allNodes = await dal.nodesDal.listByPlan(planId);
   const tasks = allNodes.filter(n =>
     (n.nodeType === 'task' || n.nodeType === 'milestone') &&
@@ -392,7 +393,7 @@ async function suggestNextTasks(planId, { limit = 5 } = {}) {
     let knowledge_ready = false;
     if (graphitiBridge.isAvailable()) {
       try {
-        const facts = await graphitiBridge.queryForContext(planId, task.title);
+        const facts = await graphitiBridge.queryForContext(planId, task.title, orgId);
         knowledge_ready = facts.length > 0;
       } catch { /* non-fatal */ }
     }

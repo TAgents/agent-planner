@@ -1,10 +1,12 @@
 import { pgTable, uuid, text, timestamp, boolean } from 'drizzle-orm/pg-core';
 import { users } from './users.mjs';
+import { organizations } from './organizations.mjs';
 
 // ─── API Tokens ──────────────────────────────────────────────────
 export const apiTokens = pgTable('api_tokens', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'set null' }),
   name: text('name').notNull(),
   tokenHash: text('token_hash').notNull(),
   permissions: text('permissions').array().default(['read']),

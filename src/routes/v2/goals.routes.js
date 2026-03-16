@@ -25,12 +25,23 @@ const VALID_LINK_TYPES = ['plan', 'task', 'agent'];
 const KNOWLEDGE_QUERY_CONCURRENCY = 10;
 
 /**
- * Fetch goal and verify ownership. Returns goal or sends error response.
+ * Fetch goal and verify access. Org goals: any org member. Personal goals: owner only.
  */
 async function requireGoalAccess(req, res) {
-  const goal = await goalsDal.findById(req.params.id);
+  const goal = await goalsDal.findById(req.params.id || req.params.goalId);
   if (!goal) { res.status(404).json({ error: 'Goal not found' }); return null; }
-  if (goal.ownerId !== req.user.id) { res.status(403).json({ error: 'Access denied' }); return null; }
+
+  if (goal.organizationId) {
+    // Org goal: any org member has access
+    if (!req.user.organizations?.some(o => o.id === goal.organizationId)) {
+      res.status(403).json({ error: 'Access denied' }); return null;
+    }
+  } else {
+    // Personal goal: owner only
+    if (goal.ownerId !== req.user.id) {
+      res.status(403).json({ error: 'Access denied' }); return null;
+    }
+  }
   return goal;
 }
 
@@ -137,7 +148,10 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
     const userId = req.user.id;
 
     // 1. Get all goal data with plan stats in a single SQL query
-    const dashboardRows = await goalsDal.getDashboardData(userId);
+    const dashboardRows = await goalsDal.getDashboardData({
+      organizationId: req.user.organizationId,
+      userId,
+    });
 
     // 2. For each goal with linked plans, detect bottlenecks (parallel, capped)
     const goalResults = await Promise.all(dashboardRows.map(async (row) => {
@@ -206,6 +220,7 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
         type: row.type,
         status: row.status,
         health,
+        owner_name: row.owner_name || null,
         bottleneck_summary: bottleneckSummary,
         knowledge_gap_count: 0, // Requires Graphiti — returned as 0 when unavailable
         last_activity: lastLogAt || null,
@@ -232,7 +247,10 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
 router.get('/tree', authenticate, async (req, res) => {
   try {
     const dal = goalsDal;
-    const tree = await dal.getTree(req.user.id);
+    const tree = await dal.getTree({
+      organizationId: req.user.organizationId,
+      userId: req.user.id,
+    });
     res.json({ tree });
   } catch (err) {
     await logger.error('Goals tree error:', err);
@@ -245,7 +263,10 @@ router.get('/', authenticate, async (req, res) => {
   try {
     const dal = goalsDal;
     const { status, type } = req.query;
-    const goals = await dal.findAll(req.user.id, { status, type });
+    const goals = await dal.findAll({
+      organizationId: req.user.organizationId,
+      userId: req.user.id,
+    }, { status, type });
     res.json({ goals });
   } catch (err) {
     await logger.error('List goals error:', err);
@@ -269,6 +290,7 @@ router.post('/', authenticate, async (req, res) => {
       title,
       description: description || null,
       ownerId: req.user.id,
+      organizationId: req.body.organizationId || req.user.organizationId || null,
       type,
       successCriteria: successCriteria || null,
       priority: priority || 0,
@@ -480,12 +502,9 @@ router.post('/:id/achievers', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'source_node_id is required' });
     }
 
-    const [goal, node] = await Promise.all([
-      goalsDal.findById(req.params.id),
-      nodesDal.findById(source_node_id),
-    ]);
-    if (!goal) return res.status(404).json({ error: 'Goal not found' });
-    if (goal.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
+    const node = await nodesDal.findById(source_node_id);
     if (!node) return res.status(404).json({ error: 'Source node not found' });
 
     const dep = await dependenciesDal.create({
@@ -648,10 +667,9 @@ router.get('/:id/knowledge-gaps', authenticate, async (req, res) => {
  */
 router.get('/:goalId/briefing', authenticate, async (req, res) => {
   try {
-    // 1. Load goal and verify access
-    const goal = await goalsDal.findById(req.params.goalId);
-    if (!goal) return res.status(404).json({ error: 'Goal not found' });
-    if (goal.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+    // 1. Load goal and verify access (org-aware)
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
 
     // 2. Get linked plans from goal_links
     const planLinks = (goal.links || []).filter(l => l.linkedType === 'plan');

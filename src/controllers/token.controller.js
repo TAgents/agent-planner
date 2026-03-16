@@ -10,7 +10,7 @@ const getTokens = async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    const data = await tokensDal.listActiveByUser(userId);
+    const data = await tokensDal.listActiveByUserAndOrg(userId, req.user.organizationId || null);
     res.json(data);
   } catch (error) {
     next(error);
@@ -55,6 +55,7 @@ const createToken = async (req, res, next) => {
     const data = await tokensDal.create({
       id: tokenId,
       userId: userId,
+      organizationId: req.user.organizationId || null,
       name,
       tokenHash: tokenHash,
       permissions,
@@ -88,6 +89,13 @@ const revokeToken = async (req, res, next) => {
 
     if (!token) {
       return res.status(404).json({ error: 'Token not found' });
+    }
+
+    // Verify token belongs to the current org context
+    const userOrgId = req.user.organizationId || null;
+    const tokenOrgId = token.organizationId || null;
+    if (tokenOrgId !== userOrgId) {
+      return res.status(403).json({ error: 'Token belongs to a different organization' });
     }
 
     // Update the token to mark it as revoked

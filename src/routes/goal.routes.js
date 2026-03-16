@@ -16,7 +16,7 @@ router.get('/', authenticate, async (req, res) => {
     const userId = req.user.id;
 
     // Get goals owned by the user
-    const goals = await goalsDal.findAll(userId, { status: status || undefined });
+    const goals = await goalsDal.findAll({ organizationId: req.user.organizationId, userId }, { status: status || undefined });
 
     return res.json({
       goals: goals.map(g => ({

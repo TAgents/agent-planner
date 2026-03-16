@@ -74,9 +74,8 @@ router.get('/', authenticate, async (req, res) => {
     if (include_knowledge === 'true') {
       try {
         if (graphitiBridge.isAvailable()) {
-          const group_id = graphitiBridge.orgGroupId(req.user.organizationId || req.user.org_id);
           const searchQuery = [response.node.title, response.node.description].filter(Boolean).join(' ');
-          const facts = await graphitiBridge.queryForContext(planId, searchQuery);
+          const facts = await graphitiBridge.queryForContext(planId, searchQuery, req.user.organizationId);
           response.knowledge = facts;
         } else {
           response.knowledge = [];
@@ -141,8 +140,7 @@ router.get('/plan', authenticate, async (req, res) => {
     if (include_knowledge === 'true') {
       try {
         if (graphitiBridge.isAvailable()) {
-          const group_id = graphitiBridge.orgGroupId(req.user.organizationId || req.user.org_id);
-          const facts = await graphitiBridge.queryForContext(plan_id, plan.title || '');
+          const facts = await graphitiBridge.queryForContext(plan_id, plan.title || '', req.user.organizationId);
           response.knowledge = facts;
         } else {
           response.knowledge = [];
@@ -212,6 +210,7 @@ router.get('/progressive', authenticate, async (req, res) => {
       token_budget: Number(token_budget),
       log_limit: Number(log_limit),
       include_research: include_research !== 'false',
+      orgId: req.user.organizationId,
     });
 
     return res.json(context);
@@ -253,7 +252,7 @@ router.get('/suggest', authenticate, async (req, res) => {
     const { hasAccess } = await plansDal.userHasAccess(plan_id, userId);
     if (!hasAccess) return res.status(403).json({ error: 'Access denied to this plan' });
 
-    const suggestions = await suggestNextTasks(plan_id, { limit: Number(limit) });
+    const suggestions = await suggestNextTasks(plan_id, { limit: Number(limit), orgId: req.user.organizationId });
     return res.json({ suggestions, count: suggestions.length });
   } catch (error) {
     await logger.error('Suggest next tasks error:', error);

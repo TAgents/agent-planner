@@ -72,6 +72,7 @@ router.get('/:nodeId/agent-view', authenticate, async (req, res) => {
       token_budget: 0,
       log_limit: 20,
       include_research: true,
+      orgId: req.user.organizationId,
     });
 
     if (!context) {
@@ -106,8 +107,7 @@ router.get('/:nodeId/agent-view', authenticate, async (req, res) => {
       if (graphitiBridge.isAvailable()) {
         try {
           const searchQuery = [node.title, node.description].filter(Boolean).join(' ');
-          const orgId = req.user.organizationId || req.user.org_id;
-          const group_id = graphitiBridge.orgGroupId(orgId);
+          const group_id = graphitiBridge.getGroupId(req.user);
           const result = await graphitiBridge.detectContradictions({ query: searchQuery, group_id });
           if (result.contradictions_found) {
             contradictions = result.superseded;

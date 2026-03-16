@@ -9,6 +9,32 @@ const dal = require('../db/dal.cjs');
 const JWT_SECRET = process.env.JWT_SECRET;
 
 /**
+ * Enrich req.user with organizationId by looking up org memberships.
+ * Allows multi-org users to switch via X-Organization-Id header.
+ */
+async function enrichWithOrg(user, req) {
+  try {
+    const orgs = await dal.organizationsDal.listForUser(user.id);
+    if (orgs.length > 0) {
+      user.organizationId = orgs[0].id; // default to first org
+    }
+    user.organizations = orgs.map(o => ({ id: o.id, name: o.name, role: o.role }));
+
+    // API tokens are locked to their org — don't allow header override
+    if (user.authMethod === 'api_key' && user.tokenOrganizationId) {
+      user.organizationId = user.tokenOrganizationId;
+      return;
+    }
+
+    // Allow JWT users to switch via header
+    const headerOrgId = req.headers['x-organization-id'];
+    if (headerOrgId && orgs.some(o => o.id === headerOrgId)) {
+      user.organizationId = headerOrgId;
+    }
+  } catch { /* non-fatal — org enrichment should not block auth */ }
+}
+
+/**
  * Verify a JWT access token
  */
 async function verifyJwt(token) {
@@ -48,6 +74,7 @@ async function verifyApiToken(token) {
     permissions: tokenData.permissions || [],
     authMethod: 'api_key',
     tokenId: tokenData.id,
+    tokenOrganizationId: tokenData.organizationId || null,
   };
 }
 
@@ -67,37 +94,35 @@ const authenticate = async (req, res, next) => {
     }
 
     const [scheme, token] = parts;
+    let user = null;
 
     if (scheme === 'Bearer') {
       // Try API token first (64-char hex)
       if (token.length === 64 && /^[a-f0-9]{64}$/.test(token)) {
-        const user = await verifyApiToken(token);
-        if (user) {
-          req.user = user;
-          return next();
-        }
+        user = await verifyApiToken(token);
       }
 
-      // Try JWT
-      const user = await verifyJwt(token);
-      if (user) {
-        req.user = user;
-        return next();
+      // Try JWT if API token didn't match
+      if (!user) {
+        user = await verifyJwt(token);
       }
 
-      return res.status(401).json({ error: 'Invalid or expired token' });
+      if (!user) {
+        return res.status(401).json({ error: 'Invalid or expired token' });
+      }
+    } else if (scheme === 'ApiKey') {
+      user = await verifyApiToken(token);
+      if (!user) {
+        return res.status(401).json({ error: 'Invalid API token' });
+      }
+    } else {
+      return res.status(401).json({ error: 'Unsupported authentication scheme' });
     }
 
-    if (scheme === 'ApiKey') {
-      const user = await verifyApiToken(token);
-      if (user) {
-        req.user = user;
-        return next();
-      }
-      return res.status(401).json({ error: 'Invalid API token' });
-    }
-
-    return res.status(401).json({ error: 'Unsupported authentication scheme' });
+    // Enrich with organization info before proceeding
+    req.user = user;
+    await enrichWithOrg(user, req);
+    return next();
   } catch (error) {
     await logger.error('Auth middleware error', error);
     return res.status(401).json({ error: 'Authentication failed' });

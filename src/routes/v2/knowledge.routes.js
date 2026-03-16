@@ -93,8 +93,7 @@ router.get('/episodes', authenticate, async (req, res) => {
 
     const { max_episodes = 20 } = req.query;
 
-    const orgId = req.user.organizationId || req.user.org_id;
-    const group_id = graphitiBridge.orgGroupId(orgId);
+    const group_id = graphitiBridge.getGroupId(req.user);
 
     const result = await graphitiBridge.getEpisodes({
       group_id,
@@ -174,8 +173,7 @@ router.post('/episodes', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'content is required' });
     }
 
-    const orgId = req.user.organizationId || req.user.org_id;
-    const group_id = graphitiBridge.orgGroupId(orgId);
+    const group_id = graphitiBridge.getGroupId(req.user);
 
     const result = await graphitiBridge.addEpisode({
       content,
@@ -227,7 +225,13 @@ router.delete('/episodes/:episodeId', authenticate, async (req, res) => {
       return res.status(503).json({ error: 'Knowledge graph not available' });
     }
 
-    const result = await graphitiBridge.deleteEpisode(req.params.episodeId);
+    const { episodeId } = req.params;
+    await logger.info('Knowledge episode delete', {
+      episodeId,
+      userId: req.user.id,
+      organizationId: req.user.organizationId,
+    });
+    const result = await graphitiBridge.deleteEpisode(episodeId);
     res.json({ deleted: true, result });
   } catch (err) {
     await logger.error('Graphiti delete episode error:', err);
@@ -281,8 +285,7 @@ router.post('/graph-search', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'query is required' });
     }
 
-    const orgId = req.user.organizationId || req.user.org_id;
-    const group_id = graphitiBridge.orgGroupId(orgId);
+    const group_id = graphitiBridge.getGroupId(req.user);
 
     const result = await graphitiBridge.searchMemory({
       query,
@@ -343,8 +346,7 @@ router.post('/entities', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'query is required' });
     }
 
-    const orgId = req.user.organizationId || req.user.org_id;
-    const group_id = graphitiBridge.orgGroupId(orgId);
+    const group_id = graphitiBridge.getGroupId(req.user);
 
     const result = await graphitiBridge.searchEntities({
       query,
@@ -405,8 +407,7 @@ router.post('/contradictions', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'query is required' });
     }
 
-    const orgId = req.user.organizationId || req.user.org_id;
-    const group_id = graphitiBridge.orgGroupId(orgId);
+    const group_id = graphitiBridge.getGroupId(req.user);
 
     const result = await graphitiBridge.detectContradictions({
       query,

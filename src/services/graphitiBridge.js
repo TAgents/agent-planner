@@ -263,9 +263,12 @@ async function addEpisode({ content, group_id, name, source, source_description 
  * Graphiti tool: search_memory_facts (group_ids is an array).
  */
 async function searchMemory({ query, group_id, max_results = 10 }) {
+  // Transitional: include 'default' namespace so legacy data remains accessible
+  const group_ids = [group_id || 'default'];
+  if (group_id && group_id !== 'default') group_ids.push('default');
   return callTool('search_memory_facts', {
     query,
-    group_ids: [group_id || 'default'],
+    group_ids,
     max_facts: max_results,
   });
 }
@@ -275,9 +278,12 @@ async function searchMemory({ query, group_id, max_results = 10 }) {
  * Graphiti tool: search_nodes (group_ids is an array).
  */
 async function searchEntities({ query, group_id, max_results = 10 }) {
+  // Transitional: include 'default' namespace so legacy data remains accessible
+  const group_ids = [group_id || 'default'];
+  if (group_id && group_id !== 'default') group_ids.push('default');
   return callTool('search_nodes', {
     query,
-    group_ids: [group_id || 'default'],
+    group_ids,
     max_nodes: max_results,
   });
 }
@@ -295,8 +301,11 @@ async function deleteEpisode(episodeId) {
  * Graphiti tool: get_episodes (group_ids is an array).
  */
 async function getEpisodes({ group_id, max_episodes = 10 }) {
+  // Transitional: include 'default' namespace so legacy data remains accessible
+  const group_ids = [group_id || 'default'];
+  if (group_id && group_id !== 'default') group_ids.push('default');
   return callTool('get_episodes', {
-    group_ids: [group_id || 'default'],
+    group_ids,
     max_episodes,
   });
 }
@@ -321,6 +330,15 @@ async function getStatus() {
  */
 function orgGroupId(orgId) {
   return orgId ? `org_${orgId}` : 'default';
+}
+
+/**
+ * Build group_id from a user object (preferred over orgGroupId).
+ * Falls back to user-specific namespace instead of shared 'default'.
+ */
+function getGroupId(user) {
+  if (user.organizationId) return `org_${user.organizationId}`;
+  return `user_${user.id}`;
 }
 
 /**
@@ -409,6 +427,7 @@ module.exports = {
   getEpisodes,
   getStatus,
   orgGroupId,
+  getGroupId,
   queryForContext,
   detectContradictions,
   callTool,

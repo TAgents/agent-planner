@@ -2,14 +2,37 @@ import { eq, and, desc, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../connection.mjs';
 import { sql as rawSql } from '../connection.mjs';
 import { goals, goalLinks, goalEvaluations } from '../schema/goals.mjs';
+import { users } from '../schema/users.mjs';
 
 export const goalsDal = {
   // ─── Core CRUD ─────────────────────────────────────────────────
 
-  async findAll(ownerId, filters = {}) {
-    let query = db.select().from(goals).where(eq(goals.ownerId, ownerId));
-    // Filters applied post-query for simplicity (drizzle dynamic where is verbose)
-    const rows = await query.orderBy(desc(goals.priority), desc(goals.createdAt));
+  async findAll({ organizationId, userId } = {}, filters = {}) {
+    const whereClause = organizationId
+      ? eq(goals.organizationId, organizationId)
+      : and(eq(goals.ownerId, userId), isNull(goals.organizationId));
+
+    const rows = await db
+      .select({
+        id: goals.id,
+        title: goals.title,
+        description: goals.description,
+        ownerId: goals.ownerId,
+        organizationId: goals.organizationId,
+        type: goals.type,
+        status: goals.status,
+        successCriteria: goals.successCriteria,
+        priority: goals.priority,
+        parentGoalId: goals.parentGoalId,
+        createdAt: goals.createdAt,
+        updatedAt: goals.updatedAt,
+        ownerName: users.name,
+      })
+      .from(goals)
+      .leftJoin(users, eq(users.id, goals.ownerId))
+      .where(whereClause)
+      .orderBy(desc(goals.priority), desc(goals.createdAt));
+
     return rows.filter(r => {
       if (filters.status && r.status !== filters.status) return false;
       if (filters.type && r.type !== filters.type) return false;
@@ -18,8 +41,33 @@ export const goalsDal = {
   },
 
   async findById(id) {
-    const [goal] = await db.select().from(goals).where(eq(goals.id, id)).limit(1);
+    const rows = await rawSql`
+      SELECT g.*, u.name AS owner_name, u.email AS owner_email
+      FROM goals g
+      LEFT JOIN users u ON u.id = g.owner_id
+      WHERE g.id = ${id}
+      LIMIT 1
+    `;
+    const goal = rows[0];
     if (!goal) return null;
+
+    // Map snake_case to camelCase
+    const mapped = {
+      id: goal.id,
+      title: goal.title,
+      description: goal.description,
+      ownerId: goal.owner_id,
+      organizationId: goal.organization_id,
+      type: goal.type,
+      status: goal.status,
+      successCriteria: goal.success_criteria,
+      priority: goal.priority,
+      parentGoalId: goal.parent_goal_id,
+      createdAt: goal.created_at,
+      updatedAt: goal.updated_at,
+      ownerName: goal.owner_name,
+      ownerEmail: goal.owner_email,
+    };
 
     const links = await db.select().from(goalLinks).where(eq(goalLinks.goalId, id));
     const evals = await db.select().from(goalEvaluations)
@@ -27,7 +75,7 @@ export const goalsDal = {
       .orderBy(desc(goalEvaluations.evaluatedAt))
       .limit(10);
 
-    return { ...goal, links, evaluations: evals };
+    return { ...mapped, links, evaluations: evals };
   },
 
   async create(data) {
@@ -49,9 +97,30 @@ export const goalsDal = {
 
   // ─── Hierarchy ─────────────────────────────────────────────────
 
-  async getTree(ownerId) {
-    const all = await db.select().from(goals)
-      .where(eq(goals.ownerId, ownerId))
+  async getTree({ organizationId, userId } = {}) {
+    const whereClause = organizationId
+      ? eq(goals.organizationId, organizationId)
+      : and(eq(goals.ownerId, userId), isNull(goals.organizationId));
+
+    const all = await db
+      .select({
+        id: goals.id,
+        title: goals.title,
+        description: goals.description,
+        ownerId: goals.ownerId,
+        organizationId: goals.organizationId,
+        type: goals.type,
+        status: goals.status,
+        successCriteria: goals.successCriteria,
+        priority: goals.priority,
+        parentGoalId: goals.parentGoalId,
+        createdAt: goals.createdAt,
+        updatedAt: goals.updatedAt,
+        ownerName: users.name,
+      })
+      .from(goals)
+      .leftJoin(users, eq(users.id, goals.ownerId))
+      .where(whereClause)
       .orderBy(desc(goals.priority));
 
     // Build tree in memory
@@ -115,28 +184,42 @@ export const goalsDal = {
 
   // ─── Helpers for agent injection ──────────────────────────────
 
-  async getActiveGoalsForOwner(ownerId) {
+  async getActiveGoals({ organizationId, userId } = {}) {
+    const whereClause = organizationId
+      ? and(eq(goals.organizationId, organizationId), eq(goals.status, 'active'))
+      : and(eq(goals.ownerId, userId), isNull(goals.organizationId), eq(goals.status, 'active'));
+
     return db.select().from(goals)
-      .where(and(eq(goals.ownerId, ownerId), eq(goals.status, 'active')))
+      .where(whereClause)
       .orderBy(desc(goals.priority));
+  },
+
+  // Keep old name as alias for backward compatibility
+  async getActiveGoalsForOwner(ownerId) {
+    return this.getActiveGoals({ userId: ownerId });
   },
 
   // ─── Dashboard ────────────────────────────────────────────────
 
   /**
-   * Get dashboard data for all goals owned by a user.
-   * Returns goals with linked plan stats and last activity in as few queries as possible.
+   * Get dashboard data for goals scoped to an organization or user.
    *
-   * @param {string} userId
-   * @returns {Array} goals with plan_stats and last_activity
+   * @param {{ organizationId?: string, userId: string }} params
+   * @returns {Array} goals with plan_stats, last_activity, and owner_name
    */
-  async getDashboardData(userId) {
+  async getDashboardData({ organizationId, userId } = {}) {
+    const filterClause = organizationId
+      ? rawSql`g.organization_id = ${organizationId}`
+      : rawSql`g.owner_id = ${userId} AND g.organization_id IS NULL`;
+
     const rows = await rawSql`
       WITH user_goals AS (
         SELECT g.id, g.title, g.description, g.type, g.status, g.priority,
-               g.created_at, g.updated_at
+               g.created_at, g.updated_at, g.owner_id,
+               u.name AS owner_name
         FROM goals g
-        WHERE g.owner_id = ${userId}
+        LEFT JOIN users u ON u.id = g.owner_id
+        WHERE ${filterClause}
           AND g.status != 'abandoned'
       ),
       linked_plans AS (
@@ -185,7 +268,7 @@ export const goalsDal = {
         GROUP BY pns.goal_id
       )
       SELECT ug.id, ug.title, ug.description, ug.type, ug.status, ug.priority,
-             ug.created_at, ug.updated_at,
+             ug.created_at, ug.updated_at, ug.owner_name,
              COALESCE(ga.total_nodes, 0)::int AS total_nodes,
              COALESCE(ga.completed_nodes, 0)::int AS completed_nodes,
              COALESCE(ga.blocked_nodes, 0)::int AS blocked_nodes,

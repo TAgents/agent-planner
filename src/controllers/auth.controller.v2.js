@@ -75,11 +75,15 @@ const register = async (req, res, next) => {
     // Convert pending invites
     // TODO: migrate convertPendingInvites to use DAL
 
+    // Include org memberships in response
+    const orgs = await dal.organizationsDal.listForUser(user.id);
+
     res.status(201).json({
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
+        organizations: orgs.map(o => ({ id: o.id, name: o.name, slug: o.slug, role: o.role })),
       },
       session,
     });
@@ -114,11 +118,15 @@ const login = async (req, res, next) => {
 
     const session = generateTokens(user);
 
+    // Include org memberships in response
+    const orgs = await dal.organizationsDal.listForUser(user.id);
+
     res.json({
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
+        organizations: orgs.map(o => ({ id: o.id, name: o.name, slug: o.slug, role: o.role })),
       },
       session,
     });
@@ -352,6 +360,9 @@ const githubCallback = async (req, res, next) => {
 
     const session = generateTokens(user);
 
+    // Include org memberships in response
+    const orgs = await dal.organizationsDal.listForUser(user.id);
+
     res.json({
       user: {
         id: user.id,
@@ -359,6 +370,7 @@ const githubCallback = async (req, res, next) => {
         name: user.name,
         github_username: user.githubUsername,
         github_avatar_url: user.githubAvatarUrl,
+        organizations: orgs.map(o => ({ id: o.id, name: o.name, slug: o.slug, role: o.role })),
       },
       session,
       github_token: tokenData.access_token,  // pass through for repo access

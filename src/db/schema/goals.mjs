@@ -1,5 +1,6 @@
 import { pgTable, uuid, text, timestamp, integer, jsonb, unique } from 'drizzle-orm/pg-core';
 import { users } from './users.mjs';
+import { organizations } from './organizations.mjs';
 
 // ─── Goals (v2) ──────────────────────────────────────────────────
 export const goals = pgTable('goals', {
@@ -7,6 +8,7 @@ export const goals = pgTable('goals', {
   title: text('title').notNull(),
   description: text('description'),
   ownerId: uuid('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'set null' }),
   type: text('type').notNull(),            // outcome | constraint | metric | principle
   status: text('status').notNull().default('active'),  // active | achieved | paused | abandoned
   successCriteria: jsonb('success_criteria'),

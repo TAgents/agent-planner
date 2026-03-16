@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, isNull } from 'drizzle-orm';
 import { db } from '../connection.mjs';
 import { apiTokens } from '../schema/auth.mjs';
 
@@ -59,5 +59,23 @@ export const tokensDal = {
     })
     .from(apiTokens)
     .where(and(eq(apiTokens.userId, userId), eq(apiTokens.revoked, false)));
+  },
+
+  async listActiveByUserAndOrg(userId, organizationId) {
+    const conditions = [eq(apiTokens.userId, userId), eq(apiTokens.revoked, false)];
+    if (organizationId) {
+      conditions.push(eq(apiTokens.organizationId, organizationId));
+    } else {
+      conditions.push(isNull(apiTokens.organizationId));
+    }
+    return db.select({
+      id: apiTokens.id,
+      name: apiTokens.name,
+      permissions: apiTokens.permissions,
+      createdAt: apiTokens.createdAt,
+      lastUsed: apiTokens.lastUsed,
+    })
+    .from(apiTokens)
+    .where(and(...conditions));
   },
 };
