@@ -220,7 +220,7 @@ export const goalsDal = {
         FROM goals g
         LEFT JOIN users u ON u.id = g.owner_id
         WHERE ${filterClause}
-          AND g.status != 'abandoned'
+          AND g.status = 'active'
       ),
       linked_plans AS (
         SELECT gl.goal_id,

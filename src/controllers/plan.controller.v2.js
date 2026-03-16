@@ -41,7 +41,8 @@ const listPlans = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const organizationId = req.user.organizationId || null;
-    const { owned, shared, organization = [] } = await dal.plansDal.listForUser(userId, { organizationId });
+    const statusFilter = req.query.status ? req.query.status.split(',') : undefined;
+    const { owned, shared, organization = [] } = await dal.plansDal.listForUser(userId, { organizationId, status: statusFilter });
 
     const ownedResults = await Promise.all(owned.map(async (p) => ({
       ...snakePlan(p), role: 'owner',

@@ -46,6 +46,12 @@ const { validate, schemas } = require('../validation');
  *     tags: [Plans]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *         description: Comma-separated plan statuses to filter by (e.g. "active,draft"). If omitted, returns all plans.
  *     responses:
  *       200:
  *         description: A list of plans

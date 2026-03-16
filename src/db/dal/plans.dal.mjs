@@ -31,9 +31,15 @@ export const plansDal = {
   /**
    * List plans owned by user + plans they collaborate on + org plans
    */
-  async listForUser(userId, { organizationId } = {}) {
+  async listForUser(userId, { organizationId, status } = {}) {
+    // Build status filter conditions
+    const statusConditions = status
+      ? [inArray(plans.status, Array.isArray(status) ? status : [status])]
+      : [];
+
     // Owned plans
-    const owned = await db.select().from(plans).where(eq(plans.ownerId, userId));
+    const owned = await db.select().from(plans)
+      .where(and(eq(plans.ownerId, userId), ...statusConditions));
     const ownedIds = new Set(owned.map(p => p.id));
 
     // Collaborated plans
@@ -45,7 +51,8 @@ export const plansDal = {
     if (collabs.length > 0) {
       const sharedIds = collabs.map(c => c.planId).filter(id => !ownedIds.has(id));
       if (sharedIds.length > 0) {
-        shared = await db.select().from(plans).where(inArray(plans.id, sharedIds));
+        shared = await db.select().from(plans)
+          .where(and(inArray(plans.id, sharedIds), ...statusConditions));
         shared = shared.map(p => {
           const c = collabs.find(col => col.planId === p.id);
           return { ...p, role: c?.role ?? null };
@@ -58,7 +65,7 @@ export const plansDal = {
     let organization = [];
     if (organizationId) {
       const orgPlans = await db.select().from(plans)
-        .where(eq(plans.organizationId, organizationId));
+        .where(and(eq(plans.organizationId, organizationId), ...statusConditions));
       // Exclude plans already in owned or shared
       organization = orgPlans
         .filter(p => !ownedIds.has(p.id) && !sharedIds.has(p.id))
