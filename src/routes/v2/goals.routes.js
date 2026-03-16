@@ -153,7 +153,42 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
       userId,
     });
 
-    // 2. For each goal with linked plans, detect bottlenecks (parallel, capped)
+    // 2. Fetch actual pending decision nodes across all goals' linked plans
+    const allPlanIds = [...new Set(dashboardRows.flatMap(row =>
+      Array.isArray(row.plan_ids) ? row.plan_ids.filter(Boolean) : []
+    ))];
+
+    let pendingNodesMap = new Map(); // goalPlanId → [nodes]
+    let plansLookup = new Map();    // planId → plan
+    if (allPlanIds.length > 0) {
+      const [planReadyNodes, agentRequestNodes, planRows] = await Promise.all([
+        nodesDal.listByPlanIds(allPlanIds, { status: 'plan_ready', limit: 50 }),
+        nodesDal.listByPlanIds(allPlanIds, { agentRequested: true, limit: 50 }),
+        Promise.all(allPlanIds.map(id => plansDal.findById(id))),
+      ]);
+
+      for (const p of planRows) {
+        if (p) plansLookup.set(p.id, p);
+      }
+
+      // Deduplicate by node ID
+      const seen = new Set();
+      const allPendingNodes = [];
+      for (const n of [...planReadyNodes, ...agentRequestNodes]) {
+        if (!seen.has(n.id)) {
+          seen.add(n.id);
+          allPendingNodes.push(n);
+        }
+      }
+
+      // Group by planId for efficient lookup
+      for (const n of allPendingNodes) {
+        if (!pendingNodesMap.has(n.planId)) pendingNodesMap.set(n.planId, []);
+        pendingNodesMap.get(n.planId).push(n);
+      }
+    }
+
+    // 3. For each goal with linked plans, detect bottlenecks (parallel, capped)
     const goalResults = await Promise.all(dashboardRows.map(async (row) => {
       const totalNodes = row.total_nodes;
       const completedNodes = row.completed_nodes;
@@ -233,6 +268,17 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
           linked_plan_count: linkedPlanCount,
         },
         pending_decision_count: pendingDecisionCount,
+        pending_decisions: planIds.flatMap(pid =>
+          (pendingNodesMap.get(pid) || []).map(n => ({
+            node_id: n.id,
+            plan_id: n.planId,
+            title: n.title,
+            plan_title: plansLookup.get(n.planId)?.title || '',
+            type: n.status === 'plan_ready' ? 'plan_ready' : 'agent_request',
+            agent_request_message: n.agentRequestMessage || null,
+            created_at: n.agentRequestedAt || n.updatedAt,
+          }))
+        ),
       };
     }));
 
