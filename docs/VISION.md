@@ -1,4 +1,4 @@
-# Talking Agents — Vision & Philosophy
+# AgentPlanner — Vision & Philosophy
 
 ## The Problem
 
@@ -8,7 +8,7 @@ The result: humans either micromanage agents (defeating the purpose) or blindly 
 
 ## The Vision
 
-**Talking Agents is an agent orchestration platform where AI agents autonomously plan and execute work toward human-defined goals, while humans maintain full visibility and strategic control.**
+**AgentPlanner is an agent orchestration platform where AI agents autonomously plan and execute work toward human-defined goals, while humans maintain full visibility and strategic control.**
 
 Humans set direction. Agents figure out how. The platform makes this collaboration legible, structured, and persistent.
 

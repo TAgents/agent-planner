@@ -1,8 +1,8 @@
-# Talking Agents — Core Concepts
+# AgentPlanner — Core Concepts
 
 ## Overview
 
-Talking Agents is an agent orchestration platform where AI agents autonomously plan and execute work toward human-defined goals. The API, UI, and MCP server form a shared workspace where agents and humans collaborate through structured plans, dependencies, and a persistent knowledge graph.
+AgentPlanner is an agent orchestration platform where AI agents autonomously plan and execute work toward human-defined goals. The API, UI, and MCP server form a shared workspace where agents and humans collaborate through structured plans, dependencies, and a persistent knowledge graph.
 
 The key insight: **agents drive, humans steer**. Humans define what success looks like. Agents figure out how to get there — breaking down goals into plans, researching approaches, logging decisions, and executing tasks. Humans review, redirect, and approve at key gates.
 

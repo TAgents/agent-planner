@@ -1,4 +1,4 @@
-# Getting Started with Talking Agents
+# Getting Started with AgentPlanner
 
 This guide walks you through the platform from both sides: the **human** steering via the web UI, and the **agent** working via MCP. By the end you'll know how to set a goal, connect an agent, and steer the outcome.
 
