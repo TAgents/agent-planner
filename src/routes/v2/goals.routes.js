@@ -14,6 +14,7 @@ const dependenciesDal = require('../../db/dal.cjs').dependenciesDal;
 const nodesDal = require('../../db/dal.cjs').nodesDal;
 const plansDal = require('../../db/dal.cjs').plansDal;
 const logsDal = require('../../db/dal.cjs').logsDal;
+const decisionsDal = require('../../db/dal.cjs').decisionsDal;
 const graphitiBridge = require('../../services/graphitiBridge');
 const reasoning = require('../../services/reasoning');
 
@@ -158,20 +159,31 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
       Array.isArray(row.plan_ids) ? row.plan_ids.filter(Boolean) : []
     ))];
 
-    let pendingNodesMap = new Map(); // goalPlanId → [nodes]
+    let pendingNodesMap = new Map(); // planId → [nodes]
+    let pendingDecisionsMap = new Map(); // planId → [decision_requests]
     let plansLookup = new Map();    // planId → plan
     if (allPlanIds.length > 0) {
-      const [planReadyNodes, agentRequestNodes, planRows] = await Promise.all([
+      const [planReadyNodes, agentRequestNodes, planRows, ...decisionResults] = await Promise.all([
         nodesDal.listByPlanIds(allPlanIds, { status: 'plan_ready', limit: 50 }),
         nodesDal.listByPlanIds(allPlanIds, { agentRequested: true, limit: 50 }),
         Promise.all(allPlanIds.map(id => plansDal.findById(id))),
+        // Fetch decision_requests for each plan
+        ...allPlanIds.map(id => decisionsDal.listByPlan(id, { status: 'pending' }).catch(() => [])),
       ]);
 
       for (const p of planRows) {
         if (p) plansLookup.set(p.id, p);
       }
 
-      // Deduplicate by node ID
+      // Group decision_requests by planId
+      for (let i = 0; i < allPlanIds.length; i++) {
+        const decisions = decisionResults[i] || [];
+        if (decisions.length > 0) {
+          pendingDecisionsMap.set(allPlanIds[i], decisions);
+        }
+      }
+
+      // Deduplicate nodes by ID
       const seen = new Set();
       const allPendingNodes = [];
       for (const n of [...planReadyNodes, ...agentRequestNodes]) {
@@ -268,17 +280,32 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
           linked_plan_count: linkedPlanCount,
         },
         pending_decision_count: pendingDecisionCount,
-        pending_decisions: planIds.flatMap(pid =>
-          (pendingNodesMap.get(pid) || []).map(n => ({
-            node_id: n.id,
-            plan_id: n.planId,
-            title: n.title,
-            plan_title: plansLookup.get(n.planId)?.title || '',
-            type: n.status === 'plan_ready' ? 'plan_ready' : 'agent_request',
-            agent_request_message: n.agentRequestMessage || null,
-            created_at: n.agentRequestedAt || n.updatedAt,
-          }))
-        ),
+        pending_decisions: [
+          // From decision_requests table (explicit decision requests from agents)
+          ...planIds.flatMap(pid =>
+            (pendingDecisionsMap.get(pid) || []).map(d => ({
+              node_id: d.nodeId || d.id, // fall back to decision ID so frontend has a key
+              plan_id: d.planId,
+              title: d.title,
+              plan_title: plansLookup.get(d.planId)?.title || '',
+              type: 'agent_request',
+              agent_request_message: d.context || null,
+              created_at: d.createdAt,
+            }))
+          ),
+          // From plan_nodes (plan_ready or agent_requested flags)
+          ...planIds.flatMap(pid =>
+            (pendingNodesMap.get(pid) || []).map(n => ({
+              node_id: n.id,
+              plan_id: n.planId,
+              title: n.title,
+              plan_title: plansLookup.get(n.planId)?.title || '',
+              type: n.status === 'plan_ready' ? 'plan_ready' : 'agent_request',
+              agent_request_message: n.agentRequestMessage || null,
+              created_at: n.agentRequestedAt || n.updatedAt,
+            }))
+          ),
+        ],
       };
     }));
 
