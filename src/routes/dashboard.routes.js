@@ -105,6 +105,7 @@ router.get('/pending', authenticate, async (req, res) => {
     res.json({
       decisions: allDecisions.slice(0, limit).map(d => ({
         id: d.id, title: d.title, description: d.context, urgency: d.urgency,
+        options: d.options || [],
         created_at: d.createdAt, plan_id: d.planId, plan_title: d.planTitle, node_id: d.nodeId
       })),
       agent_requests: agentRequests,
