@@ -3375,6 +3375,57 @@
         }
       }
     },
+    "/nodes/{nodeId}/agent-view": {
+      "get": {
+        "tags": [
+          "Context"
+        ],
+        "summary": "Human-readable view of the progressive context an agent receives",
+        "description": "Returns the same progressive context that an agent receives via the\ncontext engine, but formatted for human reading with explicit layer\nlabels and no token budgeting. Useful for understanding exactly what\ninformation an agent had when it made a decision.\n\nLayers:\n- Layer 1 (task_focus): Node details, recent logs, RPI research\n- Layer 2 (neighborhood): Parent, siblings, direct dependencies\n- Layer 3 (knowledge): Facts and contradictions from Graphiti\n- Layer 4 (extended): Plan overview, ancestry, goals, transitive dependencies\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The node ID to get agent context for"
+          },
+          {
+            "in": "query",
+            "name": "depth",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4,
+              "default": 4
+            },
+            "description": "Number of context layers to include (1-4)"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Layered agent context for human review"
+          },
+          "400": {
+            "description": "Invalid parameters"
+          },
+          "403": {
+            "description": "Access denied to the plan containing this node"
+          },
+          "404": {
+            "description": "Node not found"
+          }
+        }
+      }
+    },
     "/plans/{id}/nodes": {
       "get": {
         "summary": "Get all nodes for a plan (tree structure)",
@@ -4872,6 +4923,236 @@
         }
       }
     },
+    "/plans/{id}/nodes/{nodeId}/claim": {
+      "post": {
+        "summary": "Claim a task for an agent (lease-based lock)",
+        "description": "Creates a time-limited claim on a task to prevent multiple agents from working on it simultaneously. Returns 409 if the task is already claimed.",
+        "tags": [
+          "Nodes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The plan ID"
+          },
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The node ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "agent_id"
+                ],
+                "properties": {
+                  "agent_id": {
+                    "type": "string",
+                    "description": "Identifier of the agent claiming the task"
+                  },
+                  "ttl_minutes": {
+                    "type": "integer",
+                    "default": 30,
+                    "description": "Lease duration in minutes (default 30)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Task claimed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "node_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "agent_id": {
+                      "type": "string"
+                    },
+                    "plan_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "claimed_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "expires_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "released_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "created_by": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing agent_id"
+          },
+          "403": {
+            "description": "Access denied"
+          },
+          "404": {
+            "description": "Node not found"
+          },
+          "409": {
+            "description": "Task already claimed by another agent"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Release a task claim",
+        "description": "Releases the agent's claim on a task, allowing other agents to claim it.",
+        "tags": [
+          "Nodes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The plan ID"
+          },
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The node ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "agent_id"
+                ],
+                "properties": {
+                  "agent_id": {
+                    "type": "string",
+                    "description": "Identifier of the agent releasing the claim"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Claim released successfully"
+          },
+          "400": {
+            "description": "Missing agent_id"
+          },
+          "403": {
+            "description": "Access denied"
+          },
+          "404": {
+            "description": "No active claim found"
+          }
+        }
+      },
+      "get": {
+        "summary": "Get the active claim on a task",
+        "description": "Returns the current active claim on a task, or 404 if none exists.",
+        "tags": [
+          "Nodes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The plan ID"
+          },
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The node ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active claim details"
+          },
+          "403": {
+            "description": "Access denied"
+          },
+          "404": {
+            "description": "No active claim on this node"
+          }
+        }
+      }
+    },
     "/plans": {
       "get": {
         "summary": "List all plans accessible to the user",
@@ -4881,6 +5162,16 @@
         "security": [
           {
             "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated plan statuses to filter by (e.g. \"active,draft\"). If omitted, returns all plans."
           }
         ],
         "responses": {
@@ -6951,6 +7242,174 @@
           },
           "401": {
             "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/goals/v2/dashboard": {
+      "get": {
+        "summary": "Get health dashboard for all user goals",
+        "description": "Returns health status for all goals the authenticated user owns,\nincluding linked plan progress, bottleneck summaries, pending decisions,\nand last agent activity timestamps.\n\nHealth heuristics:\n- **stale** — no log activity on any linked plan in 3+ days\n- **at_risk** — has bottlenecks OR blocked tasks > 30% OR pending decisions older than 1 day\n- **on_track** — everything else\n",
+        "tags": [
+          "Goals"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Goal dashboard",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "goals": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "outcome",
+                              "constraint",
+                              "metric",
+                              "principle"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "achieved",
+                              "paused",
+                              "abandoned"
+                            ]
+                          },
+                          "health": {
+                            "type": "string",
+                            "enum": [
+                              "on_track",
+                              "at_risk",
+                              "stale"
+                            ]
+                          },
+                          "bottleneck_summary": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "node_id": {
+                                  "type": "string"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string"
+                                },
+                                "direct_downstream_count": {
+                                  "type": "integer"
+                                }
+                              }
+                            }
+                          },
+                          "knowledge_gap_count": {
+                            "type": "integer"
+                          },
+                          "last_activity": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          },
+                          "linked_plan_progress": {
+                            "type": "object",
+                            "properties": {
+                              "total_nodes": {
+                                "type": "integer"
+                              },
+                              "completed_nodes": {
+                                "type": "integer"
+                              },
+                              "blocked_nodes": {
+                                "type": "integer"
+                              },
+                              "percent_completed": {
+                                "type": "number"
+                              },
+                              "percent_blocked": {
+                                "type": "number"
+                              },
+                              "linked_plan_count": {
+                                "type": "integer"
+                              }
+                            }
+                          },
+                          "pending_decision_count": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/goals/v2/{goalId}/briefing": {
+      "get": {
+        "summary": "Get a comprehensive goal briefing",
+        "description": "Composes goal metadata, progress across linked plans, bottlenecks, critical path, knowledge status, recent activity, and pending decisions into a single response.\n",
+        "tags": [
+          "Goals"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "goalId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Goal briefing"
+          },
+          "403": {
+            "description": "Access denied"
+          },
+          "404": {
+            "description": "Goal not found"
           }
         }
       }
