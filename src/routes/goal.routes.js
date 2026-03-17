@@ -4,7 +4,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../middleware/auth.middleware');
+const { authenticate } = require('../middleware/auth.middleware.v2');
 const { goalsDal, plansDal } = require('../db/dal.cjs');
 const logger = require('../utils/logger');
 const { calculatePlanProgress } = require('../controllers/plan.controller');
@@ -71,6 +71,7 @@ router.post('/', authenticate, async (req, res) => {
 
     const goal = await goalsDal.create({
       ownerId: userId,
+      organizationId: req.body.organization_id || req.user.organizationId || null,
       title,
       description: description || '',
       type,
