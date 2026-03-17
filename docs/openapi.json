@@ -7246,7 +7246,7 @@
         }
       }
     },
-    "/goals/v2/dashboard": {
+    "/goals/dashboard": {
       "get": {
         "summary": "Get health dashboard for all user goals",
         "description": "Returns health status for all goals the authenticated user owns,\nincluding linked plan progress, bottleneck summaries, pending decisions,\nand last agent activity timestamps.\n\nHealth heuristics:\n- **stale** — no log activity on any linked plan in 3+ days\n- **at_risk** — has bottlenecks OR blocked tasks > 30% OR pending decisions older than 1 day\n- **on_track** — everything else\n",
@@ -7378,7 +7378,7 @@
         }
       }
     },
-    "/goals/v2/{goalId}/briefing": {
+    "/goals/{goalId}/briefing": {
       "get": {
         "summary": "Get a comprehensive goal briefing",
         "description": "Composes goal metadata, progress across linked plans, bottlenecks, critical path, knowledge status, recent activity, and pending decisions into a single response.\n",

@@ -28,7 +28,6 @@ const githubRoutes = require('./routes/github.routes');
 // Removed: ai routes, webhook routes (pre-v2 cleanup)
 const shareRoutes = require('./routes/share.routes');
 const organizationRoutes = require('./routes/organization.routes');
-const goalRoutes = require('./routes/goal.routes');
 const goalsV2Routes = require('./routes/v2/goals.routes');
 const knowledgeV2Routes = require('./routes/v2/knowledge.routes');
 const agentV2Routes = require('./routes/v2/agent.routes');
@@ -139,9 +138,7 @@ app.use('/invites', generalLimiter, shareRoutes);
 // Organization routes
 app.use('/organizations', generalLimiter, organizationRoutes);
 
-// Goal routes (v2 must be before v1 so /goals/v2/* doesn't match v1's /:id)
-app.use('/goals/v2', generalLimiter, goalsV2Routes);
-app.use('/goals', generalLimiter, goalRoutes);
+app.use('/goals', generalLimiter, goalsV2Routes);
 
 app.use('/knowledge', generalLimiter, knowledgeV2Routes);
 app.use('/knowledge/search', searchLimiter);  // stricter limit for semantic search

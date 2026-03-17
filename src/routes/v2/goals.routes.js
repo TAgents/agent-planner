@@ -58,7 +58,7 @@ function classifyPgError(err) {
 
 /**
  * @swagger
- * /goals/v2/dashboard:
+ * /goals/dashboard:
  *   get:
  *     summary: Get health dashboard for all user goals
  *     description: |
@@ -277,9 +277,9 @@ router.get('/', authenticate, async (req, res) => {
 // POST /api/goals
 router.post('/', authenticate, async (req, res) => {
   try {
-    const { title, description, type, successCriteria, priority, parentGoalId } = req.body;
-    if (!title || !type) {
-      return res.status(400).json({ error: 'title and type are required' });
+    const { title, description, type = 'outcome', successCriteria, priority, parentGoalId } = req.body;
+    if (!title) {
+      return res.status(400).json({ error: 'title is required' });
     }
     if (!VALID_TYPES.includes(type)) {
       return res.status(400).json({ error: `type must be one of: ${VALID_TYPES.join(', ')}` });
@@ -642,7 +642,7 @@ router.get('/:id/knowledge-gaps', authenticate, async (req, res) => {
 
 /**
  * @swagger
- * /goals/v2/{goalId}/briefing:
+ * /goals/{goalId}/briefing:
  *   get:
  *     summary: Get a comprehensive goal briefing
  *     description: >
