@@ -1,4 +1,4 @@
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, asc, sql } from 'drizzle-orm';
 import { db } from '../connection.mjs';
 import { organizations, organizationMembers } from '../schema/organizations.mjs';
 import { users } from '../schema/users.mjs';
@@ -56,7 +56,8 @@ export const organizationsDal = {
     })
     .from(organizationMembers)
     .innerJoin(organizations, eq(organizationMembers.organizationId, organizations.id))
-    .where(eq(organizationMembers.userId, userId));
+    .where(eq(organizationMembers.userId, userId))
+    .orderBy(asc(organizations.isPersonal), asc(organizationMembers.joinedAt));
   },
 
   async getMembership(orgId, userId) {
