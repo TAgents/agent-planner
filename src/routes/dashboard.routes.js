@@ -9,12 +9,13 @@ const { plansDal, nodesDal, decisionsDal, collaboratorsDal, usersDal, logsDal, g
 const logger = require('../utils/logger');
 
 /**
- * Helper to get all plan IDs a user has access to
+ * Helper to get all plan IDs a user has access to (owned + collaborated + org-level)
+ * Must pass organizationId so org-scoped plans are included — matching listPlans controller behaviour.
  */
-async function getUserPlanIds(userId) {
-  const ownedPlans = await plansDal.listByOwner(userId);
-  const collabPlanIds = await collaboratorsDal.listPlanIdsForUser(userId);
-  return [...new Set([...ownedPlans.map(p => p.id), ...collabPlanIds])];
+async function getUserPlanIds(userId, organizationId = null) {
+  const { owned, shared, organization } = await plansDal.listForUser(userId, { organizationId });
+  const allPlans = [...owned, ...shared, ...organization];
+  return [...new Set(allPlans.map(p => p.id))];
 }
 
 // ─── Dashboard summary stats ─────────────────────────────────────
@@ -27,11 +28,12 @@ router.get('/summary', authenticate, async (req, res) => {
     weekStart.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
     weekStart.setHours(0, 0, 0, 0);
 
-    const planIds = await getUserPlanIds(userId);
+    const organizationId = req.user.organizationId || null;
+    const planIds = await getUserPlanIds(userId, organizationId);
 
-    // Active plans count
+    // Active plans count — only 'active' status, matching the Plans page filter
     const activePlansCount = planIds.length > 0
-      ? await plansDal.countByIds(planIds, { status: ['active', 'draft'] })
+      ? await plansDal.countByIds(planIds, { status: ['active'] })
       : 0;
 
     // Pending decisions
@@ -76,7 +78,8 @@ router.get('/pending', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
     const limit = Math.min(parseInt(req.query.limit) || 5, 20);
-    const planIds = await getUserPlanIds(userId);
+    const organizationId = req.user.organizationId || null;
+    const planIds = await getUserPlanIds(userId, organizationId);
 
     // Pending decisions
     const allDecisions = [];
@@ -122,7 +125,8 @@ router.get('/recent-plans', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
     const limit = Math.min(parseInt(req.query.limit) || 6, 20);
-    const planIds = await getUserPlanIds(userId);
+    const organizationId = req.user.organizationId || null;
+    const planIds = await getUserPlanIds(userId, organizationId);
 
     if (planIds.length === 0) return res.json({ plans: [] });
 

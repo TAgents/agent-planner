@@ -28,10 +28,18 @@ const listPlans = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const organizationId = req.user.organizationId || null;
-    const { owned: ownedPlans, shared: sharedPlans, organization: orgPlans = [] } = await plansDal.listForUser(userId, { organizationId });
+    const { status } = req.query;
+
+    const { owned: ownedPlans, shared: sharedPlans, organization: orgPlans = [] } = await plansDal.listForUser(userId, {
+      organizationId,
+      status: status || undefined,
+    });
 
     const ownedWithRole = ownedPlans.map(plan => ({ ...plan, role: 'owner' }));
     const allPlans = [...ownedWithRole, ...sharedPlans, ...orgPlans];
+
+    // Sort by updatedAt descending so newest plans appear first
+    allPlans.sort((a, b) => new Date(b.updatedAt || b.updated_at).getTime() - new Date(a.updatedAt || a.updated_at).getTime());
 
     const plansWithProgress = await Promise.all(
       allPlans.map(async (plan) => {
@@ -40,7 +48,19 @@ const listPlans = async (req, res, next) => {
       })
     );
 
-    res.json(plansWithProgress);
+    // Return paginated response so frontend can use total count correctly
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
+    const total = plansWithProgress.length;
+    const paginated = plansWithProgress.slice((page - 1) * limit, page * limit);
+
+    res.json({
+      data: paginated,
+      total,
+      page,
+      page_size: limit,
+      total_pages: Math.ceil(total / limit),
+    });
   } catch (error) {
     next(error);
   }
