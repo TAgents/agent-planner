@@ -1,6 +1,6 @@
 {
   "name": "agent-planner",
-  "version": "1.0.0",
+  "version": "0.1.0-alpha.1",
   "description": "A collaborative planning system for humans and AI agents",
   "license": "BUSL-1.1",
   "main": "src/index.js",
