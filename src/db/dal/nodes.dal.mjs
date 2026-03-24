@@ -29,9 +29,14 @@ export const nodesDal = {
   /**
    * Get all nodes for a plan (flat list, caller builds tree)
    */
-  async listByPlan(planId) {
+  async listByPlan(planId, { coherenceStatus } = {}) {
+    const conditions = [eq(planNodes.planId, planId)];
+    if (coherenceStatus) {
+      const statuses = coherenceStatus.split(',');
+      conditions.push(inArray(planNodes.coherenceStatus, statuses));
+    }
     return db.select().from(planNodes)
-      .where(eq(planNodes.planId, planId))
+      .where(and(...conditions))
       .orderBy(asc(planNodes.orderIndex));
   },
 
@@ -212,7 +217,7 @@ export const nodesDal = {
   /**
    * Search nodes with filters
    */
-  async search(planId, { query, status, nodeType, dateFrom, dateTo } = {}) {
+  async search(planId, { query, status, nodeType, coherenceStatus, dateFrom, dateTo } = {}) {
     const conditions = [eq(planNodes.planId, planId)];
     if (query) {
       conditions.push(or(
@@ -229,6 +234,10 @@ export const nodesDal = {
     if (nodeType) {
       const types = nodeType.split(',');
       conditions.push(inArray(planNodes.nodeType, types));
+    }
+    if (coherenceStatus) {
+      const statuses = coherenceStatus.split(',');
+      conditions.push(inArray(planNodes.coherenceStatus, statuses));
     }
     if (dateFrom) conditions.push(gte(planNodes.createdAt, new Date(dateFrom)));
     if (dateTo) conditions.push(lte(planNodes.createdAt, new Date(dateTo)));

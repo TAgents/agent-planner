@@ -19,6 +19,10 @@ const snakePlan = (p) => ({
   github_repo_owner: p.githubRepoOwner, github_repo_name: p.githubRepoName,
   github_repo_url: p.githubRepoUrl, github_repo_full_name: p.githubRepoFullName,
   metadata: p.metadata,
+  quality_score: p.qualityScore,
+  quality_assessed_at: p.qualityAssessedAt,
+  quality_rationale: p.qualityRationale,
+  coherence_checked_at: p.coherenceCheckedAt,
   created_at: p.createdAt, updated_at: p.updatedAt,
   last_viewed_at: p.lastViewedAt,
 });
@@ -128,11 +132,16 @@ const getPlan = async (req, res, next) => {
 const updatePlan = async (req, res, next) => {
   try {
     const { id: planId } = req.params;
-    const { title, description, status, metadata } = req.body;
+    const { title, description, status, metadata, quality_score, quality_assessed_at, quality_rationale } = req.body;
     const userId = req.user.id;
 
     if (!(await checkPlanAccess(planId, userId, ['owner', 'admin', 'editor']))) {
       return res.status(403).json({ error: 'You do not have permission to update this plan' });
+    }
+
+    // Validate quality_score
+    if (quality_score !== undefined && (typeof quality_score !== 'number' || quality_score < 0 || quality_score > 1)) {
+      return res.status(400).json({ error: 'quality_score must be a number between 0.0 and 1.0' });
     }
 
     const updates = {};
@@ -140,6 +149,9 @@ const updatePlan = async (req, res, next) => {
     if (description !== undefined) updates.description = description;
     if (status !== undefined) updates.status = status;
     if (metadata !== undefined) updates.metadata = metadata;
+    if (quality_score !== undefined) updates.qualityScore = quality_score;
+    if (quality_assessed_at !== undefined) updates.qualityAssessedAt = quality_assessed_at;
+    if (quality_rationale !== undefined) updates.qualityRationale = quality_rationale;
 
     const plan = await dal.plansDal.update(planId, updates);
     if (!plan) return res.status(404).json({ error: 'Plan not found' });

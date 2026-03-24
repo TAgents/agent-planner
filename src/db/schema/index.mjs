@@ -11,3 +11,5 @@ export * from './integrations.mjs';
 export * from './audit.mjs';
 export * from './dependencies.mjs';
 export * from './claims.mjs';
+export * from './episodeLinks.mjs';
+export * from './knowledgeLoop.mjs';

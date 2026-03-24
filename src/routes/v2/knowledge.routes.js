@@ -10,6 +10,8 @@ const router = express.Router();
 const { authenticate } = require('../../middleware/auth.middleware.v2');
 const logger = require('../../utils/logger');
 const graphitiBridge = require('../../services/graphitiBridge');
+const messageBus = require('../../services/messageBus');
+const { checkCoherence } = require('../../services/coherenceEngine');
 
 // ─── GRAPHITI STATUS ────────────────────────────────────────────
 /**
@@ -156,6 +158,20 @@ router.get('/episodes', authenticate, async (req, res) => {
  *                 group_id:
  *                   type: string
  *                   description: Organization-scoped group identifier
+ *                 coherence_warnings:
+ *                   type: array
+ *                   description: Tasks whose beliefs may be affected by this new knowledge (BDI coherence check)
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       node_id:
+ *                         type: string
+ *                         format: uuid
+ *                       title:
+ *                         type: string
+ *                       conflict_type:
+ *                         type: string
+ *                         enum: [contradiction_detected, stale_beliefs]
  *       400:
  *         description: Missing required field (content)
  *       503:
@@ -188,7 +204,41 @@ router.post('/episodes', authenticate, async (req, res) => {
       },
     });
 
-    res.status(201).json({ episode: result, group_id });
+    const episodeId = result?.uuid || result?.episode_id || null;
+
+    // BDI Phase 2: Synchronous coherence check (plan-scoped, 2s timeout)
+    let coherence_warnings = [];
+    if (plan_id) {
+      try {
+        const { issues } = await checkCoherence({
+          episodeContent: content,
+          episodeId,
+          groupId: group_id,
+          planId: plan_id,
+          options: { maxTasks: 10, timeoutMs: 2000 },
+        });
+        coherence_warnings = issues.map(i => ({
+          node_id: i.node_id,
+          title: i.title,
+          conflict_type: i.conflict_type,
+        }));
+      } catch (err) {
+        await logger.warn('Sync coherence check failed:', err.message);
+      }
+    }
+
+    // BDI Phase 2: Async full org-wide coherence check via messageBus
+    messageBus.publish('episode.created', {
+      episodeId,
+      content,
+      groupId: group_id,
+      planId: plan_id || null,
+      nodeId: node_id || null,
+      userId: req.user.id,
+      organizationId: req.user.organizationId,
+    }).catch(err => logger.warn('Failed to publish episode.created:', err.message));
+
+    res.status(201).json({ episode: result, group_id, coherence_warnings });
   } catch (err) {
     await logger.error('Graphiti add episode error:', err);
     res.status(500).json({ error: 'Failed to add knowledge episode' });
@@ -419,6 +469,158 @@ router.post('/contradictions', authenticate, async (req, res) => {
   } catch (err) {
     await logger.error('Contradiction detection error:', err);
     res.status(500).json({ error: 'Failed to detect contradictions' });
+  }
+});
+
+// ─── COVERAGE MAP ─────────────────────────────────────────────
+/**
+ * @swagger
+ * /knowledge/coverage-map:
+ *   get:
+ *     summary: Get knowledge coverage map
+ *     description: Returns knowledge organized by topic (Graphiti entities), with each fact showing which plan tasks it relates to. Also lists tasks with no knowledge backing. Knowledge-centric view of coverage.
+ *     tags: [Knowledge]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Knowledge coverage map with topics, facts, and task links
+ *       503:
+ *         description: Knowledge graph not available
+ */
+router.get('/coverage-map', authenticate, async (req, res) => {
+  try {
+    if (!graphitiBridge.isAvailable()) {
+      return res.status(503).json({ error: 'Knowledge graph not available' });
+    }
+
+    const dal = require('../../db/dal.cjs');
+    const groupId = graphitiBridge.getGroupId(req.user);
+    const userId = req.user.id;
+    const organizationId = req.user.organizationId;
+
+    // 1. Get all active plan tasks first (needed for search query)
+    // (moved up so we can build a meaningful search query from task titles)
+    const planResult = await dal.plansDal.listForUser(userId, { organizationId });
+    const allPlans = [...(planResult.owned || []), ...(planResult.shared || []), ...(planResult.organization || [])];
+    const activePlans = allPlans.filter(p => p.status === 'active' || p.status === 'draft');
+
+    const allTasks = [];
+    const planTitles = new Map();
+    for (const plan of activePlans) {
+      planTitles.set(plan.id, plan.title);
+      const nodes = await dal.nodesDal.listByPlan(plan.id);
+      for (const n of nodes) {
+        if (n.nodeType === 'task' || n.nodeType === 'milestone') {
+          allTasks.push({ ...n, planTitle: plan.title });
+        }
+      }
+    }
+
+    // 2. Build search query from plan/task titles for Graphiti
+    const searchTerms = [
+      ...activePlans.map(p => p.title),
+      ...allTasks.slice(0, 10).map(t => t.title),
+    ].join(' ');
+
+    // 3. Fetch entities and facts from Graphiti
+    const [entityResult, factResult] = await Promise.all([
+      graphitiBridge.searchEntities({ query: searchTerms, group_id: groupId, max_results: 30 }),
+      graphitiBridge.searchMemory({ query: searchTerms, group_id: groupId, max_results: 50 }),
+    ]);
+
+    const entities = Array.isArray(entityResult)
+      ? entityResult
+      : entityResult?.nodes || entityResult?.entities || [];
+    const allFacts = Array.isArray(factResult)
+      ? factResult
+      : factResult?.facts || [];
+
+    // 4. Build topic groups from entities
+    const topics = [];
+    const linkedTaskIds = new Set();
+
+    // Build entity UUID→name map for fact matching
+    const entityUuidMap = new Map();
+    for (const e of entities) {
+      if (e.uuid) entityUuidMap.set(e.uuid, e.name || '');
+    }
+
+    for (const entity of entities) {
+      const entityName = entity.name || '';
+      const entityUuid = entity.uuid || '';
+      const entityType = (entity.labels || []).find(l => l !== 'Entity') || entity.entity_type || '';
+
+      // Find facts related to this entity (match by UUID or by name in fact text)
+      const entityFacts = allFacts.filter(f => {
+        // Match by source/target UUID
+        if (f.source_node_uuid === entityUuid || f.target_node_uuid === entityUuid) return true;
+        // Fallback: match entity name in fact text
+        if (entityName.length > 3 && (f.fact || '').toLowerCase().includes(entityName.toLowerCase())) return true;
+        return false;
+      });
+
+      if (entityFacts.length === 0) continue;
+
+      const factsWithTasks = entityFacts.map(f => {
+        const factText = f.fact || f.content || '';
+        // Find tasks whose title or description overlaps with this fact
+        const related = allTasks.filter(t => {
+          const taskText = (t.title + ' ' + (t.description || '')).toLowerCase();
+          const factWords = factText.toLowerCase().split(/\s+/).filter(w => w.length > 4);
+          return factWords.some(w => taskText.includes(w));
+        }).slice(0, 3);
+
+        related.forEach(t => linkedTaskIds.add(t.id));
+
+        return {
+          fact: factText.length > 150 ? factText.slice(0, 150) + '...' : factText,
+          relation: f.name || '',
+          linked_tasks: related.map(t => ({
+            task_id: t.id,
+            task_title: t.title,
+            plan_id: t.planId,
+            plan_title: t.planTitle,
+          })),
+        };
+      });
+
+      topics.push({
+        entity: {
+          name: entityName,
+          entity_type: entityType,
+          summary: (entity.summary || '').slice(0, 200),
+        },
+        facts: factsWithTasks,
+      });
+    }
+
+    // 5. Find tasks with no knowledge backing
+    const unlinkedTasks = allTasks
+      .filter(t => !linkedTaskIds.has(t.id) && t.status !== 'completed')
+      .map(t => ({
+        task_id: t.id,
+        task_title: t.title,
+        plan_id: t.planId,
+        plan_title: t.planTitle,
+        status: t.status,
+      }));
+
+    res.json({
+      topics,
+      unlinked_tasks: unlinkedTasks,
+      stats: {
+        total_facts: allFacts.length,
+        total_entities: entities.length,
+        total_tasks: allTasks.length,
+        covered_tasks: linkedTaskIds.size,
+        uncovered_tasks: unlinkedTasks.length,
+        coverage_pct: allTasks.length > 0 ? Math.round((linkedTaskIds.size / allTasks.length) * 100) : 100,
+      },
+    });
+  } catch (err) {
+    await logger.error('Coverage map error:', err);
+    res.status(500).json({ error: 'Failed to build coverage map' });
   }
 });
 

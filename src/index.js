@@ -36,6 +36,9 @@ const nodeViewRoutes = require('./routes/node-views.routes');
 const decisionRoutes = require('./routes/decision.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const crossPlanDepsRoutes = require('./routes/cross-plan-deps.routes');
+const coherenceRoutes = require('./routes/v2/coherence.routes');
+const coherencePendingRoutes = require('./routes/v2/coherencePending.routes');
+const knowledgeLoopRoutes = require('./routes/v2/knowledgeLoop.routes');
 // Removed: handoff routes (pre-v2 cleanup)
 // Removed: chat, prompt routes (pre-v2 cleanup)
 const slackRoutes = require('./routes/slack.routes');
@@ -156,6 +159,9 @@ app.use('/plans', generalLimiter, decisionRoutes);
 app.use('/plans', generalLimiter, dependencyRoutes);
 app.use('/dependencies', generalLimiter, crossPlanDepsRoutes);
 app.use('/plans', generalLimiter, reasoningRoutes);
+app.use('/plans', generalLimiter, coherenceRoutes);
+app.use('/coherence', generalLimiter, coherencePendingRoutes);
+app.use('/plans', generalLimiter, knowledgeLoopRoutes);
 
 // Dashboard routes (home page data)
 app.use('/dashboard', generalLimiter, dashboardRoutes);
@@ -227,6 +233,14 @@ const startServer = async () => {
     if (process.env.DATABASE_URL) {
       await messageBus.init(process.env.DATABASE_URL);
       await logger.api('MessageBus initialized (Postgres LISTEN/NOTIFY)');
+
+      // Initialize async service listeners
+      const { initCoherenceEngine } = require('./services/coherenceEngine');
+      const { initStatusPropagation } = require('./services/reasoning');
+      const { initCompactionListener } = require('./services/compaction');
+      initCoherenceEngine(messageBus);
+      initStatusPropagation(messageBus);
+      initCompactionListener(messageBus);
     }
 
     await logger.api(`Starting agent-planner API server...`);

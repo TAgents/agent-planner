@@ -12,9 +12,10 @@ export const claimsDal = {
    * @param {string} agentId
    * @param {string} userId - authenticated user who creates the claim
    * @param {number} ttlMinutes - lease duration (default 30)
+   * @param {string[]} beliefSnapshot - episode IDs that justified this commitment
    * @returns {object|null} The created claim, or null if already claimed
    */
-  async claim(nodeId, planId, agentId, userId, ttlMinutes = 30) {
+  async claim(nodeId, planId, agentId, userId, ttlMinutes = 30, beliefSnapshot = []) {
     // Use a single INSERT ... WHERE NOT EXISTS to avoid race conditions.
     // The unique partial index on (node_id) WHERE released_at IS NULL
     // provides an additional safety net at the DB level.
@@ -27,6 +28,7 @@ export const claimsDal = {
         agentId,
         expiresAt,
         createdBy: userId,
+        beliefSnapshot,
       }).returning();
 
       return created;
@@ -50,6 +52,7 @@ export const claimsDal = {
             agentId,
             expiresAt,
             createdBy: userId,
+            beliefSnapshot,
           }).returning();
           return created;
         } catch {

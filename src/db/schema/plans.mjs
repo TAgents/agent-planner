@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, integer, boolean, varchar, jsonb, index, unique } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, integer, boolean, varchar, jsonb, doublePrecision, index, unique } from 'drizzle-orm/pg-core';
 import { users } from './users.mjs';
 import { organizations } from './organizations.mjs';
 
@@ -27,6 +27,15 @@ export const plans = pgTable('plans', {
   lastViewedAt: timestamp('last_viewed_at', { withTimezone: true }),
 
   metadata: jsonb('metadata').default({}),
+
+  // Quality assessment (set by Knowledge Loop runner)
+  qualityScore: doublePrecision('quality_score'),
+  qualityAssessedAt: timestamp('quality_assessed_at', { withTimezone: true }),
+  qualityRationale: text('quality_rationale'),
+
+  // Coherence tracking — compared to updatedAt to detect staleness
+  coherenceCheckedAt: timestamp('coherence_checked_at', { withTimezone: true }),
+
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
@@ -60,6 +69,15 @@ export const planNodes = pgTable('plan_nodes', {
   assignedAgentAt: timestamp('assigned_agent_at', { withTimezone: true }),
   assignedAgentBy: uuid('assigned_agent_by').references(() => users.id, { onDelete: 'set null' }),
 
+  // BDI coherence status (set by coherence engine)
+  // coherent | stale_beliefs | contradiction_detected | unchecked
+  coherenceStatus: text('coherence_status').default('unchecked'),
+
+  // Quality assessment (set by Knowledge Loop runner)
+  qualityScore: doublePrecision('quality_score'),
+  qualityAssessedAt: timestamp('quality_assessed_at', { withTimezone: true }),
+  qualityRationale: text('quality_rationale'),
+
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 }, (table) => [
@@ -67,6 +85,7 @@ export const planNodes = pgTable('plan_nodes', {
   index('plan_nodes_parent_id_idx').on(table.parentId),
   index('idx_plan_nodes_status').on(table.status),
   index('idx_plan_nodes_node_type').on(table.nodeType),
+  index('idx_plan_nodes_coherence_status').on(table.coherenceStatus),
   unique('plan_nodes_unique_title_per_parent')
     .on(table.planId, table.parentId, table.title, table.nodeType)
     .nullsNotDistinct(),

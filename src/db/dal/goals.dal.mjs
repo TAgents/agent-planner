@@ -21,6 +21,9 @@ export const goalsDal = {
         organizationId: goals.organizationId,
         type: goals.type,
         status: goals.status,
+        goalType: goals.goalType,
+        promotedAt: goals.promotedAt,
+        coherenceCheckedAt: goals.coherenceCheckedAt,
         successCriteria: goals.successCriteria,
         priority: goals.priority,
         parentGoalId: goals.parentGoalId,
@@ -60,6 +63,9 @@ export const goalsDal = {
       organizationId: goal.organization_id,
       type: goal.type,
       status: goal.status,
+      goalType: goal.goal_type,
+      promotedAt: goal.promoted_at,
+      coherenceCheckedAt: goal.coherence_checked_at,
       successCriteria: goal.success_criteria,
       priority: goal.priority,
       parentGoalId: goal.parent_goal_id,
@@ -111,6 +117,9 @@ export const goalsDal = {
         organizationId: goals.organizationId,
         type: goals.type,
         status: goals.status,
+        goalType: goals.goalType,
+        promotedAt: goals.promotedAt,
+        coherenceCheckedAt: goals.coherenceCheckedAt,
         successCriteria: goals.successCriteria,
         priority: goals.priority,
         parentGoalId: goals.parentGoalId,
@@ -214,7 +223,7 @@ export const goalsDal = {
 
     const rows = await rawSql`
       WITH user_goals AS (
-        SELECT g.id, g.title, g.description, g.type, g.status, g.priority,
+        SELECT g.id, g.title, g.description, g.type, g.goal_type, g.status, g.priority,
                g.created_at, g.updated_at, g.owner_id,
                u.name AS owner_name
         FROM goals g
@@ -267,7 +276,7 @@ export const goalsDal = {
         FROM plan_node_stats pns
         GROUP BY pns.goal_id
       )
-      SELECT ug.id, ug.title, ug.description, ug.type, ug.status, ug.priority,
+      SELECT ug.id, ug.title, ug.description, ug.type, ug.goal_type, ug.status, ug.priority,
              ug.created_at, ug.updated_at, ug.owner_name,
              COALESCE(ga.total_nodes, 0)::int AS total_nodes,
              COALESCE(ga.completed_nodes, 0)::int AS completed_nodes,
@@ -285,5 +294,40 @@ export const goalsDal = {
       ORDER BY ug.priority DESC, ug.created_at DESC
     `;
     return rows;
+  },
+
+  // ─── BDI Desire/Intention ───────────────────────────────────────
+
+  async promote(id) {
+    return this.update(id, { goalType: 'intention', promotedAt: new Date() });
+  },
+
+  async getDescendants(goalId) {
+    const rows = await rawSql`
+      WITH RECURSIVE descendants AS (
+        SELECT * FROM goals WHERE parent_goal_id = ${goalId}
+        UNION ALL
+        SELECT g.* FROM goals g
+        JOIN descendants d ON g.parent_goal_id = d.id
+      )
+      SELECT * FROM descendants ORDER BY priority DESC, created_at DESC
+    `;
+    return rows.map(g => ({
+      id: g.id,
+      title: g.title,
+      description: g.description,
+      ownerId: g.owner_id,
+      organizationId: g.organization_id,
+      type: g.type,
+      status: g.status,
+      goalType: g.goal_type,
+      promotedAt: g.promoted_at,
+      coherenceCheckedAt: g.coherence_checked_at,
+      successCriteria: g.success_criteria,
+      priority: g.priority,
+      parentGoalId: g.parent_goal_id,
+      createdAt: g.created_at,
+      updatedAt: g.updated_at,
+    }));
   },
 };

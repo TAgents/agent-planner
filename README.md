@@ -90,10 +90,77 @@ npm start         # Production
 ```bash
 npm run dev          # Development server (nodemon)
 npm start            # Production server
-npm test             # Run test suite
+npm test             # Run all tests (unit + integration)
 npm run db:init      # Apply DB migrations
+npm run db:push      # Push Drizzle schema to database (dev)
+npm run db:migrate   # Run migration files (production)
+npm run db:studio    # Open Drizzle Studio (DB browser)
+npm run docs:all     # Generate + validate OpenAPI docs
 npm run lint         # ESLint
 ```
+
+## Testing
+
+### Unit Tests
+
+Unit tests mock the DAL layer and test controllers, validation schemas, and services in isolation. No running database required.
+
+```bash
+npm test                                    # Run all tests (unit + integration)
+npm run test:watch                          # Watch mode
+npm run test:coverage                       # With coverage report
+npx jest tests/unit/validation/schemas.test.js  # Run a single test file
+```
+
+### Integration Tests (API Smoke Suite)
+
+The integration test suite exercises every major endpoint group against a running local API via HTTP. It covers auth, plans, nodes, dependencies, goals, claims, episode-links, and knowledge endpoints — 58 tests total.
+
+**Prerequisites:**
+
+1. Start the local stack:
+   ```bash
+   docker compose -f docker-compose.local.yml up -d --build
+   ```
+
+2. Generate an API token (JWT):
+   ```bash
+   export API_TOKEN=$(docker exec agent-planner-api-1 node -e "
+     const jwt = require('jsonwebtoken');
+     console.log(jwt.sign(
+       { sub: '<USER_UUID>', email: '<EMAIL>' },
+       process.env.JWT_SECRET,
+       { expiresIn: '24h' }
+     ));
+   ")
+   ```
+
+3. Run the tests:
+   ```bash
+   API_TOKEN=$API_TOKEN npx jest tests/integration/api-smoke.test.js --runInBand
+   ```
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|---|---|---|
+| `API_TOKEN` | *(none)* | JWT or API key for authentication. **Required** — tests are skipped if not set. |
+| `API_URL` | `http://localhost:3000` | Base URL of the running API. |
+
+**What's tested:**
+
+| Group | Tests | Coverage |
+|---|---|---|
+| Auth | 2 | Missing/invalid token rejection |
+| Plans CRUD | 8 | Create, list, get, update, quality score, validation, delete |
+| Nodes CRUD | 12 | Tree structure, details, coherence status, quality score, filtering |
+| Dependencies | 7 | Create, duplicate detection, traversal (upstream/downstream), delete |
+| Goals | 10 | CRUD, plan linking, knowledge gaps |
+| Claims (BDI) | 5 | Claim with belief snapshot, conflict detection, release |
+| Episode Links (BDI) | 8 | Link/unlink episodes, filtering by type, duplicate detection |
+| Knowledge/Graphiti | 5 | Episode creation, graph search (auto-skipped if Graphiti unavailable) |
+
+The suite creates its own test data and cleans up after itself. Each run uses unique IDs to avoid conflicts with existing data.
 
 ## Project Structure
 
@@ -145,16 +212,18 @@ API tokens are created in the AgentPlanner UI under Settings → API Tokens. Tok
 PostgreSQL 17 with pgvector via Drizzle ORM. Key tables:
 
 - `users`, `organizations`, `plan_collaborators` — accounts and access
-- `plans`, `plan_nodes` — hierarchical plan structure
+- `plans`, `plan_nodes` — hierarchical plan structure (includes BDI fields: `coherence_status`, `quality_score`)
 - `node_dependencies` — dependency graph edges
+- `node_claims` — TTL-based task lease/lock for multi-agent coordination
+- `episode_node_links` — links Graphiti knowledge episodes to plan nodes (BDI belief tracking)
 - `plan_node_logs`, `plan_comments` — activity and discussion
-- `goals` — goals with plan links and health tracking
-- `knowledge_entries` — vector-embedded knowledge store
-- `decisions` — decision requests and resolutions
+- `goals`, `goal_links`, `goal_evaluations` — goals with plan links and health tracking
+- `decision_requests` — structured agent-to-human handoffs
 - `api_tokens` — programmatic access tokens
-- `schema_migrations` — migration tracking
 
-Migrations live in `src/db/sql/` with numeric prefixes. Running `npm run db:init` applies only new migrations (idempotent).
+Knowledge is stored in Graphiti (external temporal knowledge graph via FalkorDB), not in PostgreSQL.
+
+Migrations live in `migrations/` with numeric prefixes. Schema definitions in `src/db/schema/*.mjs` (Drizzle ORM).
 
 ## Documentation
 

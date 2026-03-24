@@ -86,6 +86,13 @@ const { validate, schemas } = require('../validation');
  *           type: boolean
  *           default: false
  *         description: Include full node details (description, context, agent_instructions, metadata, timestamps). Default is false for minimal response size.
+ *       - in: query
+ *         name: coherence_status
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [coherent, stale_beliefs, contradiction_detected, unchecked]
+ *         description: Filter nodes by BDI coherence status. Supports comma-separated values.
  *     responses:
  *       200:
  *         description: Hierarchical tree of plan nodes
@@ -1131,6 +1138,11 @@ const claimsController = require('../controllers/claims.controller.v2');
  *                 type: integer
  *                 default: 30
  *                 description: Lease duration in minutes (default 30)
+ *               belief_snapshot:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Episode IDs (Graphiti UUIDs) that justified this commitment. Enables BDI coherence checking.
  *     responses:
  *       201:
  *         description: Task claimed successfully
@@ -1163,6 +1175,10 @@ const claimsController = require('../controllers/claims.controller.v2');
  *                 created_by:
  *                   type: string
  *                   format: uuid
+ *                 belief_snapshot:
+ *                   type: array
+ *                   items:
+ *                     type: string
  *       400:
  *         description: Missing agent_id
  *       403:
@@ -1255,5 +1271,175 @@ router.delete('/:id/nodes/:nodeId/claim', authenticate, claimsController.release
  *         description: No active claim on this node
  */
 router.get('/:id/nodes/:nodeId/claim', authenticate, claimsController.getTaskClaim);
+
+// ────────────────────────────────────────────────────────────────────
+// Episode-Node Link Endpoints (BDI Architecture)
+// ────────────────────────────────────────────────────────────────────
+const episodeLinksController = require('../controllers/episodeLinks.controller.v2');
+
+/**
+ * @swagger
+ * /plans/{id}/nodes/{nodeId}/episode-links:
+ *   post:
+ *     summary: Link a Graphiti episode to a task node
+ *     description: Creates a link between a Graphiti knowledge episode and a plan node. Used by the BDI coherence system to track which beliefs (episodes) support, contradict, or inform task intentions.
+ *     tags: [Nodes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The plan ID
+ *       - in: path
+ *         name: nodeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The node ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - episode_id
+ *             properties:
+ *               episode_id:
+ *                 type: string
+ *                 description: Graphiti episode UUID
+ *               link_type:
+ *                 type: string
+ *                 enum: [supports, contradicts, informs]
+ *                 default: informs
+ *                 description: How the episode relates to the task
+ *     responses:
+ *       201:
+ *         description: Episode linked successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                   format: uuid
+ *                 episode_id:
+ *                   type: string
+ *                 node_id:
+ *                   type: string
+ *                   format: uuid
+ *                 link_type:
+ *                   type: string
+ *                 created_at:
+ *                   type: string
+ *                   format: date-time
+ *       400:
+ *         description: Missing episode_id or invalid link_type
+ *       409:
+ *         description: Episode already linked with this type
+ */
+router.post('/:id/nodes/:nodeId/episode-links', authenticate, episodeLinksController.linkEpisode);
+
+/**
+ * @swagger
+ * /plans/{id}/nodes/{nodeId}/episode-links:
+ *   get:
+ *     summary: List episode links for a task node
+ *     description: Returns all Graphiti episode links for a given plan node, optionally filtered by link type.
+ *     tags: [Nodes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The plan ID
+ *       - in: path
+ *         name: nodeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The node ID
+ *       - in: query
+ *         name: link_type
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [supports, contradicts, informs]
+ *         description: Filter by link type
+ *     responses:
+ *       200:
+ *         description: List of episode links
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: string
+ *                     format: uuid
+ *                   episode_id:
+ *                     type: string
+ *                   node_id:
+ *                     type: string
+ *                     format: uuid
+ *                   link_type:
+ *                     type: string
+ *                   created_at:
+ *                     type: string
+ *                     format: date-time
+ */
+router.get('/:id/nodes/:nodeId/episode-links', authenticate, episodeLinksController.getEpisodeLinks);
+
+/**
+ * @swagger
+ * /plans/{id}/nodes/{nodeId}/episode-links/{linkId}:
+ *   delete:
+ *     summary: Remove an episode link
+ *     description: Deletes a specific episode-node link by its ID.
+ *     tags: [Nodes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The plan ID
+ *       - in: path
+ *         name: nodeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The node ID
+ *       - in: path
+ *         name: linkId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The episode link ID
+ *     responses:
+ *       200:
+ *         description: Episode link removed
+ *       404:
+ *         description: Episode link not found
+ */
+router.delete('/:id/nodes/:nodeId/episode-links/:linkId', authenticate, episodeLinksController.unlinkEpisode);
 
 module.exports = router;

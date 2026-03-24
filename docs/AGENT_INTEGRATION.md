@@ -290,14 +290,16 @@ curl -X DELETE "https://agentplanner.io/api/plans/{plan_id}/nodes/{node_id}/requ
 ## Best Practices
 
 ### For Agents
-1. **Read context first** — use `get_task_context` (or legacy `get_agent_context`) before acting
-2. **Check dependencies** — use `suggest_next_tasks` to find tasks with all blockers completed
-3. **Update status early** — mark `in_progress` when starting
-4. **Log as you go** — add progress logs frequently (use `reasoning` and `decision` log types for context preservation)
-5. **Mark blockers** — set status to `blocked` when stuck
-6. **Request decisions** — don't guess on important choices
-7. **Use task_mode** — set `research`, `plan`, `implement`, or `free` to signal task intent
-8. **Use `plan_ready`** — mark plan-type tasks as `plan_ready` when they need human approval before proceeding
+1. **Preflight check** — run `check_coherence_pending()` at session start to see if plans or goals need alignment review. If stale items found, run `run_coherence_check()` on each before starting task work
+2. **Read context first** — use `get_task_context` (or legacy `get_agent_context`) before acting
+3. **Check dependencies** — use `suggest_next_tasks` to find tasks with all blockers completed
+4. **Update status early** — mark `in_progress` when starting
+5. **Log as you go** — add progress logs frequently (use `reasoning` and `decision` log types for context preservation)
+6. **Record knowledge** — use `add_learning` for important decisions and findings. This feeds the knowledge graph and enables coherence checking
+7. **Mark blockers** — set status to `blocked` when stuck
+8. **Request decisions** — don't guess on important choices
+9. **Use task_mode** — set `research`, `plan`, `implement`, or `free` to signal task intent
+10. **Use `plan_ready`** — mark plan-type tasks as `plan_ready` when they need human approval before proceeding
 
 ### For Platform Adapters
 1. **Use messageBus** — subscribe to `notifications` channel for all events

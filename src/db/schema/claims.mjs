@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, index, unique } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, jsonb, index, unique } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { planNodes, plans } from './plans.mjs';
 import { users } from './users.mjs';
@@ -25,6 +25,10 @@ export const nodeClaims = pgTable('node_claims', {
 
   // The user who created the claim (via API auth)
   createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+
+  // BDI belief snapshot — episode IDs that justified this commitment
+  // Enables coherence checking: if these episodes are contradicted, the claim may be stale
+  beliefSnapshot: jsonb('belief_snapshot').default([]),
 }, (table) => [
   // Indexes for common query patterns
   index('idx_node_claims_node_id').on(table.nodeId),

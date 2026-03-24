@@ -89,6 +89,11 @@ get_recent_episodes()         → What happened since last session?
 ```
 ┌─────────────────────────────────────────────┐
 │                                             │
+│   ┌──────────┐                              │
+│   │PREFLIGHT │  check_coherence_pending()   │
+│   └───┬──────┘  run_coherence_check()       │
+│       │                                     │
+│       ▼                                     │
 │   ┌────────┐                                │
 │   │ ORIENT │  check_goals_health()          │
 │   └───┬────┘  suggest_next_tasks()          │

@@ -32,7 +32,10 @@ const updatePlan = z.object({
   title: nonEmptyString(255).optional(),
   description: optionalString(5000),
   status: planStatus.optional(),
-  metadata: metadata
+  metadata: metadata,
+  quality_score: z.number().min(0).max(1).optional().nullable().describe('Plan quality score (0.0-1.0)'),
+  quality_assessed_at: z.string().datetime().optional().nullable().describe('When quality was last assessed'),
+  quality_rationale: z.string().max(5000).optional().nullable().describe('Explanation of quality score'),
 }).strict();
 
 /**

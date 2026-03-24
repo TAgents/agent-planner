@@ -147,6 +147,15 @@ export const plansDal = {
     return db.select().from(plans).where(eq(plans.ownerId, userId));
   },
 
+  async listByOrganization(organizationId, { status } = {}) {
+    const conditions = [eq(plans.organizationId, organizationId)];
+    if (status) {
+      const statuses = Array.isArray(status) ? status : [status];
+      conditions.push(inArray(plans.status, statuses));
+    }
+    return db.select().from(plans).where(and(...conditions));
+  },
+
   async countByIds(planIds, { status } = {}) {
     if (planIds.length === 0) return 0;
     const conditions = [inArray(plans.id, planIds)];

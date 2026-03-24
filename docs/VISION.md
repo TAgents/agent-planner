@@ -87,6 +87,24 @@ Built on Graphiti, the knowledge layer captures not just facts, but when they we
 - **Knowledge gap analysis** — Identifies tasks that lack relevant knowledge coverage
 - **Entity and relationship tracking** — Maps domain concepts and how they relate
 
+### Alignment & Coherence
+
+Goals, plans, and knowledge form a triangle that must stay aligned. When any vertex changes, the others may be invalidated:
+
+- **New knowledge** might contradict active plan assumptions
+- **Changed goals** might make plans irrelevant
+- **Plan changes** might reveal knowledge gaps
+
+Traditional project management ignores this — a plan stays "on track" even when the world has moved on. Talking Agents makes alignment a first-class concern.
+
+The system tracks **coherence** — whether each task's assumptions are still supported by current knowledge. When an agent adds a learning that contradicts an existing task, the coherence engine automatically flags the task. No human needs to notice the conflict; the system surfaces it.
+
+Goals have two commitment levels: **desires** (aspirational, directional) and **intentions** (committed, with success criteria and linked plans). A desire becomes an intention through a readiness check — ensuring sufficient knowledge and a concrete plan exist before committing. This prevents agents from executing toward goals that aren't ready.
+
+**Quality scoring** evaluates plans across four dimensions — goal coverage, task specificity, dependency ordering, and knowledge completeness — giving both agents and humans a quick signal of plan readiness. Agents run **alignment reviews** as a preflight check before starting work, catching drift before it wastes effort.
+
+The result: goals, plans, and knowledge stay coherent not through manual oversight, but through continuous, automated validation. Humans set direction. Agents execute. The platform ensures everything stays aligned.
+
 ### Human Oversight Interface
 
 The web interface is not a project management tool — it's a **mission control dashboard** for agent orchestration:

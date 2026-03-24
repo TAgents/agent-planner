@@ -22,6 +22,7 @@ const snakeClaim = (c) => ({
   expires_at: c.expiresAt,
   released_at: c.releasedAt,
   created_by: c.createdBy,
+  belief_snapshot: c.beliefSnapshot,
 });
 
 /**
@@ -32,7 +33,7 @@ const claimTask = async (req, res, next) => {
   try {
     const { id: planId, nodeId } = req.params;
     const userId = req.user.id;
-    const { agent_id, ttl_minutes } = req.body;
+    const { agent_id, ttl_minutes, belief_snapshot } = req.body;
 
     if (!agent_id) {
       return res.status(400).json({ error: 'agent_id is required' });
@@ -51,7 +52,8 @@ const claimTask = async (req, res, next) => {
 
     // Attempt to claim
     const ttl = ttl_minutes && Number(ttl_minutes) > 0 ? Number(ttl_minutes) : 30;
-    const claim = await dal.claimsDal.claim(nodeId, planId, agent_id, userId, ttl);
+    const snapshot = Array.isArray(belief_snapshot) ? belief_snapshot : [];
+    const claim = await dal.claimsDal.claim(nodeId, planId, agent_id, userId, ttl, snapshot);
 
     if (!claim) {
       // Already claimed — fetch the existing claim for the error response

@@ -40,6 +40,10 @@ const createNode = z.object({
 /**
  * Update node request body
  */
+const coherenceStatus = z.enum(['coherent', 'stale_beliefs', 'contradiction_detected', 'unchecked'], {
+  errorMap: () => ({ message: 'Coherence status must be one of: coherent, stale_beliefs, contradiction_detected, unchecked' })
+});
+
 const updateNode = z.object({
   node_type: nodeType.optional(),
   title: nonEmptyString(255).optional(),
@@ -50,7 +54,11 @@ const updateNode = z.object({
   context: optionalString(50000),
   agent_instructions: optionalString(50000),
   metadata: metadata,
-  task_mode: z.enum(['research', 'plan', 'implement', 'free']).optional().describe('RPI workflow mode')
+  task_mode: z.enum(['research', 'plan', 'implement', 'free']).optional().describe('RPI workflow mode'),
+  coherence_status: coherenceStatus.optional().describe('BDI coherence status'),
+  quality_score: z.number().min(0).max(1).optional().nullable().describe('Task quality score (0.0-1.0)'),
+  quality_assessed_at: z.string().datetime().optional().nullable().describe('When quality was last assessed'),
+  quality_rationale: z.string().max(5000).optional().nullable().describe('Explanation of quality score'),
 }).strict();
 
 /**

@@ -18,6 +18,8 @@ export { invitesDal } from './invites.dal.mjs';
 export { slackDal, webhooksDal } from './integrations.dal.mjs';
 export { dependenciesDal } from './dependencies.dal.mjs';
 export { claimsDal } from './claims.dal.mjs';
+export { episodeLinksDal } from './episodeLinks.dal.mjs';
+export { knowledgeLoopDal } from './knowledgeLoop.dal.mjs';
 
 // Raw SQL client for admin queries
 export { sql as rawSql } from '../connection.mjs';

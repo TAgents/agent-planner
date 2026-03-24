@@ -3457,6 +3457,21 @@
               "default": false
             },
             "description": "Include full node details (description, context, agent_instructions, metadata, timestamps). Default is false for minimal response size."
+          },
+          {
+            "in": "query",
+            "name": "coherence_status",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "coherent",
+                "stale_beliefs",
+                "contradiction_detected",
+                "unchecked"
+              ]
+            },
+            "description": "Filter nodes by BDI coherence status. Supports comma-separated values."
           }
         ],
         "responses": {
@@ -4975,6 +4990,13 @@
                     "type": "integer",
                     "default": 30,
                     "description": "Lease duration in minutes (default 30)"
+                  },
+                  "belief_snapshot": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Episode IDs (Graphiti UUIDs) that justified this commitment. Enables BDI coherence checking."
                   }
                 }
               }
@@ -5020,6 +5042,12 @@
                     "created_by": {
                       "type": "string",
                       "format": "uuid"
+                    },
+                    "belief_snapshot": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   }
                 }
@@ -5149,6 +5177,246 @@
           },
           "404": {
             "description": "No active claim on this node"
+          }
+        }
+      }
+    },
+    "/plans/{id}/nodes/{nodeId}/episode-links": {
+      "post": {
+        "summary": "Link a Graphiti episode to a task node",
+        "description": "Creates a link between a Graphiti knowledge episode and a plan node. Used by the BDI coherence system to track which beliefs (episodes) support, contradict, or inform task intentions.",
+        "tags": [
+          "Nodes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The plan ID"
+          },
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The node ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "episode_id"
+                ],
+                "properties": {
+                  "episode_id": {
+                    "type": "string",
+                    "description": "Graphiti episode UUID"
+                  },
+                  "link_type": {
+                    "type": "string",
+                    "enum": [
+                      "supports",
+                      "contradicts",
+                      "informs"
+                    ],
+                    "default": "informs",
+                    "description": "How the episode relates to the task"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Episode linked successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "episode_id": {
+                      "type": "string"
+                    },
+                    "node_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "link_type": {
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing episode_id or invalid link_type"
+          },
+          "409": {
+            "description": "Episode already linked with this type"
+          }
+        }
+      },
+      "get": {
+        "summary": "List episode links for a task node",
+        "description": "Returns all Graphiti episode links for a given plan node, optionally filtered by link type.",
+        "tags": [
+          "Nodes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The plan ID"
+          },
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The node ID"
+          },
+          {
+            "in": "query",
+            "name": "link_type",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "supports",
+                "contradicts",
+                "informs"
+              ]
+            },
+            "description": "Filter by link type"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of episode links",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "episode_id": {
+                        "type": "string"
+                      },
+                      "node_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "link_type": {
+                        "type": "string"
+                      },
+                      "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plans/{id}/nodes/{nodeId}/episode-links/{linkId}": {
+      "delete": {
+        "summary": "Remove an episode link",
+        "description": "Deletes a specific episode-node link by its ID.",
+        "tags": [
+          "Nodes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The plan ID"
+          },
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The node ID"
+          },
+          {
+            "in": "path",
+            "name": "linkId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The episode link ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Episode link removed"
+          },
+          "404": {
+            "description": "Episode link not found"
           }
         }
       }
@@ -7246,6 +7514,167 @@
         }
       }
     },
+    "/plans/{id}/coherence": {
+      "get": {
+        "summary": "Get coherence issues for a plan",
+        "description": "Returns all tasks in the plan that have stale or contradicted beliefs, with the episodes that triggered each flag. Part of the BDI Architecture coherence engine.",
+        "tags": [
+          "Plans"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The plan ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Coherence issues for the plan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "node_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "node_type": {
+                            "type": "string"
+                          },
+                          "coherence_status": {
+                            "type": "string",
+                            "enum": [
+                              "stale_beliefs",
+                              "contradiction_detected"
+                            ]
+                          },
+                          "triggering_episodes": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "episode_id": {
+                                  "type": "string"
+                                },
+                                "link_type": {
+                                  "type": "string"
+                                },
+                                "linked_at": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "plan_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access denied"
+          }
+        }
+      }
+    },
+    "/plans/{id}/coherence/check": {
+      "post": {
+        "summary": "Run a coherence check on a plan",
+        "description": "Evaluates plan quality using heuristics (coverage, specificity, ordering, completeness), updates the quality score, and stamps coherence_checked_at. One-shot assessment — not a running loop.",
+        "tags": [
+          "Plans"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "goal_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Optional goal to evaluate coverage against"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Quality assessment with sub-score breakdown"
+          }
+        }
+      }
+    },
+    "/coherence/pending": {
+      "get": {
+        "summary": "Get pending coherence checks",
+        "description": "Returns all plans and goals that have changed since their last coherence check. Used by agents to discover what needs attention. Staleness is determined by comparing updated_at to coherence_checked_at.",
+        "tags": [
+          "Coherence"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stale plans and goals needing coherence review"
+          }
+        }
+      }
+    },
     "/goals/dashboard": {
       "get": {
         "summary": "Get health dashboard for all user goals",
@@ -7378,6 +7807,36 @@
         }
       }
     },
+    "/goals/{id}/promote-to-intention": {
+      "post": {
+        "summary": "Promote a desire goal to an intention",
+        "description": "Checks readiness (success criteria, linked plan, optional knowledge coverage) and promotes the goal from desire to intention if ready. Returns readiness gaps if not ready. Part of BDI desire/intention workflow.",
+        "tags": [
+          "Goals"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Promotion result with ready status and gaps (if any)"
+          }
+        }
+      }
+    },
     "/goals/{goalId}/briefing": {
       "get": {
         "summary": "Get a comprehensive goal briefing",
@@ -7410,6 +7869,96 @@
           },
           "404": {
             "description": "Goal not found"
+          }
+        }
+      }
+    },
+    "/goals/{id}/portfolio": {
+      "get": {
+        "summary": "Get goal portfolio (desire→intention graph)",
+        "description": "Returns the full desire→intention graph for a goal subtree including all descendant goals and their linked plans with progress. Enables the Portfolio UI to render the strategic view in a single request.",
+        "tags": [
+          "Goals"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Goal subtree with linked plans and stats"
+          }
+        }
+      }
+    },
+    "/goals/{id}/quality": {
+      "get": {
+        "summary": "Assess goal quality",
+        "description": "Evaluates goal quality across 5 dimensions (clarity, measurability, actionability, knowledge grounding, commitment). Returns score, dimension breakdown, and improvement suggestions. Used by agents during goal coaching and by the UI goal detail page.",
+        "tags": [
+          "Goals"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Goal quality assessment with suggestions"
+          }
+        }
+      }
+    },
+    "/goals/{id}/coverage": {
+      "get": {
+        "summary": "Get knowledge coverage mapped to plans and tasks",
+        "description": "Returns knowledge coverage for a goal, organized by linked plans and their tasks. Shows fact counts, gaps, contradictions, and coverage percentages at each level.",
+        "tags": [
+          "Goals"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Knowledge coverage tree"
           }
         }
       }
@@ -7575,6 +8124,29 @@
                     "group_id": {
                       "type": "string",
                       "description": "Organization-scoped group identifier"
+                    },
+                    "coherence_warnings": {
+                      "type": "array",
+                      "description": "Tasks whose beliefs may be affected by this new knowledge (BDI coherence check)",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "node_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "conflict_type": {
+                            "type": "string",
+                            "enum": [
+                              "contradiction_detected",
+                              "stale_beliefs"
+                            ]
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -7766,6 +8338,246 @@
           },
           "503": {
             "description": "Knowledge graph not available"
+          }
+        }
+      }
+    },
+    "/knowledge/coverage-map": {
+      "get": {
+        "summary": "Get knowledge coverage map",
+        "description": "Returns knowledge organized by topic (Graphiti entities), with each fact showing which plan tasks it relates to. Also lists tasks with no knowledge backing. Knowledge-centric view of coverage.",
+        "tags": [
+          "Knowledge"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Knowledge coverage map with topics, facts, and task links"
+          },
+          "503": {
+            "description": "Knowledge graph not available"
+          }
+        }
+      }
+    },
+    "/plans/{id}/knowledge-loop/start": {
+      "post": {
+        "summary": "Start a knowledge loop on a plan",
+        "description": "Creates an agent-driven iterative plan improvement loop. The backend tracks iterations and detects convergence while the agent provides reasoning via the iterate endpoint. Returns 409 if a loop is already running.",
+        "tags": [
+          "Plans"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The plan ID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "goal_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Optional goal to evaluate plan against"
+                  },
+                  "max_iterations": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "Maximum iterations before auto-stop (1-50)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Knowledge loop started"
+          },
+          "409": {
+            "description": "A loop is already running for this plan"
+          }
+        }
+      }
+    },
+    "/plans/{id}/knowledge-loop/status": {
+      "get": {
+        "summary": "Get knowledge loop status",
+        "description": "Returns the current or most recent knowledge loop state including iteration history and quality progression. Returns status 'idle' if no loop has been run.",
+        "tags": [
+          "Plans"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Loop status with iteration history"
+          }
+        }
+      }
+    },
+    "/plans/{id}/knowledge-loop/iterate": {
+      "post": {
+        "summary": "Record a knowledge loop iteration",
+        "description": "Agent calls this after each evaluation/improvement cycle to report results. Backend records the iteration, computes quality delta, and checks for convergence (quality improvement < 0.02 over 3 iterations).",
+        "tags": [
+          "Plans"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "quality_score"
+                ],
+                "properties": {
+                  "quality_score": {
+                    "type": "number",
+                    "description": "Plan quality score (0.0-1.0) from agent evaluation"
+                  },
+                  "rationale": {
+                    "type": "string",
+                    "description": "Agent's reasoning for the score and modifications"
+                  },
+                  "modifications": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "List of modifications made in this iteration"
+                  },
+                  "episode_id": {
+                    "type": "string",
+                    "description": "Graphiti episode ID if a learning was recorded"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Iteration recorded with convergence status"
+          },
+          "400": {
+            "description": "Missing quality_score"
+          },
+          "404": {
+            "description": "No running loop for this plan"
+          }
+        }
+      }
+    },
+    "/plans/{id}/knowledge-loop/context": {
+      "get": {
+        "summary": "Get context for a knowledge loop iteration",
+        "description": "Returns everything an agent needs for one iteration — plan structure, goal details, current quality score, knowledge graph facts, coherence issues, and previous iteration history.",
+        "tags": [
+          "Plans"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Full context for agent iteration"
+          }
+        }
+      }
+    },
+    "/plans/{id}/knowledge-loop/stop": {
+      "post": {
+        "summary": "Stop a running knowledge loop",
+        "description": "Manually stops a running knowledge loop. Sets status to 'stopped' and records completion timestamp. Returns 404 if no loop is running.",
+        "tags": [
+          "Plans"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Loop stopped with final summary"
+          },
+          "404": {
+            "description": "No running loop for this plan"
           }
         }
       }

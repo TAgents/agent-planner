@@ -15,6 +15,7 @@ const {
 const { notifyStatusChange, notifyAgentRequested } = process.env.AUTH_VERSION === 'v2'
   ? require('../services/notifications.v2')
   : require('../services/notifications');
+const messageBus = require('../services/messageBus');
 
 /**
  * Check plan access via DAL
@@ -50,6 +51,10 @@ const snakeNode = (n) => ({
   assigned_agent_at: n.assignedAgentAt,
   assigned_agent_by: n.assignedAgentBy,
   task_mode: n.taskMode,
+  coherence_status: n.coherenceStatus,
+  quality_score: n.qualityScore,
+  quality_assessed_at: n.qualityAssessedAt,
+  quality_rationale: n.qualityRationale,
 });
 
 const snakeNodeMinimal = (n) => ({
@@ -60,6 +65,10 @@ const snakeNodeMinimal = (n) => ({
   status: n.status,
   order_index: n.orderIndex,
   task_mode: n.taskMode,
+  coherence_status: n.coherenceStatus,
+  quality_score: n.qualityScore,
+  quality_assessed_at: n.qualityAssessedAt,
+  quality_rationale: n.qualityRationale,
 });
 
 /**
@@ -68,14 +77,16 @@ const snakeNodeMinimal = (n) => ({
 const getNodes = async (req, res, next) => {
   try {
     const { id: planId } = req.params;
-    const { include_details } = req.query;
+    const { include_details, coherence_status } = req.query;
     const userId = req.user.id;
 
     if (!(await checkPlanAccess(planId, userId))) {
       return res.status(403).json({ error: 'You do not have access to this plan' });
     }
 
-    const nodes = await dal.nodesDal.listByPlan(planId);
+    const filters = {};
+    if (coherence_status) filters.coherenceStatus = coherence_status;
+    const nodes = await dal.nodesDal.listByPlan(planId, filters);
     const mapper = include_details === 'true' ? snakeNode : snakeNodeMinimal;
     const mapped = nodes.map(n => ({ ...mapper(n) }));
 
@@ -221,6 +232,10 @@ const updateNode = async (req, res, next) => {
       order_index: orderIndex, due_date: dueDate,
       context, agent_instructions: agentInstructions, metadata,
       task_mode: taskMode,
+      coherence_status: coherenceStatus,
+      quality_score: qualityScore,
+      quality_assessed_at: qualityAssessedAt,
+      quality_rationale: qualityRationale,
     } = req.body;
     const userId = req.user.id;
 
@@ -245,6 +260,17 @@ const updateNode = async (req, res, next) => {
       return res.status(400).json({ error: `Invalid task_mode. Must be one of: ${validTaskModes.join(', ')}` });
     }
 
+    // Validate coherence_status
+    const validCoherenceStatuses = ['coherent', 'stale_beliefs', 'contradiction_detected', 'unchecked'];
+    if (coherenceStatus !== undefined && !validCoherenceStatuses.includes(coherenceStatus)) {
+      return res.status(400).json({ error: `Invalid coherence_status. Must be one of: ${validCoherenceStatuses.join(', ')}` });
+    }
+
+    // Validate quality_score
+    if (qualityScore !== undefined && (typeof qualityScore !== 'number' || qualityScore < 0 || qualityScore > 1)) {
+      return res.status(400).json({ error: 'quality_score must be a number between 0.0 and 1.0' });
+    }
+
     const updates = {};
     if (nodeType !== undefined) updates.nodeType = nodeType;
     if (title !== undefined) updates.title = title;
@@ -256,6 +282,10 @@ const updateNode = async (req, res, next) => {
     if (agentInstructions !== undefined) updates.agentInstructions = agentInstructions;
     if (metadata !== undefined) updates.metadata = metadata;
     if (taskMode !== undefined) updates.taskMode = taskMode;
+    if (coherenceStatus !== undefined) updates.coherenceStatus = coherenceStatus;
+    if (qualityScore !== undefined) updates.qualityScore = qualityScore;
+    if (qualityAssessedAt !== undefined) updates.qualityAssessedAt = qualityAssessedAt;
+    if (qualityRationale !== undefined) updates.qualityRationale = qualityRationale;
 
     const updated = await dal.nodesDal.update(nodeId, updates);
     const result = snakeNode(updated);
@@ -274,6 +304,15 @@ const updateNode = async (req, res, next) => {
         const actor = { name: req.user.name || req.user.email, type: 'user' };
         notifyStatusChange(result, { id: plan.id, title: plan.title, owner_id: plan.ownerId }, actor, oldStatus, status).catch(console.error);
       }
+
+      // Publish event for async services (status propagation, compaction)
+      messageBus.publish('node.status.changed', {
+        nodeId,
+        planId,
+        oldStatus,
+        newStatus: status,
+        taskMode: existing.taskMode,
+      }).catch(err => console.error('Failed to publish node.status.changed:', err.message));
     }
 
     const userName = req.user.name || req.user.email;
@@ -441,6 +480,17 @@ const updateNodeStatus = async (req, res, next) => {
     const userName = req.user.name || req.user.email;
     const message = createNodeStatusChangedMessage(nodeId, planId, oldStatus, status, userId, userName);
     await broadcastPlanUpdate(planId, message);
+
+    // Publish event for async services (status propagation, compaction)
+    if (oldStatus !== status) {
+      messageBus.publish('node.status.changed', {
+        nodeId,
+        planId,
+        oldStatus,
+        newStatus: status,
+        taskMode: existing.taskMode,
+      }).catch(err => console.error('Failed to publish node.status.changed:', err.message));
+    }
 
     res.json(result);
   } catch (error) {

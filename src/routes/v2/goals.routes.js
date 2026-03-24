@@ -218,6 +218,7 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
         title: row.title,
         description: row.description,
         type: row.type,
+        goal_type: row.goal_type || 'desire',
         status: row.status,
         health,
         owner_name: row.owner_name || null,
@@ -277,12 +278,16 @@ router.get('/', authenticate, async (req, res) => {
 // POST /api/goals
 router.post('/', authenticate, async (req, res) => {
   try {
-    const { title, description, type = 'outcome', successCriteria, priority, parentGoalId } = req.body;
+    const { title, description, type = 'outcome', goalType = 'desire', successCriteria, priority, parentGoalId } = req.body;
     if (!title) {
       return res.status(400).json({ error: 'title is required' });
     }
     if (!VALID_TYPES.includes(type)) {
       return res.status(400).json({ error: `type must be one of: ${VALID_TYPES.join(', ')}` });
+    }
+    const VALID_GOAL_TYPES = ['desire', 'intention'];
+    if (!VALID_GOAL_TYPES.includes(goalType)) {
+      return res.status(400).json({ error: `goalType must be one of: ${VALID_GOAL_TYPES.join(', ')}` });
     }
 
     const dal = goalsDal;
@@ -292,6 +297,7 @@ router.post('/', authenticate, async (req, res) => {
       ownerId: req.user.id,
       organizationId: req.body.organizationId || req.user.organizationId || null,
       type,
+      goalType,
       successCriteria: successCriteria || null,
       priority: priority || 0,
       parentGoalId: parentGoalId || null,
@@ -321,7 +327,7 @@ router.put('/:id', authenticate, async (req, res) => {
     const existing = await requireGoalAccess(req, res);
     if (!existing) return;
 
-    const { title, description, type, status, successCriteria, priority, parentGoalId } = req.body;
+    const { title, description, type, status, goalType, successCriteria, priority, parentGoalId } = req.body;
     const updates = {};
     if (title !== undefined) updates.title = title;
     if (description !== undefined) updates.description = description;
@@ -332,6 +338,10 @@ router.put('/:id', authenticate, async (req, res) => {
     if (status !== undefined) {
       if (!VALID_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
       updates.status = status;
+    }
+    if (goalType !== undefined) {
+      if (!['desire', 'intention'].includes(goalType)) return res.status(400).json({ error: 'goalType must be desire or intention' });
+      updates.goalType = goalType;
     }
     if (successCriteria !== undefined) updates.successCriteria = successCriteria;
     if (priority !== undefined) updates.priority = priority;
@@ -356,6 +366,81 @@ router.delete('/:id', authenticate, async (req, res) => {
   } catch (err) {
     await logger.error('Delete goal error:', err);
     res.status(500).json({ error: 'Failed to delete goal' });
+  }
+});
+
+/**
+ * @swagger
+ * /goals/{id}/promote-to-intention:
+ *   post:
+ *     summary: Promote a desire goal to an intention
+ *     description: Checks readiness (success criteria, linked plan, optional knowledge coverage) and promotes the goal from desire to intention if ready. Returns readiness gaps if not ready. Part of BDI desire/intention workflow.
+ *     tags: [Goals]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Promotion result with ready status and gaps (if any)
+ */
+router.post('/:id/promote-to-intention', authenticate, async (req, res) => {
+  try {
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
+
+    if (goal.goalType === 'intention') {
+      return res.json({ ready: true, goal, message: 'Goal is already an intention' });
+    }
+
+    // Readiness checks
+    const gaps = [];
+
+    // 1. Must have success criteria
+    if (!goal.successCriteria || (typeof goal.successCriteria === 'object' && Object.keys(goal.successCriteria).length === 0)) {
+      gaps.push('Missing success criteria — intentions require measurable success criteria');
+    }
+
+    // 2. Must have at least one linked plan
+    const hasLinkedPlan = goal.links && goal.links.some(l => l.linkedType === 'plan');
+    if (!hasLinkedPlan) {
+      gaps.push('No linked plan — intentions require at least one plan to execute against');
+    }
+
+    // 3. Optional: knowledge coverage advisory (if Graphiti available)
+    const advisories = [];
+    if (graphitiBridge.isAvailable() && gaps.length === 0) {
+      try {
+        const groupId = graphitiBridge.getGroupId(req.user);
+        const result = await graphitiBridge.searchMemory({
+          query: goal.title + ' ' + (goal.description || ''),
+          group_id: groupId,
+          max_results: 5,
+        });
+        const factCount = result?.length || 0;
+        if (factCount === 0) {
+          advisories.push('No related knowledge found — consider adding knowledge episodes');
+        }
+      } catch {
+        // Knowledge check is optional
+      }
+    }
+
+    if (gaps.length > 0) {
+      return res.json({ ready: false, gaps });
+    }
+
+    // Promote
+    const promoted = await goalsDal.promote(req.params.id);
+    const response = { ready: true, goal: promoted };
+    if (advisories.length > 0) response.advisories = advisories;
+    res.json(response);
+  } catch (err) {
+    await logger.error('Promote goal error:', err);
+    res.status(500).json({ error: 'Failed to promote goal' });
   }
 });
 
@@ -561,6 +646,7 @@ router.get('/:id/knowledge-gaps', authenticate, async (req, res) => {
     if (!graphitiBridge.isAvailable()) {
       return res.json({
         available: false,
+        goal_type: goal.goalType || 'desire',
         message: 'Knowledge graph not available',
         tasks: [],
         gaps: [],
@@ -573,6 +659,7 @@ router.get('/:id/knowledge-gaps', authenticate, async (req, res) => {
     if (nodes.length === 0) {
       return res.json({
         available: true,
+        goal_type: goal.goalType || 'desire',
         tasks: [],
         gaps: [],
         coverage: { total: 0, covered: 0, percentage: 100 },
@@ -580,17 +667,19 @@ router.get('/:id/knowledge-gaps', authenticate, async (req, res) => {
     }
 
     // Query Graphiti for incomplete tasks — cap concurrency to avoid overwhelming sidecar
-    const orgId = req.user.organizationId;
+    const groupId = graphitiBridge.getGroupId(req.user);
     const incompleteTasks = nodes.filter(n => n.status !== 'completed').slice(0, KNOWLEDGE_QUERY_CONCURRENCY);
 
     async function queryTaskKnowledge(task) {
       const query = [task.title, task.description].filter(Boolean).join(' ');
       try {
-        const facts = await graphitiBridge.queryForContext(task.plan_id, query, orgId, 3);
+        const result = await graphitiBridge.searchMemory({ query, group_id: groupId, max_results: 3 });
+        const facts = Array.isArray(result) ? result : (result?.facts || []);
+        const factList = facts.map(f => f.fact || f.content || String(f));
         return {
           node_id: task.node_id, title: task.title, status: task.status, depth: task.depth,
-          fact_count: facts.length, has_knowledge: facts.length > 0,
-          top_facts: facts.slice(0, 2).map(f => f.content),
+          fact_count: factList.length, has_knowledge: factList.length > 0,
+          top_facts: factList.slice(0, 2),
         };
       } catch {
         return {
@@ -600,7 +689,11 @@ router.get('/:id/knowledge-gaps', authenticate, async (req, res) => {
       }
     }
 
-    const results = await Promise.all(incompleteTasks.map(queryTaskKnowledge));
+    const rawResults = await Promise.all(incompleteTasks.map(queryTaskKnowledge));
+
+    // BDI Phase 3: Add gap_severity based on goal type
+    const gapSeverity = goal.goalType === 'intention' ? 'blocking' : 'informational';
+    const results = rawResults.map(r => ({ ...r, gap_severity: r.has_knowledge ? null : gapSeverity }));
     const gaps = results.filter(r => !r.has_knowledge);
     const covered = results.filter(r => r.has_knowledge).length;
 
@@ -609,9 +702,10 @@ router.get('/:id/knowledge-gaps', authenticate, async (req, res) => {
     if (goal.successCriteria && Array.isArray(goal.successCriteria)) {
       goalKnowledge = await Promise.all(
         goal.successCriteria.slice(0, 5).map(async (criterion) => {
-          const query = typeof criterion === 'string' ? criterion : JSON.stringify(criterion);
+          const query = typeof criterion === 'string' ? criterion : (criterion.metric || criterion.name || JSON.stringify(criterion));
           try {
-            const facts = await graphitiBridge.queryForContext(null, query, orgId, 2);
+            const result = await graphitiBridge.searchMemory({ query, group_id: groupId, max_results: 2 });
+            const facts = Array.isArray(result) ? result : (result?.facts || []);
             return { criterion: query, has_knowledge: facts.length > 0, fact_count: facts.length };
           } catch {
             return { criterion: query, has_knowledge: false, fact_count: 0 };
@@ -622,6 +716,7 @@ router.get('/:id/knowledge-gaps', authenticate, async (req, res) => {
 
     res.json({
       available: true,
+      goal_type: goal.goalType || 'desire',
       tasks: results,
       gaps,
       coverage: {
@@ -760,7 +855,7 @@ router.get('/:goalId/briefing', authenticate, async (req, res) => {
     const criticalPath = computeCriticalPath(flatNodes, depsResults.flat(), plansMap);
 
     // 8. Knowledge status (Graphiti) — graceful degradation
-    const knowledge = await getKnowledgeStatus(flatNodes, req.user.organizationId);
+    const knowledge = await getKnowledgeStatus(flatNodes, req.user);
 
     // 9. Format recent activity with plan titles
     const nodeIdToPlan = new Map();
@@ -910,7 +1005,7 @@ function computeCriticalPath(nodes, depsResults, plansMap) {
  * Query Graphiti for knowledge status related to the goal's tasks.
  * Gracefully degrades if Graphiti is unavailable.
  */
-async function getKnowledgeStatus(nodes, orgId) {
+async function getKnowledgeStatus(nodes, user) {
   const defaultResult = {
     facts_count: 0,
     contradictions: [],
@@ -928,7 +1023,7 @@ async function getKnowledgeStatus(nodes, orgId) {
   try {
     // Build a combined query from task titles for a single broad search
     const combinedQuery = incompleteTasks.map(t => t.title).join('. ');
-    const groupId = graphitiBridge.orgGroupId(orgId);
+    const groupId = graphitiBridge.getGroupId(user);
 
     const [facts, contradictions] = await Promise.all([
       graphitiBridge.searchMemory({ query: combinedQuery, group_id: groupId, max_results: 20 }),
@@ -953,7 +1048,8 @@ async function getKnowledgeStatus(nodes, orgId) {
       incompleteTasks.map(async (task) => {
         const query = task.title;
         try {
-          const taskFacts = await graphitiBridge.queryForContext(task.planId, query, orgId, 1);
+          const result = await graphitiBridge.searchMemory({ query, group_id: groupId, max_results: 1 });
+          const taskFacts = Array.isArray(result) ? result : (result?.facts || []);
           return { node_id: task.id, title: task.title, has_knowledge: taskFacts.length > 0 };
         } catch {
           return { node_id: task.id, title: task.title, has_knowledge: false };
@@ -1000,5 +1096,315 @@ function calculateHealth(progress, bottlenecks, nodes) {
 
   return 'on_track';
 }
+
+/**
+ * @swagger
+ * /goals/{id}/portfolio:
+ *   get:
+ *     summary: Get goal portfolio (desire→intention graph)
+ *     description: Returns the full desire→intention graph for a goal subtree including all descendant goals and their linked plans with progress. Enables the Portfolio UI to render the strategic view in a single request.
+ *     tags: [Goals]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Goal subtree with linked plans and stats
+ */
+router.get('/:id/portfolio', authenticate, async (req, res) => {
+  try {
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
+
+    // Get all descendant goals
+    const descendants = await goalsDal.getDescendants(req.params.id);
+    const allGoals = [goal, ...descendants];
+    const goalIds = allGoals.map(g => g.id);
+
+    // Get all plan links for the entire subtree
+    const allLinks = [];
+    for (const gId of goalIds) {
+      const links = await goalsDal.findById(gId);
+      if (links?.links) {
+        for (const link of links.links) {
+          if (link.linkedType === 'plan') {
+            allLinks.push({ goalId: gId, planId: link.linkedId });
+          }
+        }
+      }
+    }
+
+    // Fetch plan details for linked plans
+    const uniquePlanIds = [...new Set(allLinks.map(l => l.planId))];
+    const planDetails = await Promise.all(
+      uniquePlanIds.map(async (pid) => {
+        const plan = await plansDal.findById(pid);
+        if (!plan) return null;
+        const nodes = await nodesDal.listByPlan(pid);
+        const tasks = nodes.filter(n => n.nodeType === 'task' || n.nodeType === 'milestone');
+        const completed = tasks.filter(n => n.status === 'completed').length;
+        return {
+          plan_id: pid,
+          title: plan.title,
+          status: plan.status,
+          progress: tasks.length > 0 ? Math.round((completed / tasks.length) * 100) : 0,
+        };
+      })
+    );
+    const planMap = new Map(planDetails.filter(Boolean).map(p => [p.plan_id, p]));
+
+    // Build linked_plans array with goal_id reference
+    const linkedPlans = allLinks
+      .map(l => {
+        const plan = planMap.get(l.planId);
+        return plan ? { goal_id: l.goalId, ...plan } : null;
+      })
+      .filter(Boolean);
+
+    // Stats
+    const desires = allGoals.filter(g => (g.goalType || 'desire') === 'desire').length;
+    const intentions = allGoals.filter(g => g.goalType === 'intention').length;
+    const goalsWithPlans = new Set(allLinks.map(l => l.goalId));
+    const orphanGoals = allGoals.filter(g => !goalsWithPlans.has(g.id) && g.id !== goal.id).length;
+
+    res.json({
+      goal: {
+        id: goal.id,
+        title: goal.title,
+        type: goal.type,
+        goal_type: goal.goalType || 'desire',
+        status: goal.status,
+        description: goal.description,
+      },
+      descendants: descendants.map(d => ({
+        id: d.id,
+        title: d.title,
+        type: d.type,
+        goal_type: d.goalType || 'desire',
+        status: d.status,
+        parent_goal_id: d.parentGoalId,
+      })),
+      linked_plans: linkedPlans,
+      stats: {
+        total_goals: allGoals.length,
+        desires,
+        intentions,
+        orphan_goals: orphanGoals,
+        linked_plan_count: uniquePlanIds.length,
+      },
+    });
+  } catch (err) {
+    await logger.error('Goal portfolio error:', err);
+    res.status(500).json({ error: 'Failed to get goal portfolio' });
+  }
+});
+
+/**
+ * @swagger
+ * /goals/{id}/quality:
+ *   get:
+ *     summary: Assess goal quality
+ *     description: Evaluates goal quality across 5 dimensions (clarity, measurability, actionability, knowledge grounding, commitment). Returns score, dimension breakdown, and improvement suggestions. Used by agents during goal coaching and by the UI goal detail page.
+ *     tags: [Goals]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Goal quality assessment with suggestions
+ */
+router.get('/:id/quality', authenticate, async (req, res) => {
+  try {
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
+
+    const dimensions = {};
+    const suggestions = [];
+
+    // 1. Clarity — has title + description
+    const hasDesc = goal.description && goal.description.length > 10;
+    dimensions.clarity = {
+      score: hasDesc ? 1.0 : 0.5,
+      detail: hasDesc ? 'Has title and description' : 'Missing or very short description',
+    };
+    if (!hasDesc) suggestions.push('Add a detailed description explaining what this goal achieves and why it matters');
+
+    // 2. Measurability — has success criteria
+    const criteria = goal.successCriteria;
+    const hasCriteria = criteria && (
+      (Array.isArray(criteria) && criteria.length > 0) ||
+      (typeof criteria === 'object' && Object.keys(criteria).length > 0)
+    );
+    const criteriaCount = Array.isArray(criteria) ? criteria.length : (typeof criteria === 'object' ? Object.keys(criteria).length : 0);
+    dimensions.measurability = {
+      score: hasCriteria ? Math.min(criteriaCount / 2, 1.0) : 0,
+      detail: hasCriteria ? `${criteriaCount} success criteria defined` : 'No success criteria — goal is not measurable',
+    };
+    if (!hasCriteria) suggestions.push('Define success criteria with specific metrics and targets (e.g., "API latency < 100ms p99")');
+
+    // 3. Actionability — has linked plans
+    const planLinks = (goal.links || []).filter(l => l.linkedType === 'plan');
+    dimensions.actionability = {
+      score: planLinks.length > 0 ? Math.min(planLinks.length / 2, 1.0) : 0,
+      detail: planLinks.length > 0 ? `${planLinks.length} plan${planLinks.length > 1 ? 's' : ''} linked` : 'No plans linked — goal has no execution path',
+    };
+    if (planLinks.length === 0) suggestions.push('Link at least one plan that works toward this goal');
+
+    // 4. Knowledge grounding — knowledge exists for success criteria
+    let knowledgeScore = 0.5; // Neutral default
+    let knowledgeDetail = 'Knowledge graph not available';
+    if (graphitiBridge.isAvailable()) {
+      try {
+        const groupId = graphitiBridge.getGroupId(req.user);
+        const query = [goal.title, goal.description || ''].join(' ');
+        const result = await graphitiBridge.searchMemory({ query, group_id: groupId, max_results: 5 });
+        const facts = Array.isArray(result) ? result : (result?.facts || []);
+        knowledgeScore = facts.length >= 3 ? 1.0 : facts.length > 0 ? 0.6 : 0;
+        knowledgeDetail = facts.length > 0 ? `${facts.length} related facts in knowledge graph` : 'No related knowledge found';
+        if (facts.length === 0) suggestions.push('Add knowledge episodes related to this goal domain using add_learning');
+      } catch {
+        knowledgeScore = 0.5;
+        knowledgeDetail = 'Could not query knowledge graph';
+      }
+    }
+    dimensions.knowledge_grounding = { score: knowledgeScore, detail: knowledgeDetail };
+
+    // 5. Commitment — is it an intention with a deadline-like signal?
+    const isIntention = goal.goalType === 'intention';
+    const hasDeadline = goal.title.match(/by\s+(Q[1-4]|20\d{2}|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i);
+    const commitScore = isIntention ? (hasDeadline ? 1.0 : 0.7) : (hasDeadline ? 0.5 : 0.2);
+    dimensions.commitment = {
+      score: commitScore,
+      detail: isIntention
+        ? (hasDeadline ? 'Promoted to intention with time reference' : 'Promoted to intention but no deadline')
+        : 'Still a desire — promote to intention when ready',
+    };
+    if (!isIntention) suggestions.push('Promote from desire to intention when success criteria and plans are in place');
+    if (!hasDeadline && isIntention) suggestions.push('Add a time-bound target to the goal title or description');
+
+    // Overall score
+    const scores = Object.values(dimensions).map(d => d.score);
+    const overall = scores.reduce((a, b) => a + b, 0) / scores.length;
+
+    res.json({
+      goal_id: goal.id,
+      score: Math.round(overall * 100) / 100,
+      dimensions,
+      suggestions,
+    });
+  } catch (err) {
+    await logger.error('Goal quality error:', err);
+    res.status(500).json({ error: 'Failed to assess goal quality' });
+  }
+});
+
+/**
+ * @swagger
+ * /goals/{id}/coverage:
+ *   get:
+ *     summary: Get knowledge coverage mapped to plans and tasks
+ *     description: Returns knowledge coverage for a goal, organized by linked plans and their tasks. Shows fact counts, gaps, contradictions, and coverage percentages at each level.
+ *     tags: [Goals]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Knowledge coverage tree
+ */
+router.get('/:id/coverage', authenticate, async (req, res) => {
+  try {
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
+
+    const groupId = graphitiBridge.getGroupId(req.user);
+    const planLinks = (goal.links || []).filter(l => l.linkedType === 'plan');
+
+    const plans = await Promise.all(
+      planLinks.map(async (link) => {
+        const plan = await plansDal.findById(link.linkedId);
+        if (!plan) return null;
+
+        const allNodes = await nodesDal.listByPlan(link.linkedId);
+        const tasks = allNodes.filter(n => n.nodeType === 'task' || n.nodeType === 'milestone');
+
+        // Query knowledge for each task (capped at 15)
+        const taskResults = await Promise.all(
+          tasks.slice(0, 15).map(async (task) => {
+            const query = [task.title, task.description].filter(Boolean).join(' ');
+            let factCount = 0;
+            let topFacts = [];
+            try {
+              if (graphitiBridge.isAvailable()) {
+                const result = await graphitiBridge.searchMemory({ query, group_id: groupId, max_results: 3 });
+                const facts = Array.isArray(result) ? result : (result?.facts || []);
+                factCount = facts.length;
+                topFacts = facts.slice(0, 2).map(f => f.fact || f.content || String(f));
+              }
+            } catch { /* graceful */ }
+
+            return {
+              id: task.id,
+              title: task.title,
+              status: task.status,
+              node_type: task.nodeType,
+              fact_count: factCount,
+              has_knowledge: factCount > 0,
+              coherence_status: task.coherenceStatus || 'unchecked',
+              top_facts: topFacts,
+            };
+          })
+        );
+
+        const covered = taskResults.filter(t => t.has_knowledge).length;
+
+        return {
+          id: plan.id,
+          title: plan.title,
+          quality_score: plan.qualityScore,
+          coverage: {
+            total: taskResults.length,
+            covered,
+            percentage: taskResults.length > 0 ? Math.round((covered / taskResults.length) * 100) : 100,
+          },
+          tasks: taskResults,
+        };
+      })
+    );
+
+    const validPlans = plans.filter(Boolean);
+    const totalTasks = validPlans.reduce((s, p) => s + p.coverage.total, 0);
+    const coveredTasks = validPlans.reduce((s, p) => s + p.coverage.covered, 0);
+
+    res.json({
+      goal: {
+        id: goal.id,
+        title: goal.title,
+        goal_type: goal.goalType || 'desire',
+      },
+      overall_coverage: {
+        total: totalTasks,
+        covered: coveredTasks,
+        percentage: totalTasks > 0 ? Math.round((coveredTasks / totalTasks) * 100) : 100,
+      },
+      plans: validPlans,
+    });
+  } catch (err) {
+    await logger.error('Goal coverage error:', err);
+    res.status(500).json({ error: 'Failed to get knowledge coverage' });
+  }
+});
 
 module.exports = router;

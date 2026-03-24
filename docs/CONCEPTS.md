@@ -271,6 +271,74 @@ The platform provides several mechanisms for humans to steer agent behavior with
 
 ---
 
+## Alignment & Coherence (BDI Architecture)
+
+AgentPlanner uses concepts from the BDI (Belief-Desire-Intention) agent architecture to keep goals, plans, and knowledge aligned. When any of these change, the others may need updating.
+
+### Desires vs Intentions
+
+Goals have two types:
+
+- **Desire** — aspirational, directional. "We should improve performance." Can be vague, doesn't need a specific plan yet.
+- **Intention** — committed, specific. Has success criteria, at least one linked plan, and sufficient knowledge to execute confidently.
+
+A desire becomes an intention through **promotion** (`POST /goals/:id/promote-to-intention`), which checks readiness: success criteria defined, plan linked, and optionally knowledge coverage. This prevents premature commitment — agents shouldn't execute toward goals that aren't ready.
+
+### Coherence Status
+
+Every task node has a `coherence_status` indicating whether its assumptions are still valid:
+
+| Status | Meaning | Action |
+|--------|---------|--------|
+| `unchecked` | Not yet evaluated | Run alignment check |
+| `coherent` | Knowledge supports this task | Safe to execute |
+| `stale_beliefs` | Knowledge context has changed | Review before executing |
+| `contradiction_detected` | New knowledge conflicts with task assumptions | Must resolve before executing |
+
+The coherence engine automatically checks tasks when new knowledge episodes are added. If an episode contradicts a task's description or assumptions, the task is flagged.
+
+### Quality Scoring
+
+Plans are scored on four dimensions (0-100%):
+
+| Dimension | What it measures |
+|-----------|-----------------|
+| **Coverage** | Do tasks have achiever edges to the goal? |
+| **Specificity** | Do tasks have detailed descriptions with acceptance criteria? |
+| **Ordering** | Are dependencies between tasks explicit? |
+| **Knowledge** | Do tasks have supporting knowledge in the graph? |
+
+The overall quality score is the weighted average. Agents and humans can run `run_coherence_check(plan_id)` to evaluate and stamp a plan as reviewed.
+
+### Alignment Review
+
+Changes accumulate — plans get edited, knowledge is added, goals evolve. The system tracks staleness by comparing `updated_at` to `coherence_checked_at` on each plan and goal.
+
+The alignment review workflow:
+
+```
+1. check_coherence_pending()    → What's stale?
+2. run_coherence_check(plan_id) → Evaluate + stamp as reviewed
+3. check_goals_health()         → Any goals at risk?
+4. Report findings              → Surface issues for human review
+```
+
+Agents should run this as a **preflight check** before starting task work. It takes seconds and prevents working on stale plans.
+
+### Knowledge Coverage
+
+The knowledge graph (Graphiti) stores facts, entities, and relationships learned during work. Knowledge coverage shows how much of the plan's work has supporting knowledge:
+
+- **Covered task** — Graphiti has facts relevant to the task's description
+- **Gap** — no knowledge found for this task area
+- **Contradiction** — existing knowledge conflicts with newer knowledge
+
+The Coverage view (`/app/knowledge` → Coverage tab) shows this mapped by topic, with each fact linked to the tasks it supports.
+
+> **For agents:** `check_coherence_pending()` at session start, `run_coherence_check()` for stale plans, `add_learning()` to fill knowledge gaps.
+
+---
+
 ## Further Reading
 
 - **[GETTING_STARTED.md](GETTING_STARTED.md)** — Step-by-step quickstart for humans and agents
