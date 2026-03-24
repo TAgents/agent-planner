@@ -9,14 +9,14 @@ const rateLimit = require('express-rate-limit');
 const logger = require('../utils/logger');
 
 // Default configuration from environment variables
-// Increased general limit to 300/min to support SPAs with multiple concurrent fetches
-const DEFAULT_GENERAL_LIMIT = parseInt(process.env.RATE_LIMIT_GENERAL) || 300;
+// Increased general limit to 600/min to support SPAs + MCP agents with many parallel API calls
+const DEFAULT_GENERAL_LIMIT = parseInt(process.env.RATE_LIMIT_GENERAL) || 600;
 const DEFAULT_GENERAL_WINDOW_MS = parseInt(process.env.RATE_LIMIT_GENERAL_WINDOW_MS) || 60 * 1000; // 1 minute
 
-const DEFAULT_AUTH_LIMIT = parseInt(process.env.RATE_LIMIT_AUTH) || 10;
+const DEFAULT_AUTH_LIMIT = parseInt(process.env.RATE_LIMIT_AUTH) || 20;
 const DEFAULT_AUTH_WINDOW_MS = parseInt(process.env.RATE_LIMIT_AUTH_WINDOW_MS) || 60 * 1000; // 1 minute
 
-const DEFAULT_SEARCH_LIMIT = parseInt(process.env.RATE_LIMIT_SEARCH) || 60;
+const DEFAULT_SEARCH_LIMIT = parseInt(process.env.RATE_LIMIT_SEARCH) || 120;
 const DEFAULT_SEARCH_WINDOW_MS = parseInt(process.env.RATE_LIMIT_SEARCH_WINDOW_MS) || 60 * 1000; // 1 minute
 
 /**
@@ -70,7 +70,7 @@ const keyGenerator = (req) => {
 /**
  * General API rate limiter
  * Applied to most endpoints
- * Default: 100 requests per minute
+ * Default: 600 requests per minute
  */
 const generalLimiter = rateLimit({
   windowMs: DEFAULT_GENERAL_WINDOW_MS,
@@ -90,7 +90,7 @@ const generalLimiter = rateLimit({
 /**
  * Auth endpoints rate limiter
  * Stricter limits to prevent brute force attacks
- * Default: 10 requests per minute
+ * Default: 20 requests per minute
  */
 const authLimiter = rateLimit({
   windowMs: DEFAULT_AUTH_WINDOW_MS,
@@ -114,7 +114,7 @@ const authLimiter = rateLimit({
 /**
  * Search endpoints rate limiter
  * Moderate limits for computationally expensive operations
- * Default: 30 requests per minute
+ * Default: 120 requests per minute
  */
 const searchLimiter = rateLimit({
   windowMs: DEFAULT_SEARCH_WINDOW_MS,
