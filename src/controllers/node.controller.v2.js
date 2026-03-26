@@ -77,7 +77,7 @@ const snakeNodeMinimal = (n) => ({
 const getNodes = async (req, res, next) => {
   try {
     const { id: planId } = req.params;
-    const { include_details, coherence_status } = req.query;
+    const { include_details, coherence_status, flat, include_root } = req.query;
     const userId = req.user.id;
 
     if (!(await checkPlanAccess(planId, userId))) {
@@ -90,13 +90,29 @@ const getNodes = async (req, res, next) => {
     const mapper = include_details === 'true' ? snakeNode : snakeNodeMinimal;
     const mapped = nodes.map(n => ({ ...mapper(n) }));
 
-    // Build tree
+    // ?flat=true — return a flat array of all nodes (no nesting), useful for bulk processing
+    if (flat === 'true') {
+      return res.json(mapped);
+    }
+
+    // Build nested tree from flat list
     const buildTree = (parentId = null) =>
       mapped
         .filter(n => n.parent_id === parentId)
         .map(n => ({ ...n, children: buildTree(n.id) }));
 
-    res.json(buildTree());
+    const fullTree = buildTree();
+
+    // Default: return root's children (phases/tasks) at top level.
+    // The root node is an internal container — exposing it as the sole top-level
+    // element caused clients to see only 1 node instead of the full tree.
+    // Use ?include_root=true to get the original root-wrapped response.
+    if (include_root === 'true') {
+      return res.json(fullTree);
+    }
+
+    const root = fullTree[0];
+    res.json(root ? root.children : fullTree);
   } catch (error) {
     next(error);
   }
