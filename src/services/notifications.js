@@ -1,10 +1,15 @@
 /**
- * Notification Service - using DAL layer
+ * Notification Service v1 — Legacy (AUTH_VERSION != v2)
+ *
+ * NOTE: In production AUTH_VERSION=v2 so this file is NOT used.
+ * The live path is: notifications.v2.js → adapters/index.js → slack.adapter.js
+ *
+ * Slack direct-call methods (postAgentRequest, postDecisionRequest) have been
+ * removed — v2 uses the adapter pattern instead.
  */
 
 const { usersDal } = require('../db/dal.cjs');
 const logger = require('../utils/logger');
-const slackService = require('./slack');
 const { planUrl, taskUrl } = require('../utils/urls');
 
 const EVENT_CONFIGS = {
@@ -102,16 +107,6 @@ async function notifyPlanShared(plan, actor) {
 async function notifyDecisionRequested(decision, plan, actor, planOwnerId) {
   const eventType = decision.urgency === 'blocking' ? 'decision.requested.blocking' : 'decision.requested';
   await sendNotification(eventType, { node: decision, plan, actor, userId: planOwnerId });
-
-  try {
-    await slackService.postDecisionRequest(planOwnerId, {
-      decision, plan,
-      plan_url: plan.id ? planUrl(plan.id) : undefined,
-      task_url: decision.node_id && plan.id ? taskUrl(plan.id, decision.node_id) : undefined,
-    });
-  } catch (err) {
-    logger.error('Failed to send Slack decision notification:', err);
-  }
 }
 
 async function notifyDecisionResolved(decision, plan, actor, requesterId) {
@@ -122,18 +117,6 @@ async function notifyAgentRequested(node, plan, actor, planOwnerId) {
   const eventMap = { 'start': 'task.start_requested', 'review': 'task.review_requested', 'help': 'task.help_requested', 'continue': 'task.continue_requested' };
   const eventType = eventMap[node.agent_requested || node.agentRequested] || 'task.agent_requested';
   await sendNotification(eventType, { node, plan, actor, userId: planOwnerId });
-
-  try {
-    await slackService.postAgentRequest(planOwnerId, {
-      node, plan,
-      requestType: node.agent_requested || node.agentRequested,
-      message: node.agent_request_message || node.agentRequestMessage,
-      plan_url: plan.id ? planUrl(plan.id) : undefined,
-      task_url: node.id && plan.id ? taskUrl(plan.id, node.id) : undefined,
-    });
-  } catch (err) {
-    logger.error('Failed to send Slack agent request notification:', err);
-  }
 }
 
 const AVAILABLE_EVENTS = Object.keys(EVENT_CONFIGS).map(key => ({

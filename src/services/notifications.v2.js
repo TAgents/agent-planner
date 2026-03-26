@@ -3,6 +3,7 @@
  */
 const { deliverToAll } = require('../adapters');
 const { publish } = require('./messageBus');
+const { planUrl, taskUrl } = require('../utils/urls');
 const logger = require('../utils/logger');
 
 async function notify(payload) {
@@ -31,11 +32,13 @@ async function notifyStatusChange(node, plan, actor, oldStatus, newStatus) {
     event: finalEvent,
     userId: plan.owner_id,
     plan: { id: plan.id, title: plan.title },
+    plan_url: planUrl(plan.id),
     task: {
       id: node.id, title: node.title,
       description: node.description, status: newStatus,
       agent_instructions: node.agent_instructions,
     },
+    task_url: taskUrl(plan.id, node.id),
     actor: { name: actor.name, type: actor.type || 'user' },
     message: `Task '${node.title}' status: ${oldStatus} → ${newStatus}`,
   });
@@ -48,11 +51,13 @@ async function notifyAgentRequested(node, plan, actor, ownerId) {
     event: `task.${requestType}_requested`,
     userId: ownerId,
     plan: { id: plan.id, title: plan.title },
+    plan_url: planUrl(plan.id),
     task: {
       id: node.id, title: node.title,
       description: node.description, status: node.status,
       agent_instructions: node.agent_instructions,
     },
+    task_url: taskUrl(plan.id, node.id),
     request: {
       type: requestType,
       message: node.agent_request_message,
@@ -68,6 +73,8 @@ async function notifyDecisionRequested(decision, plan, actor, ownerId) {
     event: decision.urgency === 'blocking' ? 'decision.requested.blocking' : 'decision.requested',
     userId: ownerId,
     plan: { id: plan.id, title: plan.title },
+    plan_url: planUrl(plan.id),
+    task_url: decision.node_id ? taskUrl(plan.id, decision.node_id) : undefined,
     decision: {
       id: decision.id, title: decision.title,
       context: decision.context, options: decision.options,
@@ -85,6 +92,8 @@ async function notifyDecisionResolved(decision, plan, actor) {
     event: 'decision.resolved',
     userId: plan.owner_id,
     plan: { id: plan.id, title: plan.title },
+    plan_url: planUrl(plan.id),
+    task_url: decision.node_id ? taskUrl(plan.id, decision.node_id) : undefined,
     decision: {
       id: decision.id, title: decision.title,
       resolution: decision.decision, rationale: decision.rationale,

@@ -1,71 +1,104 @@
-# Slack Integration Guide
+# Slack Integration
 
-AgentPlanner can send real-time notifications to Slack when agents request help, decisions are needed, or task statuses change.
+AgentPlanner can notify you in Slack when AI agents need your attention — decisions that need input, blocked tasks, or requests for help.
 
-## Setup
+---
 
-### 1. Connect Slack
+## How it works
 
-1. Go to **Settings → Integrations** in AgentPlanner
-2. Click **Connect Slack**
-3. Authorize the AgentPlanner bot in your Slack workspace
-4. Select a channel for notifications
+Notifications flow through an adapter pipeline:
 
-### 2. Select a Channel
+```
+Event (agent action / decision) → notifications.v2.js → adapter registry → SlackAdapter → your channel
+```
 
-After connecting, pick the Slack channel where notifications should be posted. You can change this at any time from the Integrations settings page.
+The integration is **per-user** — each user connects their own Slack workspace. Tokens are stored encrypted (AES-256-GCM).
 
-### 3. Test the Connection
-
-Click **Send Test Message** to verify everything is working.
-
-## What Gets Notified
+### What triggers a notification
 
 | Event | Description |
 |-------|-------------|
-| Agent Request (Start) | 🚀 An agent was asked to start a task |
-| Agent Request (Review) | 👀 An agent was asked to review work |
-| Agent Request (Help) | 💡 An agent was asked for help |
-| Agent Request (Continue) | ▶️ An agent was asked to continue |
-| Decision Request | 🟡 A decision is needed from the plan owner |
-| Blocking Decision | 🔴 An urgent blocking decision is needed |
+| 🚨 `decision.requested.blocking` | Agent is stuck and can't proceed — highest priority |
+| 🤔 `decision.requested` | Agent needs a human decision |
+| 🚀 `task.start_requested` | Human requested agent to start a task |
+| 🔍 `task.review_requested` | Agent submitted work for review |
+| 🆘 `task.help_requested` | Agent needs guidance |
+| ▶️ `task.continue_requested` | Agent asked to resume |
+| 🚫 `task.blocked` | A task became blocked |
 
-## For Developers
+---
 
-### Environment Variables
+## Setup
 
-To enable Slack OAuth on your own deployment:
+### 1. Create a Slack App
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App → From scratch**
+2. Under **OAuth & Permissions → Scopes → Bot Token Scopes**, add:
+   - `chat:write`
+   - `channels:read`
+   - `groups:read`
+3. Under **OAuth & Permissions → Redirect URLs**, add:
+   ```
+   https://your-domain.com/api/integrations/slack/callback
+   ```
+   *(replace with your actual API base URL)*
+4. Go to **Basic Information → App Credentials** — copy **Client ID** and **Client Secret**
+
+### 2. Configure environment variables
 
 ```env
-SLACK_CLIENT_ID=your_slack_app_client_id
-SLACK_CLIENT_SECRET=your_slack_app_client_secret
-SLACK_ENCRYPTION_KEY=random_32_char_key_for_token_encryption
+# Required for Slack OAuth
+SLACK_CLIENT_ID=your_client_id
+SLACK_CLIENT_SECRET=your_client_secret
+SLACK_ENCRYPTION_KEY=<run: openssl rand -hex 32>
+
+# Required for correct link generation in messages
+APP_URL=https://your-domain.com           # frontend URL (plan/task links)
+API_BASE_URL=https://your-domain.com/api  # API URL (OAuth callback)
 ```
 
-### Creating a Slack App
+> **Dev note:** `SLACK_ENCRYPTION_KEY` falls back to `JWT_SECRET` in development. Set it explicitly in production.
 
-1. Go to [api.slack.com/apps](https://api.slack.com/apps)
-2. Create a new app → "From scratch"
-3. Add OAuth Scopes: `chat:write`, `channels:read`, `groups:read`
-4. Set the redirect URL to: `https://your-api-domain/integrations/slack/callback`
-5. Install the app to your workspace
+### 3. Connect in AgentPlanner
 
-### API Endpoints
+1. Open **Settings → Integrations**
+2. Click **Connect Slack**
+3. Authorize the AgentPlanner bot in your workspace
+4. Select a notification channel from the dropdown
+5. Click **Test** to send a test message
+
+---
+
+## API Endpoints
+
+All endpoints require authentication (`Authorization: Bearer <token>`).
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/integrations/slack/status` | Get connection status |
-| GET | `/integrations/slack/install` | Get OAuth install URL |
-| GET | `/integrations/slack/callback` | OAuth callback (automatic) |
-| GET | `/integrations/slack/channels` | List available channels |
-| PUT | `/integrations/slack/channel` | Set notification channel |
-| DELETE | `/integrations/slack` | Disconnect Slack |
-| POST | `/integrations/slack/test` | Send test message |
+| `GET` | `/integrations/slack/status` | Check connection status |
+| `GET` | `/integrations/slack/install` | Get OAuth install URL |
+| `GET` | `/integrations/slack/callback` | OAuth callback (auto — don't call directly) |
+| `GET` | `/integrations/slack/channels` | List available channels |
+| `PUT` | `/integrations/slack/channel` | Set notification channel |
+| `DELETE` | `/integrations/slack` | Disconnect |
+| `POST` | `/integrations/slack/test` | Send test message |
 
-### Fallback: Polling Endpoint
+---
 
-If Slack is not configured, agents can still poll for pending requests using the existing API endpoints. The agent request and heartbeat APIs continue to work regardless of Slack configuration.
+## Self-Hosting Notes
 
-## Disconnecting
+If you're self-hosting, you'll need to create your own Slack app (the cloud version's app won't work for a different domain).
 
-Go to **Settings → Integrations** and click **Disconnect** on the Slack card. This deactivates the integration but preserves the record. You can reconnect at any time.
+The redirect URL in your Slack app settings must match `API_BASE_URL + /integrations/slack/callback` exactly.
+
+---
+
+## Troubleshooting
+
+**"Slack integration not configured"** — `SLACK_CLIENT_ID` is missing from your environment. Restart the server after adding it.
+
+**Test message sends but real notifications don't arrive** — Check that the notification events are actually being triggered (look at API logs). Also confirm `APP_URL` is set so links generate correctly.
+
+**OAuth redirect fails** — The redirect URL in your Slack app settings doesn't match `API_BASE_URL`. Must be an exact match.
+
+**Messages send but links don't work** — `APP_URL` env var isn't set or is wrong. It should be your frontend base URL (e.g. `https://agentplanner.io`).
