@@ -36,7 +36,7 @@ const swaggerOptions = {
           type: 'http',
           scheme: 'bearer',
           bearerFormat: 'JWT',
-          description: 'Supabase JWT token'
+          description: 'JWT token'
         },
         apiKey: {
           type: 'apiKey',

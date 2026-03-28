@@ -4,8 +4,8 @@ const logger = require('../utils/logger');
 /**
  * Get the GitHub access token for the authenticated user.
  *
- * NOTE: The Supabase OAuth flow that provided GitHub tokens has been removed.
- * This function currently returns null. To re-enable GitHub integration,
+ * NOTE: GitHub OAuth integration is not yet implemented.
+ * This function currently returns null. To enable GitHub integration,
  * implement a direct GitHub OAuth flow and store the token in the users table.
  */
 const getGitHubToken = async (req) => {

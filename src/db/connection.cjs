@@ -1,5 +1,5 @@
 // CJS bridge for database connection
-// Provides the raw postgres.js client for the Supabase compatibility shim
+// Provides the raw postgres.js client for the query builder
 
 let _client = null;
 let _loading = null;

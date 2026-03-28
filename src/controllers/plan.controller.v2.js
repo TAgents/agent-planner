@@ -1,5 +1,5 @@
 /**
- * Plan Controller v2 — Uses DAL instead of Supabase
+ * Plan Controller v2 — Uses DAL for database access
  */
 const { v4: uuidv4 } = require('uuid');
 const dal = require('../db/dal.cjs');

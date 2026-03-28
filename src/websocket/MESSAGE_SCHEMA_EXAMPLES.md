@@ -47,22 +47,17 @@ collaborationServer.broadcastToPlan(node.plan_id, message);
 **When to emit:** After successfully creating a new plan in the database.
 
 ```javascript
+const { plansDal } = require('../db/dal.cjs');
 const { createPlanCreatedMessage } = require('../websocket/message-schema');
 
 // In plan.controller.js - createPlan()
 async function createPlan(req, res) {
   const { title, description, status } = req.body;
 
-  // Create plan in database
-  const { data: plan, error } = await supabase
-    .from('plans')
-    .insert({ title, description, status, owner_id: req.user.id })
-    .select()
-    .single();
-
-  if (error) {
-    return res.status(400).json({ error: error.message });
-  }
+  // Create plan in database via DAL
+  const plan = await plansDal.create({
+    title, description, status, owner_id: req.user.id
+  });
 
   // Broadcast WebSocket message
   const message = createPlanCreatedMessage(plan, req.user.id, req.user.name);
@@ -100,23 +95,17 @@ async function createPlan(req, res) {
 **When to emit:** After updating plan properties (title, description, metadata).
 
 ```javascript
+const { plansDal } = require('../db/dal.cjs');
 const { createPlanUpdatedMessage } = require('../websocket/message-schema');
 
 async function updatePlan(req, res) {
   const { id } = req.params;
   const updates = req.body;
 
-  const { data: plan, error } = await supabase
-    .from('plans')
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single();
+  const plan = await plansDal.update(id, updates);
 
-  if (!error) {
-    const message = createPlanUpdatedMessage(plan, req.user.id, req.user.name);
-    req.app.collaborationServer.broadcastToPlan(plan.id, message);
-  }
+  const message = createPlanUpdatedMessage(plan, req.user.id, req.user.name);
+  req.app.collaborationServer.broadcastToPlan(plan.id, message);
 
   return res.json(plan);
 }
@@ -127,6 +116,7 @@ async function updatePlan(req, res) {
 **When to emit:** Specifically when the plan status changes (more granular than plan.updated).
 
 ```javascript
+const { plansDal } = require('../db/dal.cjs');
 const { createPlanStatusChangedMessage } = require('../websocket/message-schema');
 
 async function changePlanStatus(req, res) {
@@ -134,19 +124,11 @@ async function changePlanStatus(req, res) {
   const { status } = req.body;
 
   // Get current status first
-  const { data: currentPlan } = await supabase
-    .from('plans')
-    .select('status')
-    .eq('id', id)
-    .single();
-
+  const currentPlan = await plansDal.findById(id);
   const oldStatus = currentPlan.status;
 
   // Update status
-  await supabase
-    .from('plans')
-    .update({ status })
-    .eq('id', id);
+  await plansDal.update(id, { status });
 
   // Emit specific status change event
   const message = createPlanStatusChangedMessage(
@@ -167,20 +149,16 @@ async function changePlanStatus(req, res) {
 **When to emit:** After deleting a plan.
 
 ```javascript
+const { plansDal } = require('../db/dal.cjs');
 const { createPlanDeletedMessage } = require('../websocket/message-schema');
 
 async function deletePlan(req, res) {
   const { id } = req.params;
 
-  const { error } = await supabase
-    .from('plans')
-    .delete()
-    .eq('id', id);
+  await plansDal.remove(id);
 
-  if (!error) {
-    const message = createPlanDeletedMessage(id, req.user.id, req.user.name);
-    req.app.collaborationServer.broadcastToPlan(id, message);
-  }
+  const message = createPlanDeletedMessage(id, req.user.id, req.user.name);
+  req.app.collaborationServer.broadcastToPlan(id, message);
 
   return res.json({ success: true });
 }
@@ -193,22 +171,17 @@ async function deletePlan(req, res) {
 **When to emit:** After creating a new node (phase, task, or milestone).
 
 ```javascript
+const { nodesDal } = require('../db/dal.cjs');
 const { createNodeCreatedMessage } = require('../websocket/message-schema');
 
 async function createNode(req, res) {
   const { plan_id } = req.params;
   const nodeData = req.body;
 
-  const { data: node, error } = await supabase
-    .from('plan_nodes')
-    .insert({ ...nodeData, plan_id })
-    .select()
-    .single();
+  const node = await nodesDal.create({ ...nodeData, plan_id });
 
-  if (!error) {
-    const message = createNodeCreatedMessage(node, req.user.id, req.user.name);
-    req.app.collaborationServer.broadcastToPlan(plan_id, message);
-  }
+  const message = createNodeCreatedMessage(node, req.user.id, req.user.name);
+  req.app.collaborationServer.broadcastToPlan(plan_id, message);
 
   return res.status(201).json(node);
 }
@@ -246,23 +219,17 @@ async function createNode(req, res) {
 **When to emit:** After updating node properties.
 
 ```javascript
+const { nodesDal } = require('../db/dal.cjs');
 const { createNodeUpdatedMessage } = require('../websocket/message-schema');
 
 async function updateNode(req, res) {
   const { plan_id, node_id } = req.params;
   const updates = req.body;
 
-  const { data: node, error } = await supabase
-    .from('plan_nodes')
-    .update(updates)
-    .eq('id', node_id)
-    .select()
-    .single();
+  const node = await nodesDal.update(node_id, updates);
 
-  if (!error) {
-    const message = createNodeUpdatedMessage(node, req.user.id, req.user.name);
-    req.app.collaborationServer.broadcastToPlan(plan_id, message);
-  }
+  const message = createNodeUpdatedMessage(node, req.user.id, req.user.name);
+  req.app.collaborationServer.broadcastToPlan(plan_id, message);
 
   return res.json(node);
 }
@@ -273,6 +240,7 @@ async function updateNode(req, res) {
 **When to emit:** Specifically when node status changes (e.g., not_started → in_progress).
 
 ```javascript
+const { nodesDal } = require('../db/dal.cjs');
 const { createNodeStatusChangedMessage } = require('../websocket/message-schema');
 
 async function changeNodeStatus(req, res) {
@@ -280,19 +248,11 @@ async function changeNodeStatus(req, res) {
   const { status } = req.body;
 
   // Get current status
-  const { data: currentNode } = await supabase
-    .from('plan_nodes')
-    .select('status')
-    .eq('id', node_id)
-    .single();
-
+  const currentNode = await nodesDal.findById(node_id);
   const oldStatus = currentNode.status;
 
   // Update status
-  await supabase
-    .from('plan_nodes')
-    .update({ status })
-    .eq('id', node_id);
+  await nodesDal.update(node_id, { status });
 
   // Emit status change event
   const message = createNodeStatusChangedMessage(
@@ -314,6 +274,7 @@ async function changeNodeStatus(req, res) {
 **When to emit:** When a node is moved to a different parent or reordered.
 
 ```javascript
+const { nodesDal } = require('../db/dal.cjs');
 const { createNodeMovedMessage } = require('../websocket/message-schema');
 
 async function moveNode(req, res) {
@@ -321,20 +282,13 @@ async function moveNode(req, res) {
   const { new_parent_id, new_order_index } = req.body;
 
   // Get current position
-  const { data: currentNode } = await supabase
-    .from('plan_nodes')
-    .select('parent_id, order_index')
-    .eq('id', node_id)
-    .single();
+  const currentNode = await nodesDal.findById(node_id);
 
   // Update position
-  await supabase
-    .from('plan_nodes')
-    .update({
-      parent_id: new_parent_id,
-      order_index: new_order_index
-    })
-    .eq('id', node_id);
+  await nodesDal.update(node_id, {
+    parent_id: new_parent_id,
+    order_index: new_order_index
+  });
 
   // Emit move event
   const moveData = {
@@ -362,25 +316,21 @@ async function moveNode(req, res) {
 **When to emit:** After deleting a node.
 
 ```javascript
+const { nodesDal } = require('../db/dal.cjs');
 const { createNodeDeletedMessage } = require('../websocket/message-schema');
 
 async function deleteNode(req, res) {
   const { plan_id, node_id } = req.params;
 
-  const { error } = await supabase
-    .from('plan_nodes')
-    .delete()
-    .eq('id', node_id);
+  await nodesDal.remove(node_id);
 
-  if (!error) {
-    const message = createNodeDeletedMessage(
-      node_id,
-      plan_id,
-      req.user.id,
-      req.user.name
-    );
-    req.app.collaborationServer.broadcastToPlan(plan_id, message);
-  }
+  const message = createNodeDeletedMessage(
+    node_id,
+    plan_id,
+    req.user.id,
+    req.user.name
+  );
+  req.app.collaborationServer.broadcastToPlan(plan_id, message);
 
   return res.json({ success: true });
 }
@@ -393,6 +343,7 @@ async function deleteNode(req, res) {
 **When to emit:** When a user is assigned to a node.
 
 ```javascript
+const { usersDal } = require('../db/dal.cjs');
 const { createUserAssignedMessage } = require('../websocket/message-schema');
 
 async function assignUser(req, res) {
@@ -400,16 +351,10 @@ async function assignUser(req, res) {
   const { user_id } = req.body;
 
   // Get assigned user info
-  const { data: assignedUser } = await supabase
-    .from('users')
-    .select('id, name')
-    .eq('id', user_id)
-    .single();
+  const assignedUser = await usersDal.findById(user_id);
 
-  // Create assignment
-  await supabase
-    .from('node_assignments')
-    .insert({ node_id, user_id });
+  // Create assignment (handled by appropriate DAL)
+  // ... assignment logic ...
 
   // Emit event
   const message = createUserAssignedMessage(
@@ -431,31 +376,27 @@ async function assignUser(req, res) {
 **When to emit:** When a comment is added to a node.
 
 ```javascript
+const dal = require('../db/dal.cjs');
 const { createCommentAddedMessage } = require('../websocket/message-schema');
 
 async function addComment(req, res) {
   const { plan_id, node_id } = req.params;
   const { content, comment_type } = req.body;
 
-  const { data: comment, error } = await supabase
-    .from('plan_comments')
-    .insert({
-      plan_node_id: node_id,
-      user_id: req.user.id,
-      content,
-      comment_type: comment_type || 'human'
-    })
-    .select()
-    .single();
+  // Create comment via DAL
+  const comment = await dal.commentsDal.create({
+    plan_node_id: node_id,
+    user_id: req.user.id,
+    content,
+    comment_type: comment_type || 'human'
+  });
 
-  if (!error) {
-    const message = createCommentAddedMessage(
-      comment,
-      plan_id,
-      req.user.name
-    );
-    req.app.collaborationServer.broadcastToPlan(plan_id, message);
-  }
+  const message = createCommentAddedMessage(
+    comment,
+    plan_id,
+    req.user.name
+  );
+  req.app.collaborationServer.broadcastToPlan(plan_id, message);
 
   return res.status(201).json(comment);
 }
@@ -475,24 +416,19 @@ async function addLog(req, res) {
   // Build metadata with actor_type if provided
   const metadata = actor_type ? { actor_type } : {};
 
-  const { data: log, error } = await supabase
-    .from('plan_node_logs')
-    .insert({
-      plan_node_id: node_id,
-      user_id: req.user.id,
-      content,
-      log_type,
-      tags: tags || [],
-      metadata
-    })
-    .select()
-    .single();
+  // Create log entry via DAL
+  const log = await dal.logsDal.create({
+    plan_node_id: node_id,
+    user_id: req.user.id,
+    content,
+    log_type,
+    tags: tags || [],
+    metadata
+  });
 
-  if (!error) {
-    // createLogAddedMessage extracts actor_type from log.metadata
-    const message = createLogAddedMessage(log, plan_id, req.user.name);
-    req.app.collaborationServer.broadcastToPlan(plan_id, message);
-  }
+  // createLogAddedMessage extracts actor_type from log.metadata
+  const message = createLogAddedMessage(log, plan_id, req.user.name);
+  req.app.collaborationServer.broadcastToPlan(plan_id, message);
 
   return res.status(201).json(log);
 }
@@ -509,24 +445,19 @@ async function addLabel(req, res) {
   const { plan_id, node_id } = req.params;
   const { label } = req.body;
 
-  const { data: labelRecord, error } = await supabase
-    .from('plan_node_labels')
-    .insert({
-      plan_node_id: node_id,
-      label
-    })
-    .select()
-    .single();
+  // Create label via DAL
+  const labelRecord = await dal.labelsDal.create({
+    plan_node_id: node_id,
+    label
+  });
 
-  if (!error) {
-    const message = createLabelAddedMessage(
-      labelRecord,
-      plan_id,
-      req.user.id,
-      req.user.name
-    );
-    req.app.collaborationServer.broadcastToPlan(plan_id, message);
-  }
+  const message = createLabelAddedMessage(
+    labelRecord,
+    plan_id,
+    req.user.id,
+    req.user.name
+  );
+  req.app.collaborationServer.broadcastToPlan(plan_id, message);
 
   return res.status(201).json(labelRecord);
 }
@@ -545,37 +476,28 @@ async function addCollaborator(req, res) {
   const { plan_id } = req.params;
   const { user_id, role } = req.body;
 
-  // Get user info
-  const { data: user } = await supabase
-    .from('users')
-    .select('name, email')
-    .eq('id', user_id)
-    .single();
+  // Get user info and create collaborator via DAL
+  const { usersDal, collaboratorsDal } = require('../db/dal.cjs');
+  const user = await usersDal.findById(user_id);
 
-  const { data: collaborator, error } = await supabase
-    .from('plan_collaborators')
-    .insert({
-      plan_id,
-      user_id,
-      role: role || 'viewer'
-    })
-    .select()
-    .single();
+  const collaborator = await collaboratorsDal.create({
+    plan_id,
+    user_id,
+    role: role || 'viewer'
+  });
 
-  if (!error) {
-    const collaboratorWithUserInfo = {
-      ...collaborator,
-      user_name: user.name,
-      user_email: user.email
-    };
+  const collaboratorWithUserInfo = {
+    ...collaborator,
+    user_name: user.name,
+    user_email: user.email
+  };
 
-    const message = createCollaboratorAddedMessage(
-      collaboratorWithUserInfo,
-      req.user.id,
-      req.user.name
-    );
-    req.app.collaborationServer.broadcastToPlan(plan_id, message);
-  }
+  const message = createCollaboratorAddedMessage(
+    collaboratorWithUserInfo,
+    req.user.id,
+    req.user.name
+  );
+  req.app.collaborationServer.broadcastToPlan(plan_id, message);
 
   return res.status(201).json(collaborator);
 }
@@ -592,32 +514,20 @@ async function changeCollaboratorRole(req, res) {
   const { plan_id, collaborator_id } = req.params;
   const { role } = req.body;
 
-  // Get current role
-  const { data: current } = await supabase
-    .from('plan_collaborators')
-    .select('role')
-    .eq('id', collaborator_id)
-    .single();
-
+  // Get current role and update via DAL
+  const { collaboratorsDal } = require('../db/dal.cjs');
+  const current = await collaboratorsDal.findById(collaborator_id);
   const oldRole = current.role;
 
-  // Update role
-  const { data: collaborator, error } = await supabase
-    .from('plan_collaborators')
-    .update({ role })
-    .eq('id', collaborator_id)
-    .select()
-    .single();
+  const collaborator = await collaboratorsDal.update(collaborator_id, { role });
 
-  if (!error) {
-    const message = createCollaboratorRoleChangedMessage(
-      collaborator,
-      oldRole,
-      req.user.id,
-      req.user.name
-    );
-    req.app.collaborationServer.broadcastToPlan(plan_id, message);
-  }
+  const message = createCollaboratorRoleChangedMessage(
+    collaborator,
+    oldRole,
+    req.user.id,
+    req.user.name
+  );
+  req.app.collaborationServer.broadcastToPlan(plan_id, message);
 
   return res.json(collaborator);
 }
@@ -629,7 +539,7 @@ async function changeCollaboratorRole(req, res) {
 
 ```javascript
 // plan.controller.js
-const { supabase } = require('../config/supabase');
+const { plansDal, nodesDal } = require('../db/dal.cjs');
 const {
   createPlanCreatedMessage,
   createPlanUpdatedMessage,
@@ -648,32 +558,22 @@ async function createPlan(req, res) {
       return res.status(400).json({ error: 'Title is required' });
     }
 
-    // Create plan in database
-    const { data: plan, error } = await supabase
-      .from('plans')
-      .insert({
-        title,
-        description,
-        status: status || 'draft',
-        owner_id: req.user.id
-      })
-      .select()
-      .single();
-
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
+    // Create plan in database via DAL
+    const plan = await plansDal.create({
+      title,
+      description,
+      status: status || 'draft',
+      owner_id: req.user.id
+    });
 
     // Create root node for the plan
-    await supabase
-      .from('plan_nodes')
-      .insert({
-        plan_id: plan.id,
-        node_type: 'root',
-        title: plan.title,
-        status: 'not_started',
-        order_index: 0
-      });
+    await nodesDal.create({
+      plan_id: plan.id,
+      node_type: 'root',
+      title: plan.title,
+      status: 'not_started',
+      order_index: 0
+    });
 
     // Broadcast WebSocket message to all users in the plan
     const message = createPlanCreatedMessage(
@@ -699,17 +599,8 @@ async function updatePlan(req, res) {
     const { id } = req.params;
     const updates = req.body;
 
-    // Update plan in database
-    const { data: plan, error } = await supabase
-      .from('plans')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
+    // Update plan in database via DAL
+    const plan = await plansDal.update(id, updates);
 
     // Broadcast WebSocket message
     const message = createPlanUpdatedMessage(
@@ -735,14 +626,7 @@ async function deletePlan(req, res) {
     const { id } = req.params;
 
     // Delete plan (cascade will handle nodes, etc.)
-    const { error } = await supabase
-      .from('plans')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
+    await plansDal.remove(id);
 
     // Broadcast WebSocket message
     const message = createPlanDeletedMessage(

@@ -1,7 +1,7 @@
 const logger = require('../utils/logger');
 
 /**
- * Upload controller — Supabase Storage has been removed.
+ * Upload controller — File storage not yet implemented.
  * Avatar uploads are not yet implemented for v2.
  * TODO: Implement file storage via local disk, S3, or GCS.
  */

@@ -62,26 +62,18 @@ The new schema is fully backward compatible:
 
 ```javascript
 // plan.controller.js
-const { supabase } = require('../config/supabase');
+const { plansDal } = require('../db/dal.cjs');
 const { createPlanCreatedMessage } = require('../websocket/message-schema');
 
 async function createPlan(req, res) {
   try {
-    // 1. Perform database operation
-    const { data: plan, error } = await supabase
-      .from('plans')
-      .insert({
-        title: req.body.title,
-        description: req.body.description,
-        status: req.body.status || 'draft',
-        owner_id: req.user.id
-      })
-      .select()
-      .single();
-
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
+    // 1. Perform database operation via DAL
+    const plan = await plansDal.create({
+      title: req.body.title,
+      description: req.body.description,
+      status: req.body.status || 'draft',
+      owner_id: req.user.id
+    });
 
     // 2. Broadcast WebSocket message
     const message = createPlanCreatedMessage(plan, req.user.id, req.user.name);
@@ -101,6 +93,7 @@ async function createPlan(req, res) {
 Use specific status change events for better UI reactivity:
 
 ```javascript
+const { nodesDal } = require('../db/dal.cjs');
 const { createNodeStatusChangedMessage } = require('../websocket/message-schema');
 
 async function updateNodeStatus(req, res) {
@@ -108,19 +101,11 @@ async function updateNodeStatus(req, res) {
   const { status } = req.body;
 
   // 1. Get current status
-  const { data: currentNode } = await supabase
-    .from('plan_nodes')
-    .select('status')
-    .eq('id', node_id)
-    .single();
-
+  const currentNode = await nodesDal.findById(node_id);
   const oldStatus = currentNode.status;
 
   // 2. Update status
-  await supabase
-    .from('plan_nodes')
-    .update({ status })
-    .eq('id', node_id);
+  await nodesDal.update(node_id, { status });
 
   // 3. Emit granular status change event
   const message = createNodeStatusChangedMessage(
@@ -142,6 +127,7 @@ async function updateNodeStatus(req, res) {
 For operations affecting multiple entities:
 
 ```javascript
+const { nodesDal } = require('../db/dal.cjs');
 const {
   createNodeUpdatedMessage,
   createNodeMovedMessage
@@ -153,13 +139,10 @@ async function reorderNodes(req, res) {
 
   // 1. Update all nodes
   for (const update of updates) {
-    await supabase
-      .from('plan_nodes')
-      .update({ order_index: update.newOrderIndex })
-      .eq('id', update.nodeId);
+    await nodesDal.update(update.nodeId, { order_index: update.newOrderIndex });
 
     // 2. Emit message for each update
-    const node = await getNode(update.nodeId);
+    const node = await nodesDal.findById(update.nodeId);
     const message = createNodeUpdatedMessage(node, req.user.id, req.user.name);
     req.app.collaborationServer.broadcastToPlan(plan_id, message);
   }
@@ -173,16 +156,14 @@ async function reorderNodes(req, res) {
 For operations that affect multiple tables (e.g., deleting a node with children):
 
 ```javascript
+const { nodesDal } = require('../db/dal.cjs');
 const { createNodeDeletedMessage } = require('../websocket/message-schema');
 
 async function deleteNode(req, res) {
   const { plan_id, node_id } = req.params;
 
   // Delete node (cascade will delete child nodes, logs, etc.)
-  await supabase
-    .from('plan_nodes')
-    .delete()
-    .eq('id', node_id);
+  await nodesDal.remove(node_id);
 
   // Emit node deletion event
   const message = createNodeDeletedMessage(
@@ -281,23 +262,16 @@ req.app.collaborationServer.broadcastToNode(node.id, plan.id, message);
 ### Pattern: Only Broadcast on Success
 
 ```javascript
+const { plansDal } = require('../db/dal.cjs');
+
 async function updatePlan(req, res) {
   try {
-    const { data: plan, error } = await supabase
-      .from('plans')
-      .update(req.body)
-      .eq('id', req.params.id)
-      .select()
-      .single();
+    const plan = await plansDal.update(req.params.id, req.body);
 
     // Only broadcast if database operation succeeded
-    if (!error) {
-      const message = createPlanUpdatedMessage(plan, req.user.id, req.user.name);
-      req.app.collaborationServer.broadcastToPlan(plan.id, message);
-      return res.json(plan);
-    } else {
-      return res.status(400).json({ error: error.message });
-    }
+    const message = createPlanUpdatedMessage(plan, req.user.id, req.user.name);
+    req.app.collaborationServer.broadcastToPlan(plan.id, message);
+    return res.json(plan);
 
   } catch (error) {
     // No broadcast on exception
@@ -317,7 +291,7 @@ async function moveNodeWithTransaction(req, res) {
   let updatedNode = null;
 
   try {
-    // Begin transaction (pseudo-code, Supabase doesn't support explicit transactions via API)
+    // Perform the move operation (DAL handles transactions internally)
     updatedNode = await updateNodePosition(node_id, req.body);
     success = true;
   } catch (error) {
@@ -351,12 +325,9 @@ Controllers should include user name when available:
 // Option 1: From JWT payload (if included)
 const userName = req.user.name || req.user.email;
 
-// Option 2: Query database
-const { data: user } = await supabase
-  .from('users')
-  .select('name, email')
-  .eq('id', req.user.id)
-  .single();
+// Option 2: Query database via DAL
+const { usersDal } = require('../db/dal.cjs');
+const user = await usersDal.findById(req.user.id);
 const userName = user.name || user.email;
 
 // Option 3: Pass null (schema allows optional)
@@ -369,14 +340,11 @@ Add user info to request object:
 
 ```javascript
 // middleware/user-info.middleware.js
+const { usersDal } = require('../db/dal.cjs');
+
 async function attachUserInfo(req, res, next) {
   if (req.user && req.user.id) {
-    const { data: user } = await supabase
-      .from('users')
-      .select('name, email')
-      .eq('id', req.user.id)
-      .single();
-
+    const user = await usersDal.findById(req.user.id);
     req.user.name = user.name;
     req.user.email = user.email;
   }
