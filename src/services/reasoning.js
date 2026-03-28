@@ -74,6 +74,34 @@ async function propagateStatus(nodeId, newStatus) {
     }
   }
 
+  // ── Parent auto-completion ──
+  // When a node is completed, check if all siblings under the same parent
+  // are also completed. If so, auto-complete the parent (phase/root).
+  if (newStatus === 'completed') {
+    const node = await dal.nodesDal.findById(nodeId);
+    if (node && node.parentId) {
+      const siblings = await dal.nodesDal.getChildren(node.parentId);
+      const allDone = siblings.every(s => s.status === 'completed');
+      if (allDone) {
+        const parent = await dal.nodesDal.findById(node.parentId);
+        if (parent && parent.status !== 'completed' && parent.nodeType !== 'root') {
+          await dal.nodesDal.update(node.parentId, { status: 'completed' });
+          effects.unblocked.push({
+            node_id: node.parentId,
+            title: parent.title,
+            previous_status: parent.status,
+            new_status: 'completed',
+            reason: 'all_children_completed',
+          });
+          // Recurse: completing a phase may complete its parent too
+          const parentEffects = await propagateStatus(node.parentId, 'completed');
+          effects.unblocked.push(...parentEffects.unblocked);
+          effects.warnings.push(...parentEffects.warnings);
+        }
+      }
+    }
+  }
+
   if (newStatus === 'blocked') {
     // Warn downstream tasks that a blocker is now blocked
     const downstream = await dal.dependenciesDal.listByNode(nodeId, 'downstream');
