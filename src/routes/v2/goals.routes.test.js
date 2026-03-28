@@ -83,8 +83,14 @@ describe('Goals v2 Routes', () => {
       expect(res.body.title).toBe('Test');
     });
 
-    it('requires title and type', async () => {
+    it('defaults type to outcome when not provided', async () => {
+      mockGoalsDal.create.mockResolvedValue({ id: 'new-goal', title: 'Test', type: 'outcome' });
       const res = await request(app).post('/api/goals').send({ title: 'Test' });
+      expect(res.status).toBe(201);
+    });
+
+    it('requires title', async () => {
+      const res = await request(app).post('/api/goals').send({ type: 'outcome' });
       expect(res.status).toBe(400);
     });
 

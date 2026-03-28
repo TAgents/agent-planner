@@ -1,29 +1,15 @@
-const { auth, adminAuth } = require('../services/supabase-auth');
 const { usersDal } = require('../db/dal.cjs');
 const logger = require('../utils/logger');
 
 /**
- * Get the GitHub access token for the authenticated user
+ * Get the GitHub access token for the authenticated user.
+ *
+ * NOTE: The Supabase OAuth flow that provided GitHub tokens has been removed.
+ * This function currently returns null. To re-enable GitHub integration,
+ * implement a direct GitHub OAuth flow and store the token in the users table.
  */
 const getGitHubToken = async (req) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return null;
-  const token = authHeader.split(' ')[1];
-  if (!token) return null;
-
-  try {
-    const { data, error } = await adminAuth.getUser(token);
-    if (error || !data.user) return null;
-    if (data.user.app_metadata?.provider !== 'github') return null;
-
-    const { data: sessionData } = await auth.setSession({ access_token: token, refresh_token: '' });
-    if (sessionData?.session?.provider_token) return sessionData.session.provider_token;
-
-    return null;
-  } catch (error) {
-    await logger.error('Error getting GitHub token', error);
-    return null;
-  }
+  return null;
 };
 
 const githubApiRequest = async (endpoint, options = {}, token) => {

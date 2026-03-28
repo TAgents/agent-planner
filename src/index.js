@@ -11,41 +11,54 @@ const swaggerOptions = require('./config/swagger');
 // Import database checks
 const { checkDatabaseConnection, getDatabaseInfo, checkExistingUsers } = require('./utils/database-check');
 
-// Import routes
+// Import routes — domain-organized (Phase 3 refactor)
+const domains = require('./domains');
+
+// Plan domain
+const planRoutes = domains.plan.routes.planRoutes;
+const coherenceRoutes = domains.plan.routes.coherenceRoutes;
+const coherencePendingRoutes = domains.plan.routes.coherencePendingRoutes;
+const knowledgeLoopRoutes = domains.plan.routes.knowledgeLoopRoutes;
+
+// Node domain
+const nodeRoutes = domains.node.routes.nodeRoutes;
+const activityRoutes = domains.node.routes.activityRoutes;
+const nodeViewRoutes = domains.node.routes.nodeViewRoutes;
+
+// Decision domain
+const decisionRoutes = domains.decision.routes.decisionRoutes;
+
+// Dependency domain
+const dependencyRoutes = domains.dependency.routes.dependencyRoutes;
+const crossPlanDepsRoutes = domains.dependency.routes.crossPlanDepsRoutes;
+const reasoningRoutes = domains.dependency.routes.reasoningRoutes;
+
+// Goal domain
+const goalsV2Routes = domains.goal.routes.goalRoutes;
+
+// Knowledge domain
+const knowledgeV2Routes = domains.knowledge.routes.knowledgeRoutes;
+
+// Collaboration domain
+const collaborationRoutes = domains.collaboration.routes.collaborationRoutes;
+const shareRoutes = domains.collaboration.routes.shareRoutes;
+const organizationRoutes = domains.collaboration.routes.organizationRoutes;
+const userRoutes = domains.collaboration.routes.userRoutes;
+
+// Search domain
+const searchRoutes = domains.search.routes.searchRoutes;
+
+// Non-domain routes (cross-cutting, infra, integrations)
 const authRoutes = require('./routes/auth.routes');
-const planRoutes = require('./routes/plan.routes');
-const nodeRoutes = require('./routes/node.routes');
-// Removed: artifact routes (Phase 0 simplification)
-const activityRoutes = require('./routes/activity.routes');
-const searchRoutes = require('./routes/search.routes');
 const tokenRoutes = require('./routes/token.routes');
-// Removed: debug routes (pre-v2 cleanup)
 const uploadRoutes = require('./routes/upload.routes');
-const userRoutes = require('./routes/user.routes');
-const collaborationRoutes = require('./routes/collaboration.routes');
 const statsRoutes = require('./routes/stats.routes');
 const githubRoutes = require('./routes/github.routes');
-// Removed: ai routes, webhook routes (pre-v2 cleanup)
-const shareRoutes = require('./routes/share.routes');
-const organizationRoutes = require('./routes/organization.routes');
-const goalsV2Routes = require('./routes/v2/goals.routes');
-const knowledgeV2Routes = require('./routes/v2/knowledge.routes');
 const agentV2Routes = require('./routes/v2/agent.routes');
 const contextRoutes = require('./routes/context.routes');
-const nodeViewRoutes = require('./routes/node-views.routes');
-const decisionRoutes = require('./routes/decision.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
-const crossPlanDepsRoutes = require('./routes/cross-plan-deps.routes');
-const coherenceRoutes = require('./routes/v2/coherence.routes');
-const coherencePendingRoutes = require('./routes/v2/coherencePending.routes');
-const knowledgeLoopRoutes = require('./routes/v2/knowledgeLoop.routes');
-// Removed: handoff routes (pre-v2 cleanup)
-// Removed: chat, prompt routes (pre-v2 cleanup)
 const slackRoutes = require('./routes/slack.routes');
-const dependencyRoutes = require('./routes/dependency.routes');
-const reasoningRoutes = require('./routes/reasoning.routes');
 const adminRoutes = require('./routes/admin.routes');
-// Removed: artifact controller (Phase 0 simplification)
 
 // Import WebSocket collaboration server
 const CollaborationServer = require('./websocket/collaboration');
