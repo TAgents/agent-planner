@@ -6,6 +6,8 @@
  */
 const planRoutes = require('../../routes/plan.routes');
 const planController = require('../../controllers/plan.controller.v2');
+const planService = require('./services/plan.service');
+const planRepository = require('./repositories/plan.repository');
 const coherenceRoutes = require('../../routes/v2/coherence.routes');
 const coherencePendingRoutes = require('../../routes/v2/coherencePending.routes');
 const knowledgeLoopRoutes = require('../../routes/v2/knowledgeLoop.routes');
@@ -19,5 +21,11 @@ module.exports = {
   },
   controllers: {
     planController,
+  },
+  services: {
+    planService,
+  },
+  repositories: {
+    planRepository,
   },
 };

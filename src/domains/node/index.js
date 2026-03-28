@@ -3,6 +3,8 @@
  */
 const nodeRoutes = require('../../routes/node.routes');
 const nodeController = require('../../controllers/node.controller.v2');
+const nodeService = require('./services/node.service');
+const nodeRepository = require('./repositories/node.repository');
 const activityRoutes = require('../../routes/activity.routes');
 const activityController = require('../../controllers/activity.controller');
 const claimsController = require('../../controllers/claims.controller.v2');
@@ -22,5 +24,11 @@ module.exports = {
     claimsController,
     episodeLinksController,
     assignmentController,
+  },
+  services: {
+    nodeService,
+  },
+  repositories: {
+    nodeRepository,
   },
 };
