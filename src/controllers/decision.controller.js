@@ -9,7 +9,7 @@ const {
   createDecisionRequestedMessage,
   createDecisionResolvedMessage
 } = require('../websocket/message-schema');
-const { notifyDecisionRequested, notifyDecisionResolved } = require('../services/notifications');
+const { notifyDecisionRequested, notifyDecisionResolved } = require('../services/notifications.v2');
 
 /**
  * List decision requests for a plan

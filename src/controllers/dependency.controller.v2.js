@@ -3,13 +3,7 @@
  */
 const dal = require('../db/dal.cjs');
 const { broadcastPlanUpdate } = require('../websocket/broadcast');
-
-const checkPlanAccess = async (planId, userId, roles = []) => {
-  const { hasAccess, role } = await dal.plansDal.userHasAccess(planId, userId);
-  if (!hasAccess) return false;
-  if (roles.length === 0) return true;
-  return roles.includes(role);
-};
+const { checkPlanAccess } = require('../middleware/planAccess.middleware');
 
 function classifyPgError(err) {
   const pgError = err.cause || err;

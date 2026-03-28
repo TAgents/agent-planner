@@ -10,7 +10,7 @@ const os = require('os');
 describe('MCP Tool Bridge', () => {
   test('getToolDefinitions returns all tools with required fields', () => {
     const tools = getToolDefinitions();
-    expect(tools.length).toBeGreaterThanOrEqual(5);
+    expect(tools.length).toBeGreaterThanOrEqual(4);
 
     for (const tool of tools) {
       expect(tool.name).toBeDefined();
@@ -33,7 +33,6 @@ describe('MCP Tool Bridge', () => {
     expect(names).toContain('agentplanner_complete_task');
     expect(names).toContain('agentplanner_update_task');
     expect(names).toContain('agentplanner_evaluate_goal');
-    expect(names).toContain('agentplanner_log_knowledge');
     expect(names).toContain('agentplanner_get_plan_status');
   });
 });

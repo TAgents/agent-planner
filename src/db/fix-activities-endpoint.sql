@@ -1,5 +1,5 @@
 -- Fix activities endpoint by ensuring proper database structure
--- Run this in Supabase SQL Editor
+-- Run this in PostgreSQL
 
 -- First, let's check what tables we have
 DO $$ 

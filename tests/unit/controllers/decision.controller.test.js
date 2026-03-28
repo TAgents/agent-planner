@@ -35,7 +35,7 @@ jest.mock('../../../src/websocket/broadcast', () => ({
   broadcastPlanUpdate: jest.fn().mockResolvedValue(true)
 }));
 
-jest.mock('../../../src/services/notifications', () => ({
+jest.mock('../../../src/services/notifications.v2', () => ({
   notifyDecisionRequested: jest.fn().mockResolvedValue(true),
   notifyDecisionResolved: jest.fn().mockResolvedValue(true),
 }));

@@ -1,6 +1,5 @@
 /**
  * Auth & controller config — v2 (direct Postgres + JWT).
- * The v1 (Supabase) path has been removed.
  */
 const authController = require('../controllers/auth.controller.v2');
 const authMiddleware = require('../middleware/auth.middleware.v2');

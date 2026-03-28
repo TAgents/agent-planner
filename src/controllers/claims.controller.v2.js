@@ -3,14 +3,7 @@
  * Prevents two agents from working on the same task simultaneously.
  */
 const dal = require('../db/dal.cjs');
-
-/**
- * Check plan access via DAL
- */
-const checkPlanAccess = async (planId, userId) => {
-  const { hasAccess } = await dal.plansDal.userHasAccess(planId, userId);
-  return hasAccess;
-};
+const { checkPlanAccess } = require('../middleware/planAccess.middleware');
 
 /** Convert camelCase claim to snake_case for API output */
 const snakeClaim = (c) => ({

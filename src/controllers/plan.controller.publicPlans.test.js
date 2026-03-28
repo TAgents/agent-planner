@@ -1,6 +1,6 @@
 /**
  * Unit tests for public plans endpoints
- * Mocks DAL layer to avoid Supabase/DB dependencies
+ * Mocks DAL layer to avoid DB dependencies
  */
 
 const request = require('supertest');

@@ -47,7 +47,7 @@ const sanitizeObject = (obj, fieldsToRemove = []) => {
  * Pagination helper for database queries
  * @param {number} page - Page number (1-based)
  * @param {number} limit - Items per page
- * @returns {Object} Object with from and to values for Supabase
+ * @returns {Object} Object with from and to values for pagination
  */
 const getPaginationRange = (page = 1, limit = 10) => {
   const from = (page - 1) * limit;

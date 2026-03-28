@@ -48,21 +48,14 @@ await broadcastPlanUpdate(node.plan_id, message);
 
 ```javascript
 // node.controller.js
+const { nodesDal } = require('../db/dal.cjs');
 const { broadcastPlanUpdate } = require('../websocket/broadcast');
 const { createNodeCreatedMessage } = require('../websocket/message-schema');
 
 async function createNode(req, res) {
   try {
-    // 1. Create node in database
-    const { data: newNode, error } = await supabase
-      .from('plan_nodes')
-      .insert(req.body)
-      .select()
-      .single();
-
-    if (error) {
-      return res.status(500).json({ error: error.message });
-    }
+    // 1. Create node in database via DAL
+    const newNode = await nodesDal.create(req.body);
 
     // 2. Broadcast to WebSocket clients (error-safe)
     const message = createNodeCreatedMessage(newNode, req.user.id, req.user.name);
@@ -266,19 +259,14 @@ All messages follow this consistent structure:
 
 ```javascript
 // plan.controller.js
+const { plansDal } = require('../db/dal.cjs');
 const { broadcastPlanUpdate } = require('../websocket/broadcast');
 const { createPlanCreatedMessage } = require('../websocket/message-schema');
 
 async function createPlan(req, res) {
-  const { data: plan, error } = await supabase
-    .from('plans')
-    .insert({ title: req.body.title, owner_id: req.user.id })
-    .select()
-    .single();
-
-  if (error) {
-    return res.status(500).json({ error: error.message });
-  }
+  const plan = await plansDal.create({
+    title: req.body.title, owner_id: req.user.id
+  });
 
   // Broadcast to WebSocket clients
   const message = createPlanCreatedMessage(plan, req.user.id, req.user.name);
@@ -292,22 +280,14 @@ async function createPlan(req, res) {
 
 ```javascript
 // node.controller.js
+const { nodesDal } = require('../db/dal.cjs');
 const { broadcastPlanUpdate } = require('../websocket/broadcast');
 const { createNodeUpdatedMessage } = require('../websocket/message-schema');
 
 async function updateNode(req, res) {
   const { plan_id, node_id } = req.params;
 
-  const { data: node, error } = await supabase
-    .from('plan_nodes')
-    .update(req.body)
-    .eq('id', node_id)
-    .select()
-    .single();
-
-  if (error) {
-    return res.status(500).json({ error: error.message });
-  }
+  const node = await nodesDal.update(node_id, req.body);
 
   // Broadcast to all users viewing this plan
   const message = createNodeUpdatedMessage(node, req.user.id, req.user.name);
@@ -321,26 +301,19 @@ async function updateNode(req, res) {
 
 ```javascript
 // comment.controller.js
+const dal = require('../db/dal.cjs');
 const { broadcastPlanUpdate } = require('../websocket/broadcast');
 const { createCommentAddedMessage } = require('../websocket/message-schema');
 
 async function addComment(req, res) {
   const { plan_id, node_id } = req.params;
 
-  const { data: comment, error } = await supabase
-    .from('plan_comments')
-    .insert({
-      plan_node_id: node_id,
-      user_id: req.user.id,
-      content: req.body.content,
-      comment_type: 'human'
-    })
-    .select()
-    .single();
-
-  if (error) {
-    return res.status(500).json({ error: error.message });
-  }
+  const comment = await dal.commentsDal.create({
+    plan_node_id: node_id,
+    user_id: req.user.id,
+    content: req.body.content,
+    comment_type: 'human'
+  });
 
   // Broadcast to all plan viewers
   const message = createCommentAddedMessage(comment, plan_id, req.user.name);

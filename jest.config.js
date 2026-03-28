@@ -22,15 +22,15 @@ module.exports = {
     '!src/**/*.spec.js'
   ],
 
-  // Coverage thresholds (starting low, increase as coverage improves)
-  // Note: Starting with low thresholds to establish baseline
-  // These should be increased as more tests are added
+  // Coverage thresholds — baseline locked during architecture refactor (Phase 0, 2026-03-28)
+  // Current: ~17% statements, ~8% branches/functions, ~18% lines
+  // These must not decrease during refactor — increase as tests are added
   coverageThreshold: {
     global: {
-      branches: 5,
-      functions: 5,
-      lines: 5,
-      statements: 5
+      branches: 7,
+      functions: 7,
+      lines: 13,
+      statements: 12
     }
   },
 

@@ -846,7 +846,7 @@ router.get('/:id/available-users', authenticate, assignmentController.getAvailab
 /**
  * Activities Aggregation Endpoint
  */
-const activitiesController = require('../controllers/activities.controller');
+const activitiesController = require('../controllers/activity.controller');
 
 /**
  * @swagger

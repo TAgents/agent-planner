@@ -3,11 +3,7 @@
  * Part of the BDI Architecture layer.
  */
 const dal = require('../db/dal.cjs');
-
-const checkPlanAccess = async (planId, userId) => {
-  const { hasAccess } = await dal.plansDal.userHasAccess(planId, userId);
-  return hasAccess;
-};
+const { checkPlanAccess } = require('../middleware/planAccess.middleware');
 
 /** Convert camelCase link to snake_case for API output */
 const snakeEpisodeLink = (l) => ({

@@ -1,5 +1,5 @@
 /**
- * Auth Controller v2 — Direct Postgres + JWT (no Supabase)
+ * Auth Controller v2 — Direct Postgres + JWT authentication
  */
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');

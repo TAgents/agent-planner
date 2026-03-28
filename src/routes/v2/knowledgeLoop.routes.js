@@ -8,14 +8,10 @@
 const express = require('express');
 const router = express.Router({ mergeParams: true });
 const { authenticate } = require('../../middleware/auth.middleware.v2');
+const { checkPlanAccess } = require('../../middleware/planAccess.middleware');
 const dal = require('../../db/dal.cjs');
 const { evaluatePlanQuality } = require('../../services/planQualityEvaluator');
 const graphitiBridge = require('../../services/graphitiBridge');
-
-const checkPlanAccess = async (planId, userId) => {
-  const { hasAccess } = await dal.plansDal.userHasAccess(planId, userId);
-  return hasAccess;
-};
 
 const CONVERGENCE_THRESHOLD = 0.02;
 const CONVERGENCE_WINDOW = 3;

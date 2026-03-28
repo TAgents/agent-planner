@@ -1,5 +1,5 @@
 /**
- * Auth Middleware v2 — JWT + API Token verification (no Supabase)
+ * Auth Middleware v2 — JWT + API Token verification
  */
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
