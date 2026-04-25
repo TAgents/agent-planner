@@ -11,8 +11,8 @@ const nodeType = z.enum(['root', 'phase', 'task', 'milestone'], {
 });
 
 // Node status enum
-const nodeStatus = z.enum(['not_started', 'in_progress', 'completed', 'blocked', 'cancelled', 'plan_ready'], {
-  errorMap: () => ({ message: 'Status must be one of: not_started, in_progress, completed, blocked, cancelled, plan_ready' })
+const nodeStatus = z.enum(['not_started', 'in_progress', 'completed', 'blocked', 'cancelled', 'plan_ready', 'archived'], {
+  errorMap: () => ({ message: 'Status must be one of: not_started, in_progress, completed, blocked, cancelled, plan_ready, archived' })
 });
 
 // Log type enum — must match controller validLogTypes

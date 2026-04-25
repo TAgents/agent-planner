@@ -22,6 +22,7 @@ jest.mock('../../../src/domains/node/repositories/node.repository', () => ({
   createLog: jest.fn(),
   listLogsByNode: jest.fn(),
   findPlanById: jest.fn(),
+  updatePlan: jest.fn(),
   createDependency: jest.fn(),
   findUserById: jest.fn(),
   listUsers: jest.fn(),
@@ -264,6 +265,42 @@ describe('Node Service', () => {
         newStatus: 'in_progress',
       }));
     });
+
+    it('should auto-promote draft plan to active when work begins', async () => {
+      repo.findById.mockResolvedValue(makeNode({ status: 'not_started' }));
+      repo.update.mockResolvedValue(makeNode({ status: 'in_progress' }));
+      repo.createLog.mockResolvedValue({});
+      repo.findPlanById.mockResolvedValue({ id: PLAN_ID, title: 'Plan', ownerId: USER_ID, status: 'draft' });
+      repo.updatePlan.mockResolvedValue({});
+
+      await nodeService.updateNode(PLAN_ID, NODE_ID, USER_ID, USER_NAME, { status: 'in_progress' });
+
+      expect(repo.updatePlan).toHaveBeenCalledWith(PLAN_ID, { status: 'active' });
+    });
+
+    it('should not promote plan when status reverts to not_started', async () => {
+      repo.findById.mockResolvedValue(makeNode({ status: 'in_progress' }));
+      repo.update.mockResolvedValue(makeNode({ status: 'not_started' }));
+      repo.createLog.mockResolvedValue({});
+      repo.findPlanById.mockResolvedValue({ id: PLAN_ID, title: 'Plan', ownerId: USER_ID, status: 'draft' });
+      repo.updatePlan.mockResolvedValue({});
+
+      await nodeService.updateNode(PLAN_ID, NODE_ID, USER_ID, USER_NAME, { status: 'not_started' });
+
+      expect(repo.updatePlan).not.toHaveBeenCalled();
+    });
+
+    it('should not promote already-active plan', async () => {
+      repo.findById.mockResolvedValue(makeNode({ status: 'not_started' }));
+      repo.update.mockResolvedValue(makeNode({ status: 'in_progress' }));
+      repo.createLog.mockResolvedValue({});
+      repo.findPlanById.mockResolvedValue({ id: PLAN_ID, title: 'Plan', ownerId: USER_ID, status: 'active' });
+      repo.updatePlan.mockResolvedValue({});
+
+      await nodeService.updateNode(PLAN_ID, NODE_ID, USER_ID, USER_NAME, { status: 'in_progress' });
+
+      expect(repo.updatePlan).not.toHaveBeenCalled();
+    });
   });
 
   // ── deleteNode ─────────────────────────────────────────
@@ -307,6 +344,28 @@ describe('Node Service', () => {
     it('should reject empty status', async () => {
       await expect(nodeService.updateNodeStatus(PLAN_ID, NODE_ID, USER_ID, USER_NAME, ''))
         .rejects.toThrow('Status is required');
+    });
+
+    it('should auto-promote draft plan to active when work begins via status route', async () => {
+      repo.findById.mockResolvedValue(makeNode({ status: 'not_started' }));
+      repo.updateStatus.mockResolvedValue(makeNode({ status: 'in_progress' }));
+      repo.createLog.mockResolvedValue({});
+      repo.findPlanById.mockResolvedValue({ id: PLAN_ID, title: 'Plan', ownerId: USER_ID, status: 'draft' });
+      repo.updatePlan.mockResolvedValue({});
+
+      await nodeService.updateNodeStatus(PLAN_ID, NODE_ID, USER_ID, USER_NAME, 'in_progress');
+
+      expect(repo.updatePlan).toHaveBeenCalledWith(PLAN_ID, { status: 'active' });
+    });
+
+    it('should accept the new archived status', async () => {
+      repo.findById.mockResolvedValue(makeNode());
+      repo.updateStatus.mockResolvedValue(makeNode({ status: 'archived' }));
+      repo.createLog.mockResolvedValue({});
+
+      const result = await nodeService.updateNodeStatus(PLAN_ID, NODE_ID, USER_ID, USER_NAME, 'archived');
+
+      expect(result.status).toBe('archived');
     });
   });
 

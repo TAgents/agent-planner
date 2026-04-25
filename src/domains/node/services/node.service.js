@@ -21,7 +21,8 @@ const { notifyStatusChange, notifyAgentRequested } = require('../../../services/
 const messageBus = require('../../../services/messageBus');
 
 const VALID_TASK_MODES = ['research', 'plan', 'implement', 'free'];
-const VALID_STATUSES = ['not_started', 'in_progress', 'completed', 'blocked', 'plan_ready'];
+const VALID_STATUSES = ['not_started', 'in_progress', 'completed', 'blocked', 'plan_ready', 'archived'];
+const PROMOTING_STATUSES = ['in_progress', 'completed', 'blocked', 'plan_ready'];
 const VALID_COHERENCE_STATUSES = ['coherent', 'stale_beliefs', 'contradiction_detected', 'unchecked'];
 const VALID_LOG_TYPES = ['progress', 'reasoning', 'challenge', 'decision', 'comment'];
 const VALID_AGENT_REQUEST_TYPES = ['start', 'review', 'help', 'continue'];
@@ -239,6 +240,15 @@ async function updateNode(planId, nodeId, userId, userName, data) {
 
     const plan = await repo.findPlanById(planId);
     if (plan) {
+      // Auto-promote draft plan → active when work meaningfully begins on any of its nodes.
+      if (plan.status === 'draft' && PROMOTING_STATUSES.includes(data.status)) {
+        try {
+          await repo.updatePlan(planId, { status: 'active' });
+        } catch (err) {
+          console.error('Auto-promote draft plan failed:', err.message);
+        }
+      }
+
       const actor = { name: userName, type: 'user' };
       notifyStatusChange(result, { id: plan.id, title: plan.title, owner_id: plan.ownerId }, actor, oldStatus, data.status).catch(console.error);
     }
@@ -290,6 +300,18 @@ async function updateNodeStatus(planId, nodeId, userId, userName, status) {
     planNodeId: nodeId, userId,
     content: `Updated status to ${status}`, logType: 'progress',
   });
+
+  // Auto-promote draft plan → active when work meaningfully begins.
+  if (oldStatus !== status && PROMOTING_STATUSES.includes(status)) {
+    const plan = await repo.findPlanById(planId);
+    if (plan && plan.status === 'draft') {
+      try {
+        await repo.updatePlan(planId, { status: 'active' });
+      } catch (err) {
+        console.error('Auto-promote draft plan failed:', err.message);
+      }
+    }
+  }
 
   const message = createNodeStatusChangedMessage(nodeId, planId, oldStatus, status, userId, userName);
   await broadcastPlanUpdate(planId, message);

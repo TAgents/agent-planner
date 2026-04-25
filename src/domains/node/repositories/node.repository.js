@@ -30,6 +30,7 @@ const listLogsByNode = (nodeId, opts) => dal.logsDal.listByNode(nodeId, opts);
 // ── Cross-domain lookups (used by node service) ────────────
 
 const findPlanById = (planId) => dal.plansDal.findById(planId);
+const updatePlan = (planId, updates) => dal.plansDal.update(planId, updates);
 const createDependency = (data) => dal.dependenciesDal.create(data);
 const findUserById = (userId) => dal.usersDal.findById(userId);
 const listUsers = (opts) => dal.usersDal.list(opts);
@@ -54,6 +55,7 @@ module.exports = {
   listLogsByNode,
   // Cross-domain
   findPlanById,
+  updatePlan,
   createDependency,
   findUserById,
   listUsers,

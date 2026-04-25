@@ -10,7 +10,7 @@ export const goals = pgTable('goals', {
   ownerId: uuid('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'set null' }),
   type: text('type').notNull(),            // outcome | constraint | metric | principle
-  status: text('status').notNull().default('active'),  // active | achieved | paused | abandoned
+  status: text('status').notNull().default('active'),  // draft | active | achieved | paused | abandoned | archived
   // BDI desire/intention distinction
   goalType: text('goal_type').notNull().default('desire'),  // desire | intention
   promotedAt: timestamp('promoted_at', { withTimezone: true }),  // when desire became intention

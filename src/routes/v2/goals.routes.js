@@ -18,7 +18,7 @@ const graphitiBridge = require('../../services/graphitiBridge');
 const reasoning = require('../../services/reasoning');
 
 const VALID_TYPES = ['outcome', 'constraint', 'metric', 'principle'];
-const VALID_STATUSES = ['active', 'achieved', 'paused', 'abandoned'];
+const VALID_STATUSES = ['draft', 'active', 'achieved', 'paused', 'abandoned', 'archived'];
 const VALID_LINK_TYPES = ['plan', 'task', 'agent'];
 
 // Max concurrent Graphiti queries to avoid overwhelming the sidecar
@@ -278,7 +278,7 @@ router.get('/', authenticate, async (req, res) => {
 // POST /api/goals
 router.post('/', authenticate, async (req, res) => {
   try {
-    const { title, description, type = 'outcome', goalType = 'desire', successCriteria, priority, parentGoalId } = req.body;
+    const { title, description, type = 'outcome', goalType = 'desire', status = 'active', successCriteria, priority, parentGoalId } = req.body;
     if (!title) {
       return res.status(400).json({ error: 'title is required' });
     }
@@ -289,6 +289,9 @@ router.post('/', authenticate, async (req, res) => {
     if (!VALID_GOAL_TYPES.includes(goalType)) {
       return res.status(400).json({ error: `goalType must be one of: ${VALID_GOAL_TYPES.join(', ')}` });
     }
+    if (!VALID_STATUSES.includes(status)) {
+      return res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` });
+    }
 
     const dal = goalsDal;
     const goal = await dal.create({
@@ -298,6 +301,7 @@ router.post('/', authenticate, async (req, res) => {
       organizationId: req.body.organizationId || req.user.organizationId || null,
       type,
       goalType,
+      status,
       successCriteria: successCriteria || null,
       priority: priority || 0,
       parentGoalId: parentGoalId || null,

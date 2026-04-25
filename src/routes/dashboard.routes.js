@@ -105,14 +105,48 @@ router.get('/pending', authenticate, async (req, res) => {
       }
     }
 
+    // Drafts: agent-proposed plans + goals awaiting human review
+    const drafts = [];
+    try {
+      const { owned, shared, organization } = await plansDal.listForUser(userId, { organizationId, status: 'draft' });
+      const draftPlans = [...owned, ...shared, ...organization];
+      for (const p of draftPlans) {
+        drafts.push({
+          id: p.id,
+          kind: 'plan',
+          title: p.title,
+          rationale: p.description,
+          created_at: p.createdAt,
+          owner_id: p.ownerId,
+        });
+      }
+    } catch (e) {}
+
+    try {
+      const draftGoals = await goalsDal.findAll({ userId, organizationId }, { status: 'draft' });
+      for (const g of draftGoals) {
+        drafts.push({
+          id: g.id,
+          kind: 'goal',
+          title: g.title,
+          rationale: g.description,
+          created_at: g.createdAt,
+          owner_id: g.ownerId,
+          parent_goal_id: g.parentGoalId,
+        });
+      }
+    } catch (e) {}
+
     res.json({
       decisions: allDecisions.slice(0, limit).map(d => ({
         id: d.id, title: d.title, description: d.context, urgency: d.urgency,
         options: d.options || [],
-        created_at: d.createdAt, plan_id: d.planId, plan_title: d.planTitle, node_id: d.nodeId
+        created_at: d.createdAt, plan_id: d.planId, plan_title: d.planTitle, node_id: d.nodeId,
+        kind: 'decision',
       })),
       agent_requests: agentRequests,
-      total: allDecisions.length + agentRequests.length
+      drafts: drafts.slice(0, limit),
+      total: allDecisions.length + agentRequests.length + drafts.length
     });
   } catch (error) {
     await logger.error('Dashboard pending error:', error);

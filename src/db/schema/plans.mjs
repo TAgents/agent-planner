@@ -48,7 +48,7 @@ export const planNodes = pgTable('plan_nodes', {
   nodeType: text('node_type').notNull(),       // root | phase | task | milestone
   title: text('title').notNull(),
   description: text('description'),
-  status: text('status').notNull().default('not_started'), // not_started | in_progress | completed | blocked | plan_ready
+  status: text('status').notNull().default('not_started'), // not_started | in_progress | completed | blocked | plan_ready | archived
   orderIndex: integer('order_index').notNull().default(0),
   dueDate: timestamp('due_date', { withTimezone: true }),
   context: text('context'),

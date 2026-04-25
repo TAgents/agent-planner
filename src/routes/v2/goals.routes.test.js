@@ -98,6 +98,25 @@ describe('Goals v2 Routes', () => {
       const res = await request(app).post('/api/goals').send({ title: 'Test', type: 'invalid' });
       expect(res.status).toBe(400);
     });
+
+    it('accepts status=draft for agent-proposed goals', async () => {
+      mockGoalsDal.create.mockResolvedValue({ id: 'g1', title: 'Test', status: 'draft' });
+      const res = await request(app).post('/api/goals').send({ title: 'Test', status: 'draft' });
+      expect(res.status).toBe(201);
+      expect(mockGoalsDal.create).toHaveBeenCalledWith(expect.objectContaining({ status: 'draft' }));
+    });
+
+    it('defaults status to active when not provided', async () => {
+      mockGoalsDal.create.mockResolvedValue({ id: 'g1', title: 'Test', status: 'active' });
+      const res = await request(app).post('/api/goals').send({ title: 'Test' });
+      expect(res.status).toBe(201);
+      expect(mockGoalsDal.create).toHaveBeenCalledWith(expect.objectContaining({ status: 'active' }));
+    });
+
+    it('rejects unknown status values', async () => {
+      const res = await request(app).post('/api/goals').send({ title: 'Test', status: 'wat' });
+      expect(res.status).toBe(400);
+    });
   });
 
   describe('GET /api/goals/:id', () => {
