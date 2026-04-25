@@ -57,33 +57,49 @@ services:
     environment:
       REACT_APP_API_URL: ${API_BASE_URL:-http://localhost:3000}
 
-  # ─── FalkorDB (Graph Database) ─────────────────────────────
-  falkordb:
-    image: falkordb/falkordb:latest
+  # ─── Neo4j Community (Graph Database for Graphiti) ─────────
+  neo4j:
+    image: neo4j:5-community
     restart: unless-stopped
     profiles: [core]
     environment:
-      BROWSER: "0"
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-devpassword}
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1g
+      NEO4J_server_memory_pagecache_size: 512m
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
     ports:
-      - "${FALKORDB_PORT:-6380}:6379"
+      - "${NEO4J_HTTP_PORT:-7474}:7474"
+      - "${NEO4J_BOLT_PORT:-7687}:7687"
     volumes:
-      - falkordb-data:/data
+      - neo4jdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
       retries: 5
+      start_period: 30s
 
   # ─── Graphiti MCP (Knowledge Graph) ────────────────────────
+  # Image defaults to FalkorDB. We mount a Neo4j config and override the
+  # command to skip the embedded FalkorDB startup, leaving only the MCP server.
   graphiti:
     image: zepai/knowledge-graph-mcp:standalone
+    command: ["uv", "run", "main.py"]
     restart: unless-stopped
     profiles: [core]
     depends_on:
-      falkordb:
+      neo4j:
         condition: service_healthy
+    volumes:
+      - ./docker/graphiti/config-neo4j.yaml:/app/mcp/config/config.yaml:ro
     environment:
-      FALKORDB_URI: redis://falkordb:6379
+      CONFIG_PATH: /app/mcp/config/config.yaml
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-devpassword}
+      NEO4J_DATABASE: neo4j
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GRAPHITI_GROUP_ID: default
       SEMAPHORE_LIMIT: "10"
@@ -96,4 +112,4 @@ services:
 
 volumes:
   pgdata:
-  falkordb-data:
+  neo4jdata:
