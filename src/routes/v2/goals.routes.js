@@ -1293,12 +1293,29 @@ router.get('/:id/quality', authenticate, async (req, res) => {
     // Overall score
     const scores = Object.values(dimensions).map(d => d.score);
     const overall = scores.reduce((a, b) => a + b, 0) / scores.length;
+    const overallRounded = Math.round(overall * 100) / 100;
+    const assessedAt = new Date().toISOString();
+
+    // Persist to goal_evaluations for trending. Best-effort — failure here
+    // must not break the read endpoint.
+    try {
+      await goalsDal.addEvaluation(goal.id, {
+        evaluatedBy: 'goal_quality_endpoint',
+        score: Math.round(overall * 100),  // 0-100 integer for column type
+        reasoning: `Overall ${overallRounded}: clarity ${dimensions.clarity.score}, measurability ${dimensions.measurability.score}, actionability ${dimensions.actionability.score}, knowledge ${dimensions.knowledge_grounding.score}, commitment ${dimensions.commitment.score}`,
+        suggestedActions: suggestions,
+        dimensions,
+      });
+    } catch (persistErr) {
+      await logger.error('Goal quality persist failed:', persistErr);
+    }
 
     res.json({
       goal_id: goal.id,
-      score: Math.round(overall * 100) / 100,
+      score: overallRounded,
       dimensions,
       suggestions,
+      as_of: assessedAt,
     });
   } catch (err) {
     await logger.error('Goal quality error:', err);
