@@ -122,6 +122,12 @@ if (process.env.NODE_ENV === 'development') {
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
+// Tool-call telemetry: records one row per authenticated request via
+// res.finish. Mounted globally; reads req.user lazily so route-level
+// authenticate middleware has already populated it by finish time.
+const { recordToolCall } = require('./middleware/toolCallTelemetry.middleware');
+app.use(recordToolCall);
+
 // Routes with rate limiting
 // Auth routes - strict rate limiting to prevent brute force
 app.use('/auth', authLimiter, authRoutes);
