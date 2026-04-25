@@ -314,6 +314,13 @@ const startServer = async () => {
       setCollaborationServerController(collaborationServer);
 
       await logger.api('WebSocket collaboration server initialized at /ws/collaborate');
+
+      // Tool-call telemetry retention — keeps tool_calls bounded.
+      // Defaults: 90d retention, 24h interval. Configurable via
+      // TOOL_CALLS_RETENTION_DAYS / TOOL_CALLS_RETENTION_INTERVAL_MS;
+      // disable entirely with TOOL_CALLS_RETENTION_DISABLED=true.
+      const { startRetentionJob } = require('./services/toolCallsRetention');
+      startRetentionJob();
     });
   } catch (error) {
     await logger.error(`Failed to start server`, error);

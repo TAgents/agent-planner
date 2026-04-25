@@ -1,4 +1,4 @@
-import { eq, desc } from 'drizzle-orm';
+import { eq, lt, desc } from 'drizzle-orm';
 import { db } from '../connection.mjs';
 import { toolCalls } from '../schema/toolCalls.mjs';
 
@@ -71,5 +71,24 @@ export const toolCallsDal = {
       .where(eq(toolCalls.organizationId, organizationId))
       .orderBy(desc(toolCalls.createdAt))
       .limit(limit);
+  },
+
+  /**
+   * Delete telemetry rows older than `days` days. Used by the
+   * retention background job to keep the table from growing unbounded.
+   *
+   * @param {number} days - Rows older than this are removed. Must be > 0.
+   * @returns {Promise<number>} Number of rows deleted.
+   */
+  async purgeOlderThan(days) {
+    if (!Number.isFinite(days) || days <= 0) {
+      throw new Error(`purgeOlderThan: invalid days argument: ${days}`);
+    }
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const deleted = await db
+      .delete(toolCalls)
+      .where(lt(toolCalls.createdAt, cutoff))
+      .returning({ id: toolCalls.id });
+    return deleted.length;
   },
 };
