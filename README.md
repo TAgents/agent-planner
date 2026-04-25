@@ -33,6 +33,10 @@ The backend API for [AgentPlanner](https://agentplanner.io) — a collaborative 
 
 ### Quick Start with Docker Compose
 
+**For most users (recommended): see [LOCAL_QUICKSTART.md](LOCAL_QUICKSTART.md)** — the blessed 5-minute path that brings up the full stack (postgres + api + frontend + graphiti + mcp) in one command, ready for the `ap` CLI or any MCP client.
+
+For backend development with hot reload (separate use case), use the profile-based compose file:
+
 ```bash
 git clone https://github.com/TAgents/agent-planner.git
 cd agent-planner
@@ -41,7 +45,7 @@ cd agent-planner
 cp .env.example .env
 # Edit .env — set JWT_SECRET, OPENAI_API_KEY, and change default passwords
 
-# Start PostgreSQL + API
+# Start PostgreSQL + API only (no frontend, no graphiti)
 docker compose --profile core up -d
 
 # Run database migrations
