@@ -13,3 +13,4 @@ export * from './dependencies.mjs';
 export * from './claims.mjs';
 export * from './episodeLinks.mjs';
 export * from './knowledgeLoop.mjs';
+export * from './toolCalls.mjs';
