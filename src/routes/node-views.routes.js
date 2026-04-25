@@ -52,6 +52,63 @@ const { assembleContext, estimateTokens } = require('../services/contextEngine')
  *       404:
  *         description: Node not found
  */
+/**
+ * @swagger
+ * /nodes/{nodeId}:
+ *   get:
+ *     tags: [Nodes]
+ *     summary: Look up a node by id (returns plan_id + basic node fields)
+ *     description: |
+ *       Plan-agnostic node lookup. Used by MCP tools and other clients that
+ *       have a node_id but not a plan_id (e.g., resolving plan context for
+ *       link_intentions, move_node, etc.). Returns the node with snake_case
+ *       fields including plan_id; full structural traversal still requires
+ *       the plan-scoped routes.
+ *     parameters:
+ *       - in: path
+ *         name: nodeId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Node found
+ *       403:
+ *         description: Access denied to the plan containing this node
+ *       404:
+ *         description: Node not found
+ */
+router.get('/:nodeId', authenticate, async (req, res) => {
+  try {
+    const { nodeId } = req.params;
+    const userId = req.user.id;
+
+    const node = await nodesDal.findById(nodeId);
+    if (!node) return res.status(404).json({ error: 'Node not found' });
+
+    const { hasAccess } = await plansDal.userHasAccess(node.planId, userId);
+    if (!hasAccess) return res.status(403).json({ error: 'Access denied to this plan' });
+
+    return res.json({
+      id: node.id,
+      plan_id: node.planId,
+      parent_id: node.parentId,
+      node_type: node.nodeType,
+      title: node.title,
+      description: node.description,
+      status: node.status,
+      task_mode: node.taskMode,
+      order_index: node.orderIndex,
+      created_at: node.createdAt,
+      updated_at: node.updatedAt,
+    });
+  } catch (err) {
+    await logger.error('Get node by id error:', err);
+    return res.status(500).json({ error: 'Failed to fetch node' });
+  }
+});
+
 router.get('/:nodeId/agent-view', authenticate, async (req, res) => {
   try {
     const { nodeId } = req.params;
