@@ -43,6 +43,7 @@ export const goalEvaluations = pgTable('goal_evaluations', {
   score: integer('score'),
   reasoning: text('reasoning'),
   suggestedActions: jsonb('suggested_actions'),
+  dimensions: jsonb('dimensions'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
 
