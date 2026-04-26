@@ -232,5 +232,52 @@ router.get('/active-goals', authenticate, async (req, res) => {
   }
 });
 
+// ─── 7-day velocity ──────────────────────────────────────────────
+// Daily task-completion counts across all plans the user can access.
+// Powers the Spark on Mission Control's stat strip.
+router.get('/velocity', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const organizationId = req.user.organizationId || null;
+    const planIds = await getUserPlanIds(userId, organizationId);
+    if (planIds.length === 0) {
+      return res.json({ series: [], total: 0, days: 7 });
+    }
+
+    // Bucket completed tasks by day. updatedAt is the cheapest signal —
+    // it shifts whenever the row is touched, but for a "last week"
+    // velocity sparkline that's good enough. Over-counting from
+    // mid-flight edits washes out at 7-day resolution.
+    const { rawSql } = require('../db/dal.cjs');
+    const sql = await rawSql();
+    const rows = await sql`
+      SELECT date_trunc('day', updated_at)::date AS day, COUNT(*)::int AS count
+      FROM plan_nodes
+      WHERE plan_id = ANY(${planIds})
+        AND node_type IN ('task', 'milestone')
+        AND status = 'completed'
+        AND updated_at >= NOW() - INTERVAL '7 days'
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `;
+
+    // Fill in zero-count days so the sparkline always renders 7 points.
+    const out = [];
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const byKey = new Map(rows.map((r) => [String(r.day).slice(0, 10), Number(r.count)]));
+    for (let i = 6; i >= 0; i -= 1) {
+      const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+      const key = d.toISOString().slice(0, 10);
+      out.push({ date: key, count: byKey.get(key) ?? 0 });
+    }
+    const total = out.reduce((s, p) => s + p.count, 0);
+    res.json({ series: out, total, days: 7 });
+  } catch (error) {
+    await logger.error('Dashboard velocity error:', error);
+    res.status(500).json({ error: 'Failed to compute velocity' });
+  }
+});
+
 
 module.exports = router;
