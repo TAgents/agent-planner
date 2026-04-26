@@ -814,6 +814,64 @@ router.put('/:id/visibility', authenticate, ...validate({ params: schemas.plan.p
 
 /**
  * @swagger
+ * /plans/{id}/fork:
+ *   post:
+ *     summary: Fork a plan into the caller's workspace
+ *     description: |
+ *       Deep-copies the plan, all plan_nodes (with translated parent_id),
+ *       and dependency edges into a new plan owned by the caller.
+ *       Source must be public OR the caller must already have access.
+ *       Lineage is recorded on metadata.forked_from / .forked_at.
+ *     tags: [Plans]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       201:
+ *         description: New forked plan
+ *       403:
+ *         description: Caller lacks access to source
+ *       404:
+ *         description: Source plan not found
+ */
+router.post('/:id/fork', authenticate, async (req, res) => {
+  try {
+    const dal = require('../db/dal.cjs');
+    const sourceId = req.params.id;
+    const userId = req.user.id;
+    const organizationId = req.user.organizationId || null;
+
+    const source = await dal.plansDal.findById(sourceId);
+    if (!source) return res.status(404).json({ error: 'Source plan not found' });
+
+    // Public plans are forkable by anyone authenticated; private/unlisted
+    // plans require existing access via owner/collaborator/org membership.
+    if (source.visibility !== 'public') {
+      const access = await dal.plansDal.userHasAccess(sourceId, userId);
+      if (!access?.hasAccess) {
+        return res.status(403).json({ error: 'You do not have access to this plan' });
+      }
+    }
+
+    const forked = await dal.plansDal.fork(sourceId, {
+      ownerId: userId,
+      organizationId,
+      title: req.body?.title || null,
+    });
+    return res.status(201).json({ plan: forked });
+  } catch (err) {
+    const logger = require('../utils/logger');
+    await logger.error('plan fork failed', err);
+    return res.status(500).json({ error: 'Fork failed' });
+  }
+});
+
+/**
+ * @swagger
  * /plans/{id}/github:
  *   put:
  *     summary: Link GitHub repository to plan
