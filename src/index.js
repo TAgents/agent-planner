@@ -57,6 +57,7 @@ const githubRoutes = require('./routes/github.routes');
 const agentV2Routes = require('./routes/v2/agent.routes');
 const contextRoutes = require('./routes/context.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const onboardingRoutes = require('./routes/onboarding.routes');
 const slackRoutes = require('./routes/slack.routes');
 const adminRoutes = require('./routes/admin.routes');
 
@@ -184,6 +185,8 @@ app.use('/plans', generalLimiter, knowledgeLoopRoutes);
 
 // Dashboard routes (home page data)
 app.use('/dashboard', generalLimiter, dashboardRoutes);
+// Onboarding routes (test-connection, recent calls, .mcpb release metadata)
+app.use('/onboarding', generalLimiter, onboardingRoutes);
 // Removed: handoff routes (pre-v2 cleanup)
 // Removed: chat, prompt routes (pre-v2 cleanup)
 
