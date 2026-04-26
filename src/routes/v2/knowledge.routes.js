@@ -624,4 +624,109 @@ router.get('/coverage-map', authenticate, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /knowledge/coverage:
+ *   get:
+ *     summary: Per-plan + per-task knowledge coverage aggregation (Phase 3)
+ *     description: |
+ *       Computes coverage from the structured `episode_node_links` table —
+ *       exact, not text-match-based like /coverage-map. Returns:
+ *
+ *         - org_summary: { total_tasks, tasks_with_facts, ratio }
+ *         - plans: [{ plan_id, plan_title, total_tasks, tasks_with_facts,
+ *                     ratio, stale_tasks: [...], conflict_tasks: [...] }]
+ *
+ *       A task is "stale" if its most-recent episode link is older than
+ *       STALE_DAYS (default 5). A task is "conflict" if it has at least
+ *       one link with link_type='contradicts'.
+ */
+router.get('/coverage', authenticate, async (req, res) => {
+  try {
+    const dal = require('../../db/dal.cjs');
+    const { plansDal, nodesDal, episodeLinksDal } = dal;
+
+    const userId = req.user.id;
+    const organizationId = req.user.organizationId;
+    const STALE_DAYS = 5;
+    const staleCutoff = Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000;
+
+    const planResult = await plansDal.listForUser(userId, { organizationId });
+    const allPlans = [
+      ...(planResult.owned || []),
+      ...(planResult.shared || []),
+      ...(planResult.organization || []),
+    ];
+    const activePlans = allPlans.filter((p) => p.status === 'active' || p.status === 'draft');
+
+    let orgTotalTasks = 0;
+    let orgWithFacts = 0;
+    const planSummaries = [];
+
+    for (const plan of activePlans) {
+      const nodes = await nodesDal.listByPlan(plan.id);
+      const tasks = nodes.filter(
+        (n) => (n.nodeType === 'task' || n.nodeType === 'milestone') && n.status !== 'completed',
+      );
+      if (tasks.length === 0) continue;
+
+      const taskIds = tasks.map((t) => t.id);
+      const links = await episodeLinksDal.listByNodeIds(taskIds);
+
+      // Group links per node for fast lookups
+      const byNode = new Map();
+      for (const l of links) {
+        const arr = byNode.get(l.nodeId) || [];
+        arr.push(l);
+        byNode.set(l.nodeId, arr);
+      }
+
+      let withFacts = 0;
+      const staleTasks = [];
+      const conflictTasks = [];
+
+      for (const t of tasks) {
+        const taskLinks = byNode.get(t.id) || [];
+        if (taskLinks.length === 0) continue;
+        withFacts += 1;
+
+        const newest = Math.max(...taskLinks.map((l) => new Date(l.createdAt).getTime()));
+        if (newest < staleCutoff) {
+          staleTasks.push({ task_id: t.id, task_title: t.title, last_link_at: new Date(newest).toISOString() });
+        }
+        if (taskLinks.some((l) => l.linkType === 'contradicts')) {
+          conflictTasks.push({ task_id: t.id, task_title: t.title });
+        }
+      }
+
+      orgTotalTasks += tasks.length;
+      orgWithFacts += withFacts;
+
+      planSummaries.push({
+        plan_id: plan.id,
+        plan_title: plan.title,
+        total_tasks: tasks.length,
+        tasks_with_facts: withFacts,
+        ratio: tasks.length > 0 ? withFacts / tasks.length : 0,
+        stale_tasks: staleTasks,
+        conflict_tasks: conflictTasks,
+      });
+    }
+
+    res.json({
+      org_summary: {
+        total_tasks: orgTotalTasks,
+        tasks_with_facts: orgWithFacts,
+        ratio: orgTotalTasks > 0 ? orgWithFacts / orgTotalTasks : 0,
+        stale_days_threshold: STALE_DAYS,
+      },
+      plans: planSummaries.sort((a, b) => a.ratio - b.ratio),
+      computed_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    await logger.error('Coverage error:', err);
+    res.status(500).json({ error: 'Failed to compute coverage' });
+  }
+});
+
 module.exports = router;
