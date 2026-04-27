@@ -102,7 +102,10 @@ router.get('/episodes', authenticate, async (req, res) => {
       max_episodes: Number(max_episodes),
     });
 
-    res.json({ episodes: result, group_id });
+    // Flatten the bridge's {message, episodes: [...]} envelope so consumers
+    // receive {episodes: [...], group_id} instead of {episodes: {episodes: [...]}}.
+    const episodes = Array.isArray(result?.episodes) ? result.episodes : Array.isArray(result) ? result : [];
+    res.json({ episodes, group_id });
   } catch (err) {
     await logger.error('Graphiti get episodes error:', err);
     res.status(500).json({ error: 'Failed to get episodes' });
@@ -343,7 +346,9 @@ router.post('/graph-search', authenticate, async (req, res) => {
       max_results: Number(max_results),
     });
 
-    res.json({ results: result, group_id, method: 'graphiti' });
+    // Flatten {facts: [...], message?} from the bridge to a single facts array.
+    const facts = Array.isArray(result?.facts) ? result.facts : Array.isArray(result) ? result : [];
+    res.json({ facts, group_id, method: 'graphiti' });
   } catch (err) {
     await logger.error('Graphiti search error:', err);
     res.status(500).json({ error: 'Failed to search knowledge graph' });
@@ -404,7 +409,9 @@ router.post('/entities', authenticate, async (req, res) => {
       max_results: Number(max_results),
     });
 
-    res.json({ entities: result, group_id });
+    // Flatten {nodes: [...], message?} to a single entities array.
+    const entities = Array.isArray(result?.nodes) ? result.nodes : Array.isArray(result) ? result : [];
+    res.json({ entities, group_id });
   } catch (err) {
     await logger.error('Graphiti entities error:', err);
     res.status(500).json({ error: 'Failed to search entities' });
