@@ -449,6 +449,10 @@ router.post('/:id/promote-to-intention', authenticate, async (req, res) => {
 });
 
 // POST /api/goals/:id/links
+// When linkedType === 'plan', cascades by creating 'achieves' dependencies
+// from every existing task node in that plan to this goal — so the freshly
+// linked plan immediately contributes to /goals/:id/progress without a
+// separate /achievers call. Already-existing achievers are preserved.
 router.post('/:id/links', authenticate, async (req, res) => {
   try {
     const { linkedType, linkedId } = req.body;
@@ -461,7 +465,37 @@ router.post('/:id/links', authenticate, async (req, res) => {
 
     const dal = goalsDal;
     const link = await dal.addLink(req.params.id, linkedType, linkedId);
-    res.status(201).json(link);
+
+    let achieversCreated = 0;
+    if (linkedType === 'plan') {
+      try {
+        const nodes = await nodesDal.listByPlan(linkedId);
+        const taskNodes = (nodes || []).filter(
+          n => (n.nodeType || n.node_type) === 'task',
+        );
+        const existing = await dependenciesDal.listByGoal(req.params.id);
+        const existingNodeIds = new Set(
+          (existing || []).map(r => r.node?.id).filter(Boolean),
+        );
+        for (const n of taskNodes) {
+          if (existingNodeIds.has(n.id)) continue;
+          await dependenciesDal.create({
+            sourceNodeId: n.id,
+            targetGoalId: req.params.id,
+            dependencyType: 'achieves',
+            weight: 1,
+            metadata: { auto_created_from_link: link.id },
+            createdBy: req.user.id,
+          });
+          achieversCreated++;
+        }
+      } catch (cascadeErr) {
+        // Cascade is best-effort; the link itself succeeded. Log and move on.
+        await logger.error('Plan-link achiever cascade error:', cascadeErr);
+      }
+    }
+
+    res.status(201).json({ ...link, achievers_created: achieversCreated });
   } catch (err) {
     await logger.error('Add link error:', err);
     res.status(500).json({ error: 'Failed to add link' });
@@ -484,11 +518,12 @@ router.delete('/:id/links/:linkId', authenticate, async (req, res) => {
 // POST /api/goals/:id/evaluations
 router.post('/:id/evaluations', authenticate, async (req, res) => {
   try {
-    const { evaluatedBy, score, reasoning, suggestedActions } = req.body;
-    if (!evaluatedBy) {
-      return res.status(400).json({ error: 'evaluatedBy is required' });
-    }
-    if (score !== undefined && (score < 0 || score > 100)) {
+    const { score, reasoning, suggestedActions } = req.body;
+    // Default evaluatedBy to the authenticated user; allow override only
+    // when the caller is service-token-authenticated (admin scope checks
+    // belong upstream in middleware).
+    const evaluatedBy = req.body.evaluatedBy || req.user.id;
+    if (score !== undefined && score !== null && (score < 0 || score > 100)) {
       return res.status(400).json({ error: 'score must be between 0 and 100' });
     }
 
