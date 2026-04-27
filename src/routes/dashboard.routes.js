@@ -59,12 +59,22 @@ router.get('/summary', authenticate, async (req, res) => {
       });
     }
 
+    // Active goals count — owner-scoped, status 'active'
+    let activeGoalsCount = 0;
+    try {
+      const activeGoals = await goalsDal.findAll(
+        { userId, organizationId },
+        { status: 'active' },
+      );
+      activeGoalsCount = activeGoals.length;
+    } catch (e) {}
+
     res.json({
       pending_decisions_count: pendingDecisionsCount,
       pending_agent_requests_count: pendingAgentRequestsCount,
       active_plans_count: activePlansCount,
       tasks_completed_this_week: tasksCompletedThisWeek,
-      active_goals_count: 0,
+      active_goals_count: activeGoalsCount,
       knowledge_entries_count: 0
     });
   } catch (error) {
