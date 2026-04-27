@@ -140,6 +140,7 @@ export const goalsDal = {
     const linksByGoal = new Map();
     const evalsByGoal = new Map();
     let statsByGoal = new Map();
+    let densityByGoal = new Map();
     if (goalIds.length) {
       const linksRows = await db
         .select()
@@ -167,6 +168,11 @@ export const goalsDal = {
         // the rest of the tree response still renders.
         statsByGoal = new Map();
       }
+      try {
+        densityByGoal = await dependenciesDal.getActivityDensityByGoalIds(goalIds, 10);
+      } catch (err) {
+        densityByGoal = new Map();
+      }
     }
 
     // Build tree in memory
@@ -185,6 +191,7 @@ export const goalsDal = {
         links: linksByGoal.get(g.id) || [],
         evaluations: evalsByGoal.get(g.id) || [],
         progress: statsByGoal.get(g.id) || { ...emptyStats },
+        density: densityByGoal.get(g.id) || new Array(10).fill(0),
         children: [],
       }),
     );

@@ -420,6 +420,40 @@ export const dependenciesDal = {
    * Only walks the direct achievers (depth=1) to keep the query cheap.
    * For deep paths use `getGoalPath` per-goal.
    */
+  /**
+   * Per-goal activity density for the last `days` days. One row per
+   * (goal, day-bucket) where day-bucket is 0..days-1 (most recent = days-1).
+   * Counts node_logs created on tasks that achieve the goal — a real
+   * BDI-density proxy that drives the GoalRidge spark.
+   *
+   * Usage: pass an array of goalIds; returns Map<goalId, number[days]>.
+   */
+  async getActivityDensityByGoalIds(goalIds, days = 10) {
+    if (!goalIds || goalIds.length === 0) return new Map();
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const rows = await db.execute(sql`
+      SELECT
+        nd.target_goal_id AS goal_id,
+        FLOOR(EXTRACT(EPOCH FROM (NOW() - nl.created_at)) / 86400)::int AS days_ago,
+        COUNT(*)::int AS count
+      FROM node_dependencies nd
+      JOIN plan_nodes pn ON pn.id = nd.source_node_id
+      JOIN node_logs nl ON nl.plan_node_id = pn.id
+      WHERE nd.dependency_type = 'achieves'
+        AND nd.target_goal_id = ANY(${goalIds}::uuid[])
+        AND nl.created_at >= ${since}
+      GROUP BY nd.target_goal_id, days_ago
+    `);
+    const map = new Map();
+    for (const r of rows) {
+      const arr = map.get(r.goal_id) || new Array(days).fill(0);
+      const idx = days - 1 - Number(r.days_ago);
+      if (idx >= 0 && idx < days) arr[idx] = Number(r.count);
+      map.set(r.goal_id, arr);
+    }
+    return map;
+  },
+
   async getDirectStatsByGoalIds(goalIds) {
     if (!goalIds || goalIds.length === 0) return new Map();
     const rows = await db
