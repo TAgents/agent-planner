@@ -411,6 +411,52 @@ export const dependenciesDal = {
    * @param {string} goalId
    * @param {number} maxDepth
    */
+  /**
+   * Bulk variant of getGoalPath for list views (Goals index, dashboard).
+   * Returns one row per (goalId, status) bucket so the caller can roll up
+   * `{total, completed, in_progress, blocked, not_started, completion_percentage}`
+   * per goal in O(N) without N+1 round trips.
+   *
+   * Only walks the direct achievers (depth=1) to keep the query cheap.
+   * For deep paths use `getGoalPath` per-goal.
+   */
+  async getDirectStatsByGoalIds(goalIds) {
+    if (!goalIds || goalIds.length === 0) return new Map();
+    const rows = await db
+      .select({
+        goalId: nodeDependencies.targetGoalId,
+        status: planNodes.status,
+        count: sql`COUNT(*)::int`.as('count'),
+      })
+      .from(nodeDependencies)
+      .innerJoin(planNodes, eq(nodeDependencies.sourceNodeId, planNodes.id))
+      .where(
+        and(
+          eq(nodeDependencies.dependencyType, 'achieves'),
+          inArray(nodeDependencies.targetGoalId, goalIds),
+        ),
+      )
+      .groupBy(nodeDependencies.targetGoalId, planNodes.status);
+    const map = new Map();
+    for (const r of rows) {
+      const slot = map.get(r.goalId) || {
+        total: 0,
+        completed: 0,
+        in_progress: 0,
+        blocked: 0,
+        not_started: 0,
+      };
+      slot[r.status] = (slot[r.status] || 0) + Number(r.count);
+      slot.total += Number(r.count);
+      map.set(r.goalId, slot);
+    }
+    for (const [, slot] of map) {
+      slot.completion_percentage =
+        slot.total > 0 ? Math.round((slot.completed / slot.total) * 100) : 0;
+    }
+    return map;
+  },
+
   async getGoalPath(goalId, maxDepth = 20) {
     const result = await db.execute(sql`
       WITH RECURSIVE goal_path AS (
