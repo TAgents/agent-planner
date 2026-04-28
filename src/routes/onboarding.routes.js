@@ -209,10 +209,10 @@ router.get('/recent-calls', authenticate, async (req, res) => {
 const MCPB_RELEASE = {
   // Bumped at release time. Source of truth lives in
   // agent-planner-mcp/package.json + release artifacts.
-  version: process.env.MCPB_LATEST_VERSION || '1.0.0',
+  version: process.env.MCPB_LATEST_VERSION || '1.1.0',
   url: process.env.MCPB_LATEST_URL || 'https://github.com/TAgents/agent-planner-mcp/releases/latest/download/agent-planner.mcpb',
   sha256: process.env.MCPB_LATEST_SHA256 || null,
-  published_at: process.env.MCPB_LATEST_PUBLISHED_AT || null,
+  published_at: process.env.MCPB_LATEST_PUBLISHED_AT || '2026-04-28T20:50:00Z',
   min_claude_desktop_version: '0.6.0',
 };
 router.get('/releases/mcpb/latest', (req, res) => {
