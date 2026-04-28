@@ -235,6 +235,27 @@ router.post('/episodes', authenticate, async (req, res) => {
 
     const episodeId = result?.uuid || result?.episode_id || null;
 
+    // Create an episode_node_link so the episode is queryable by plan/node
+    // without round-tripping through Graphiti metadata (which get_episodes
+    // doesn't surface). Prefer node_id if explicitly given; otherwise link
+    // to the plan's root node when plan_id is provided.
+    if (episodeId && (node_id || plan_id)) {
+      try {
+        let targetNodeId = node_id;
+        if (!targetNodeId && plan_id) {
+          const dalRef = require('../../db/dal.cjs');
+          const root = await dalRef.nodesDal.getRoot(plan_id);
+          targetNodeId = root?.id || null;
+        }
+        if (targetNodeId) {
+          const dalRef = require('../../db/dal.cjs');
+          await dalRef.episodeLinksDal.link(episodeId, targetNodeId, 'informs');
+        }
+      } catch (err) {
+        await logger.warn('episode_node_link create failed:', err.message);
+      }
+    }
+
     // BDI Phase 2: Synchronous coherence check (plan-scoped, 2s timeout)
     let coherence_warnings = [];
     if (plan_id) {
