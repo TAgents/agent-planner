@@ -6,6 +6,8 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../../middleware/auth.middleware');
+const { validateBody } = require('../../validation/middleware');
+const { createGoal: createGoalSchema, updateGoal: updateGoalSchema } = require('../../validation/schemas/goal.schemas');
 const logger = require('../../utils/logger');
 
 // DAL (via CJS bridge) — access methods directly via proxy
@@ -17,8 +19,6 @@ const logsDal = require('../../db/dal.cjs').logsDal;
 const graphitiBridge = require('../../services/graphitiBridge');
 const reasoning = require('../../services/reasoning');
 
-const VALID_TYPES = ['outcome', 'constraint', 'metric', 'principle'];
-const VALID_STATUSES = ['draft', 'active', 'achieved', 'paused', 'abandoned', 'archived'];
 const VALID_LINK_TYPES = ['plan', 'task', 'agent'];
 
 // Max concurrent Graphiti queries to avoid overwhelming the sidecar
@@ -276,34 +276,19 @@ router.get('/', authenticate, async (req, res) => {
 });
 
 // POST /api/goals
-router.post('/', authenticate, async (req, res) => {
+router.post('/', authenticate, validateBody(createGoalSchema), async (req, res) => {
   try {
-    const { title, description, type = 'outcome', goalType = 'desire', status = 'active', successCriteria, priority, parentGoalId } = req.body;
-    if (!title) {
-      return res.status(400).json({ error: 'title is required' });
-    }
-    if (!VALID_TYPES.includes(type)) {
-      return res.status(400).json({ error: `type must be one of: ${VALID_TYPES.join(', ')}` });
-    }
-    const VALID_GOAL_TYPES = ['desire', 'intention'];
-    if (!VALID_GOAL_TYPES.includes(goalType)) {
-      return res.status(400).json({ error: `goalType must be one of: ${VALID_GOAL_TYPES.join(', ')}` });
-    }
-    if (!VALID_STATUSES.includes(status)) {
-      return res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` });
-    }
-
-    const dal = goalsDal;
-    const goal = await dal.create({
+    const { title, description, type, goalType, status, successCriteria, priority, parentGoalId, organizationId } = req.body;
+    const goal = await goalsDal.create({
       title,
       description: description || null,
       ownerId: req.user.id,
-      organizationId: req.body.organizationId || req.user.organizationId || null,
+      organizationId: organizationId || req.user.organizationId || null,
       type,
       goalType,
       status,
-      successCriteria: successCriteria || null,
-      priority: priority || 0,
+      successCriteria: successCriteria ?? null,
+      priority,
       parentGoalId: parentGoalId || null,
     });
     res.status(201).json(goal);
@@ -326,7 +311,7 @@ router.get('/:id', authenticate, async (req, res) => {
 });
 
 // PUT /api/goals/:id
-router.put('/:id', authenticate, async (req, res) => {
+router.put('/:id', authenticate, validateBody(updateGoalSchema), async (req, res) => {
   try {
     const existing = await requireGoalAccess(req, res);
     if (!existing) return;
@@ -335,18 +320,9 @@ router.put('/:id', authenticate, async (req, res) => {
     const updates = {};
     if (title !== undefined) updates.title = title;
     if (description !== undefined) updates.description = description;
-    if (type !== undefined) {
-      if (!VALID_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid type' });
-      updates.type = type;
-    }
-    if (status !== undefined) {
-      if (!VALID_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
-      updates.status = status;
-    }
-    if (goalType !== undefined) {
-      if (!['desire', 'intention'].includes(goalType)) return res.status(400).json({ error: 'goalType must be desire or intention' });
-      updates.goalType = goalType;
-    }
+    if (type !== undefined) updates.type = type;
+    if (status !== undefined) updates.status = status;
+    if (goalType !== undefined) updates.goalType = goalType;
     if (successCriteria !== undefined) updates.successCriteria = successCriteria;
     if (priority !== undefined) updates.priority = priority;
     if (parentGoalId !== undefined) updates.parentGoalId = parentGoalId;
@@ -709,7 +685,7 @@ router.get('/:id/knowledge-gaps', authenticate, async (req, res) => {
     const groupId = graphitiBridge.getGroupId(req.user);
     const incompleteTasks = nodes.filter(n => n.status !== 'completed').slice(0, KNOWLEDGE_QUERY_CONCURRENCY);
 
-    async function queryTaskKnowledge(task) {
+    const queryTaskKnowledge = async (task) => {
       const query = [task.title, task.description].filter(Boolean).join(' ');
       try {
         const result = await graphitiBridge.searchMemory({ query, group_id: groupId, max_results: 3 });
@@ -726,7 +702,7 @@ router.get('/:id/knowledge-gaps', authenticate, async (req, res) => {
           fact_count: 0, has_knowledge: false, top_facts: [],
         };
       }
-    }
+    };
 
     const rawResults = await Promise.all(incompleteTasks.map(queryTaskKnowledge));
 
