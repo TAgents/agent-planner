@@ -18,6 +18,11 @@ export const usersDal = {
     return user ?? null;
   },
 
+  async findByGoogleId(googleId) {
+    const [user] = await db.select().from(users).where(eq(users.googleId, googleId)).limit(1);
+    return user ?? null;
+  },
+
   async findByIds(ids) {
     if (ids.length === 0) return [];
     return db.select().from(users).where(inArray(users.id, ids));

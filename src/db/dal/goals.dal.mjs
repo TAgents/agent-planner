@@ -3,6 +3,7 @@ import { db } from '../connection.mjs';
 import { sql as rawSql } from '../connection.mjs';
 import { goals, goalLinks, goalEvaluations } from '../schema/goals.mjs';
 import { users } from '../schema/users.mjs';
+import { dependenciesDal } from './dependencies.dal.mjs';
 
 export const goalsDal = {
   // ─── Core CRUD ─────────────────────────────────────────────────
@@ -132,9 +133,68 @@ export const goalsDal = {
       .where(whereClause)
       .orderBy(desc(goals.priority));
 
+    // Bulk-load links + evaluations + progress per goal so the UI list
+    // (Goals index, Mission Control) can render plan counts, quality scores,
+    // and progress bars without N+1 follow-up calls per row.
+    const goalIds = all.map(g => g.id);
+    const linksByGoal = new Map();
+    const evalsByGoal = new Map();
+    let statsByGoal = new Map();
+    let densityByGoal = new Map();
+    if (goalIds.length) {
+      const linksRows = await db
+        .select()
+        .from(goalLinks)
+        .where(inArray(goalLinks.goalId, goalIds));
+      for (const l of linksRows) {
+        const arr = linksByGoal.get(l.goalId) || [];
+        arr.push(l);
+        linksByGoal.set(l.goalId, arr);
+      }
+      const evalsRows = await db
+        .select()
+        .from(goalEvaluations)
+        .where(inArray(goalEvaluations.goalId, goalIds))
+        .orderBy(desc(goalEvaluations.evaluatedAt));
+      for (const e of evalsRows) {
+        const arr = evalsByGoal.get(e.goalId) || [];
+        arr.push(e);
+        evalsByGoal.set(e.goalId, arr);
+      }
+      try {
+        statsByGoal = await dependenciesDal.getDirectStatsByGoalIds(goalIds);
+      } catch (err) {
+        // Progress aggregation is best-effort — degrade to empty stats so
+        // the rest of the tree response still renders.
+        statsByGoal = new Map();
+      }
+      try {
+        densityByGoal = await dependenciesDal.getActivityDensityByGoalIds(goalIds, 10);
+      } catch (err) {
+        densityByGoal = new Map();
+      }
+    }
+
     // Build tree in memory
+    const emptyStats = {
+      total: 0,
+      completed: 0,
+      in_progress: 0,
+      blocked: 0,
+      not_started: 0,
+      completion_percentage: 0,
+    };
     const map = new Map();
-    all.forEach(g => map.set(g.id, { ...g, children: [] }));
+    all.forEach(g =>
+      map.set(g.id, {
+        ...g,
+        links: linksByGoal.get(g.id) || [],
+        evaluations: evalsByGoal.get(g.id) || [],
+        progress: statsByGoal.get(g.id) || { ...emptyStats },
+        density: densityByGoal.get(g.id) || new Array(10).fill(0),
+        children: [],
+      }),
+    );
 
     const roots = [];
     all.forEach(g => {
@@ -157,6 +217,38 @@ export const goalsDal = {
       .onConflictDoNothing()
       .returning();
     return link;
+  },
+
+  /**
+   * List goal IDs that have a 'plan' link pointing to the given planId.
+   * Used by the createNode cascade so a freshly added task in a linked
+   * plan gets achiever edges for every goal already pointing at the plan.
+   */
+  async listGoalsLinkedToPlan(planId) {
+    const rows = await db
+      .select({ goalId: goalLinks.goalId })
+      .from(goalLinks)
+      .where(and(eq(goalLinks.linkedType, 'plan'), eq(goalLinks.linkedId, planId)));
+    return rows.map(r => r.goalId);
+  },
+
+  /**
+   * Bulk: for a set of plan ids, return [{plan_id, goal_id, goal_title}].
+   * Powers the Plans Index "goal tether" chip — one query for the whole
+   * page rather than N+1 lookups.
+   */
+  async listGoalTethersForPlanIds(planIds) {
+    if (!Array.isArray(planIds) || planIds.length === 0) return [];
+    const rows = await db
+      .select({
+        plan_id: goalLinks.linkedId,
+        goal_id: goalLinks.goalId,
+        goal_title: goals.title,
+      })
+      .from(goalLinks)
+      .innerJoin(goals, eq(goalLinks.goalId, goals.id))
+      .where(and(eq(goalLinks.linkedType, 'plan'), inArray(goalLinks.linkedId, planIds)));
+    return rows;
   },
 
   async removeLink(linkId) {

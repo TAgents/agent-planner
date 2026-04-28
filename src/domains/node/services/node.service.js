@@ -19,6 +19,7 @@ const {
 } = require('../../../websocket/message-schema');
 const { notifyStatusChange, notifyAgentRequested } = require('../../../services/notifications.v2');
 const messageBus = require('../../../services/messageBus');
+const dal = require('../../../db/dal.cjs');
 
 const VALID_TASK_MODES = ['research', 'plan', 'implement', 'free'];
 const VALID_STATUSES = ['not_started', 'in_progress', 'completed', 'blocked', 'plan_ready', 'archived'];
@@ -190,6 +191,29 @@ async function createNode(planId, userId, userName, data) {
     planNodeId: node.id, userId,
     content: `Created ${nodeType} "${title}"`, logType: 'progress',
   });
+
+  // Cascade: if this plan is already linked to one or more goals, the new
+  // task should immediately count toward each goal's progress. Mirrors the
+  // cascade at goal-link creation time so /goals/tree progress stays in
+  // sync without a manual /achievers call. Best-effort — never blocks the
+  // create.
+  if (nodeType === 'task') {
+    try {
+      const linkedGoalIds = await dal.goalsDal.listGoalsLinkedToPlan(planId);
+      for (const goalId of linkedGoalIds) {
+        await dal.dependenciesDal.create({
+          sourceNodeId: node.id,
+          targetGoalId: goalId,
+          dependencyType: 'achieves',
+          weight: 1,
+          metadata: { auto_created_from_node: true },
+          createdBy: userId,
+        });
+      }
+    } catch (cascadeErr) {
+      // swallow — cascade is best-effort
+    }
+  }
 
   const result = snakeNode(node);
   const message = createNodeCreatedMessage(result, userId, userName);

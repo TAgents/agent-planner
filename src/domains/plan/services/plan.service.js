@@ -42,6 +42,37 @@ const calculatePlanProgress = async (planId) => {
   return Math.round((completed / nodes.length) * 100);
 };
 
+/**
+ * Returns the per-status breakdown plus total + percentage so the
+ * Plans Index can render a segmented progress bar (done / doing /
+ * blocked / todo) instead of a single number. Reuses the same node
+ * fetch as `calculatePlanProgress` so the listing page doesn't pay
+ * twice per plan.
+ */
+const computePlanStats = async (planId) => {
+  const nodes = await repo.listNodesByPlan(planId);
+  const total = nodes.length;
+  if (!total) {
+    return { total: 0, done: 0, doing: 0, blocked: 0, todo: 0, percentage: 0 };
+  }
+  let done = 0;
+  let doing = 0;
+  let blocked = 0;
+  let todo = 0;
+  for (const n of nodes) {
+    if (n.nodeType === 'root') continue; // root is structural, not a real task
+    switch (n.status) {
+      case 'completed': done += 1; break;
+      case 'in_progress': doing += 1; break;
+      case 'blocked': blocked += 1; break;
+      default: todo += 1; break;
+    }
+  }
+  const counted = done + doing + blocked + todo;
+  const percentage = counted ? Math.round((done / counted) * 100) : 0;
+  return { total: counted, done, doing, blocked, todo, percentage };
+};
+
 const requireAccess = async (planId, userId, roles = []) => {
   if (!(await checkPlanAccess(planId, userId, roles))) {
     const msg = roles.length
@@ -65,20 +96,42 @@ async function listPlans(userId, organizationId, { statusFilter } = {}) {
   const ownedResults = await Promise.all(owned.map(async (p) => ({
     ...snakePlan(p), role: 'owner',
     progress: await calculatePlanProgress(p.id),
+    stats: await computePlanStats(p.id),
   })));
 
   const sharedResults = await Promise.all(shared.map(async (p) => ({
     ...snakePlan(p), role: p.role,
     progress: await calculatePlanProgress(p.id),
+    stats: await computePlanStats(p.id),
   })));
 
   const orgResults = await Promise.all(organization.map(async (p) => ({
     ...snakePlan(p), role: p.role,
     progress: await calculatePlanProgress(p.id),
+    stats: await computePlanStats(p.id),
   })));
 
   const all = [...ownedResults, ...sharedResults, ...orgResults];
   const unique = [...new Map(all.map(p => [p.id, p])).values()];
+
+  // Bulk-decorate with goal tether + agent-active timestamps so the
+  // Plans Index row ornaments don't trigger N+1 queries client-side.
+  const planIds = unique.map(p => p.id);
+  const [goalRows, logRows] = await Promise.all([
+    repo.listGoalTethersForPlanIds(planIds),
+    repo.latestLogTimestampsByPlanIds(planIds),
+  ]);
+  const tethersByPlan = new Map();
+  for (const row of goalRows) {
+    if (!tethersByPlan.has(row.plan_id)) tethersByPlan.set(row.plan_id, []);
+    tethersByPlan.get(row.plan_id).push({ goal_id: row.goal_id, goal_title: row.goal_title });
+  }
+  const lastLogByPlan = new Map(logRows.map(r => [r.plan_id, r.last_log_at]));
+  for (const p of unique) {
+    p.goal_tethers = tethersByPlan.get(p.id) || [];
+    p.last_agent_log_at = lastLogByPlan.get(p.id) || null;
+  }
+
   unique.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
 
   return unique;

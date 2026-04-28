@@ -130,6 +130,66 @@ router.post('/login', authController.login);
 
 /**
  * @swagger
+ * /auth/oauth/providers:
+ *   get:
+ *     summary: List configured OAuth providers
+ *     description: |
+ *       Returns the OAuth providers that have client_id+secret env vars
+ *       set on this deployment, so the frontend SSO row only renders
+ *       buttons that will actually work. Each entry includes the
+ *       authorize_url the UI should redirect to.
+ *     tags: [Authentication]
+ *     responses:
+ *       200:
+ *         description: List of configured providers
+ */
+router.get('/oauth/providers', authController.oauthProviders);
+
+/**
+ * @swagger
+ * /auth/google/callback:
+ *   post:
+ *     summary: Exchange a Google authorization code for a session
+ *     description: |
+ *       Frontend posts the `code` (and the `redirect_uri` it used for
+ *       the authorize redirect) after Google bounces the user back.
+ *       Server exchanges code → access_token → userinfo, finds-or-creates
+ *       the user (linked by stable `google_id`, falling back to email),
+ *       and returns the same {user, session} envelope as /auth/login.
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code: { type: string }
+ *               redirect_uri: { type: string }
+ */
+router.post('/google/callback', authController.googleCallback);
+
+/**
+ * @swagger
+ * /auth/github/callback:
+ *   post:
+ *     summary: Exchange a GitHub authorization code for a session
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code: { type: string }
+ */
+router.post('/github/callback', authController.githubCallback);
+
+/**
+ * @swagger
  * /auth/logout:
  *   post:
  *     summary: Logout user

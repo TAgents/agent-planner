@@ -102,7 +102,36 @@ router.get('/episodes', authenticate, async (req, res) => {
       max_episodes: Number(max_episodes),
     });
 
-    res.json({ episodes: result, group_id });
+    // Flatten the bridge's {message, episodes: [...]} envelope so consumers
+    // receive {episodes: [...], group_id} instead of {episodes: {episodes: [...]}}.
+    const episodes = Array.isArray(result?.episodes) ? result.episodes : Array.isArray(result) ? result : [];
+
+    // Decorate each episode with plan/task attribution from
+    // episode_node_links so the Timeline can surface "→ Plan / Task"
+    // chips inline. One bulk join keeps the page-load to two round-trips
+    // (Graphiti + Postgres) rather than N+1.
+    const dal = require('../../db/dal.cjs');
+    const episodeIds = episodes.map((e) => e.uuid).filter(Boolean);
+    const links = episodeIds.length > 0
+      ? await dal.episodeLinksDal.listByEpisodeIdsWithTitles(episodeIds)
+      : [];
+    const linksByEpisode = new Map();
+    for (const l of links) {
+      if (!linksByEpisode.has(l.episode_id)) linksByEpisode.set(l.episode_id, []);
+      linksByEpisode.get(l.episode_id).push({
+        node_id: l.node_id,
+        node_title: l.node_title,
+        plan_id: l.plan_id,
+        plan_title: l.plan_title,
+        link_type: l.link_type,
+      });
+    }
+    const decorated = episodes.map((e) => ({
+      ...e,
+      links: linksByEpisode.get(e.uuid) || [],
+    }));
+
+    res.json({ episodes: decorated, group_id });
   } catch (err) {
     await logger.error('Graphiti get episodes error:', err);
     res.status(500).json({ error: 'Failed to get episodes' });
@@ -343,7 +372,9 @@ router.post('/graph-search', authenticate, async (req, res) => {
       max_results: Number(max_results),
     });
 
-    res.json({ results: result, group_id, method: 'graphiti' });
+    // Flatten {facts: [...], message?} from the bridge to a single facts array.
+    const facts = Array.isArray(result?.facts) ? result.facts : Array.isArray(result) ? result : [];
+    res.json({ facts, group_id, method: 'graphiti' });
   } catch (err) {
     await logger.error('Graphiti search error:', err);
     res.status(500).json({ error: 'Failed to search knowledge graph' });
@@ -404,7 +435,9 @@ router.post('/entities', authenticate, async (req, res) => {
       max_results: Number(max_results),
     });
 
-    res.json({ entities: result, group_id });
+    // Flatten {nodes: [...], message?} to a single entities array.
+    const entities = Array.isArray(result?.nodes) ? result.nodes : Array.isArray(result) ? result : [];
+    res.json({ entities, group_id });
   } catch (err) {
     await logger.error('Graphiti entities error:', err);
     res.status(500).json({ error: 'Failed to search entities' });
@@ -469,6 +502,56 @@ router.post('/contradictions', authenticate, async (req, res) => {
   } catch (err) {
     await logger.error('Contradiction detection error:', err);
     res.status(500).json({ error: 'Failed to detect contradictions' });
+  }
+});
+
+// ─── EPISODE → TASK LINKS (bulk lookup) ───────────────────────
+/**
+ * @swagger
+ * /knowledge/episode-task-links:
+ *   post:
+ *     summary: Resolve plan/task tethers for a list of Graphiti episodes
+ *     description: |
+ *       Accepts a batch of Graphiti episode UUIDs and returns the linked
+ *       (plan, task) tuples from `episode_node_links`. Powers the
+ *       Knowledge Graph entity inspector's "Linked tasks" panel and any
+ *       other surface that needs to walk entity → facts → episodes →
+ *       tasks without N+1 round-trips.
+ *     tags: [Knowledge]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               episode_ids:
+ *                 type: array
+ *                 items: { type: string }
+ *     responses:
+ *       200:
+ *         description: |
+ *           {links: [{episode_id, node_id, node_title, plan_id, plan_title, link_type}]}
+ *       400:
+ *         description: Missing episode_ids
+ */
+router.post('/episode-task-links', authenticate, async (req, res) => {
+  try {
+    const { episode_ids } = req.body || {};
+    if (!Array.isArray(episode_ids)) {
+      return res.status(400).json({ error: 'episode_ids must be an array' });
+    }
+    if (episode_ids.length === 0) {
+      return res.json({ links: [] });
+    }
+    const dal = require('../../db/dal.cjs');
+    const links = await dal.episodeLinksDal.listByEpisodeIdsWithTitles(episode_ids);
+    res.json({ links });
+  } catch (err) {
+    await logger.error('episode-task-links failed', err);
+    res.status(500).json({ error: 'Failed to resolve episode task links' });
   }
 });
 
@@ -621,6 +704,111 @@ router.get('/coverage-map', authenticate, async (req, res) => {
   } catch (err) {
     await logger.error('Coverage map error:', err);
     res.status(500).json({ error: 'Failed to build coverage map' });
+  }
+});
+
+/**
+ * @swagger
+ * /knowledge/coverage:
+ *   get:
+ *     summary: Per-plan + per-task knowledge coverage aggregation (Phase 3)
+ *     description: |
+ *       Computes coverage from the structured `episode_node_links` table —
+ *       exact, not text-match-based like /coverage-map. Returns:
+ *
+ *         - org_summary: { total_tasks, tasks_with_facts, ratio }
+ *         - plans: [{ plan_id, plan_title, total_tasks, tasks_with_facts,
+ *                     ratio, stale_tasks: [...], conflict_tasks: [...] }]
+ *
+ *       A task is "stale" if its most-recent episode link is older than
+ *       STALE_DAYS (default 5). A task is "conflict" if it has at least
+ *       one link with link_type='contradicts'.
+ */
+router.get('/coverage', authenticate, async (req, res) => {
+  try {
+    const dal = require('../../db/dal.cjs');
+    const { plansDal, nodesDal, episodeLinksDal } = dal;
+
+    const userId = req.user.id;
+    const organizationId = req.user.organizationId;
+    const STALE_DAYS = 5;
+    const staleCutoff = Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000;
+
+    const planResult = await plansDal.listForUser(userId, { organizationId });
+    const allPlans = [
+      ...(planResult.owned || []),
+      ...(planResult.shared || []),
+      ...(planResult.organization || []),
+    ];
+    const activePlans = allPlans.filter((p) => p.status === 'active' || p.status === 'draft');
+
+    let orgTotalTasks = 0;
+    let orgWithFacts = 0;
+    const planSummaries = [];
+
+    for (const plan of activePlans) {
+      const nodes = await nodesDal.listByPlan(plan.id);
+      const tasks = nodes.filter(
+        (n) => (n.nodeType === 'task' || n.nodeType === 'milestone') && n.status !== 'completed',
+      );
+      if (tasks.length === 0) continue;
+
+      const taskIds = tasks.map((t) => t.id);
+      const links = await episodeLinksDal.listByNodeIds(taskIds);
+
+      // Group links per node for fast lookups
+      const byNode = new Map();
+      for (const l of links) {
+        const arr = byNode.get(l.nodeId) || [];
+        arr.push(l);
+        byNode.set(l.nodeId, arr);
+      }
+
+      let withFacts = 0;
+      const staleTasks = [];
+      const conflictTasks = [];
+
+      for (const t of tasks) {
+        const taskLinks = byNode.get(t.id) || [];
+        if (taskLinks.length === 0) continue;
+        withFacts += 1;
+
+        const newest = Math.max(...taskLinks.map((l) => new Date(l.createdAt).getTime()));
+        if (newest < staleCutoff) {
+          staleTasks.push({ task_id: t.id, task_title: t.title, last_link_at: new Date(newest).toISOString() });
+        }
+        if (taskLinks.some((l) => l.linkType === 'contradicts')) {
+          conflictTasks.push({ task_id: t.id, task_title: t.title });
+        }
+      }
+
+      orgTotalTasks += tasks.length;
+      orgWithFacts += withFacts;
+
+      planSummaries.push({
+        plan_id: plan.id,
+        plan_title: plan.title,
+        total_tasks: tasks.length,
+        tasks_with_facts: withFacts,
+        ratio: tasks.length > 0 ? withFacts / tasks.length : 0,
+        stale_tasks: staleTasks,
+        conflict_tasks: conflictTasks,
+      });
+    }
+
+    res.json({
+      org_summary: {
+        total_tasks: orgTotalTasks,
+        tasks_with_facts: orgWithFacts,
+        ratio: orgTotalTasks > 0 ? orgWithFacts / orgTotalTasks : 0,
+        stale_days_threshold: STALE_DAYS,
+      },
+      plans: planSummaries.sort((a, b) => a.ratio - b.ratio),
+      computed_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    await logger.error('Coverage error:', err);
+    res.status(500).json({ error: 'Failed to compute coverage' });
   }
 });
 

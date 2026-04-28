@@ -57,6 +57,7 @@ const githubRoutes = require('./routes/github.routes');
 const agentV2Routes = require('./routes/v2/agent.routes');
 const contextRoutes = require('./routes/context.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const onboardingRoutes = require('./routes/onboarding.routes');
 const slackRoutes = require('./routes/slack.routes');
 const adminRoutes = require('./routes/admin.routes');
 
@@ -122,6 +123,12 @@ if (process.env.NODE_ENV === 'development') {
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
+// Tool-call telemetry: records one row per authenticated request via
+// res.finish. Mounted globally; reads req.user lazily so route-level
+// authenticate middleware has already populated it by finish time.
+const { recordToolCall } = require('./middleware/toolCallTelemetry.middleware');
+app.use(recordToolCall);
+
 // Routes with rate limiting
 // Auth routes - strict rate limiting to prevent brute force
 app.use('/auth', authLimiter, authRoutes);
@@ -178,6 +185,8 @@ app.use('/plans', generalLimiter, knowledgeLoopRoutes);
 
 // Dashboard routes (home page data)
 app.use('/dashboard', generalLimiter, dashboardRoutes);
+// Onboarding routes (test-connection, recent calls, .mcpb release metadata)
+app.use('/onboarding', generalLimiter, onboardingRoutes);
 // Removed: handoff routes (pre-v2 cleanup)
 // Removed: chat, prompt routes (pre-v2 cleanup)
 
@@ -308,6 +317,13 @@ const startServer = async () => {
       setCollaborationServerController(collaborationServer);
 
       await logger.api('WebSocket collaboration server initialized at /ws/collaborate');
+
+      // Tool-call telemetry retention — keeps tool_calls bounded.
+      // Defaults: 90d retention, 24h interval. Configurable via
+      // TOOL_CALLS_RETENTION_DAYS / TOOL_CALLS_RETENTION_INTERVAL_MS;
+      // disable entirely with TOOL_CALLS_RETENTION_DISABLED=true.
+      const { startRetentionJob } = require('./services/toolCallsRetention');
+      startRetentionJob();
     });
   } catch (error) {
     await logger.error(`Failed to start server`, error);

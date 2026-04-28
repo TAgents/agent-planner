@@ -411,6 +411,97 @@ export const dependenciesDal = {
    * @param {string} goalId
    * @param {number} maxDepth
    */
+  /**
+   * Bulk variant of getGoalPath for list views (Goals index, dashboard).
+   * Returns one row per (goalId, status) bucket so the caller can roll up
+   * `{total, completed, in_progress, blocked, not_started, completion_percentage}`
+   * per goal in O(N) without N+1 round trips.
+   *
+   * Only walks the direct achievers (depth=1) to keep the query cheap.
+   * For deep paths use `getGoalPath` per-goal.
+   */
+  /**
+   * Per-goal activity density for the last `days` days. One row per
+   * (goal, day-bucket) where day-bucket is 0..days-1 (most recent = days-1).
+   * Counts node_logs created on tasks that achieve the goal — a real
+   * BDI-density proxy that drives the GoalRidge spark.
+   *
+   * Usage: pass an array of goalIds; returns Map<goalId, number[days]>.
+   */
+  async getActivityDensityByGoalIds(goalIds, days = 10) {
+    if (!goalIds || goalIds.length === 0) return new Map();
+    // Drizzle renders ${array} as a parameter list, which doesn't bind
+    // cleanly to ANY()::uuid[] — switch to a literal array via the
+    // shared `pgArray` helper (with a uuid cast) so the planner sees a
+    // single uuid[] parameter. Drift on this same trap was uncovered
+    // by the golden-dataset run.
+    const safeIds = goalIds.map((v) => String(v).replace(/'/g, "''"));
+    const idsArr = sql.raw(`ARRAY['${safeIds.join("','")}']::uuid[]`);
+    // Pass timestamps as ISO strings — drizzle's postgres-js driver
+    // refuses to serialize a JS Date as a parameter and throws
+    // "argument must be of type string". `.toISOString()` keeps UTC
+    // semantics intact.
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const rows = await db.execute(sql`
+      SELECT
+        nd.target_goal_id AS goal_id,
+        FLOOR(EXTRACT(EPOCH FROM (NOW() - pnl.created_at)) / 86400)::int AS days_ago,
+        COUNT(*)::int AS count
+      FROM node_dependencies nd
+      JOIN plan_nodes pn ON pn.id = nd.source_node_id
+      JOIN plan_node_logs pnl ON pnl.plan_node_id = pn.id
+      WHERE nd.dependency_type = 'achieves'
+        AND nd.target_goal_id = ANY(${idsArr})
+        AND pnl.created_at >= ${since}
+      GROUP BY nd.target_goal_id, days_ago
+    `);
+    const map = new Map();
+    for (const r of rows) {
+      const arr = map.get(r.goal_id) || new Array(days).fill(0);
+      const idx = days - 1 - Number(r.days_ago);
+      if (idx >= 0 && idx < days) arr[idx] = Number(r.count);
+      map.set(r.goal_id, arr);
+    }
+    return map;
+  },
+
+  async getDirectStatsByGoalIds(goalIds) {
+    if (!goalIds || goalIds.length === 0) return new Map();
+    const rows = await db
+      .select({
+        goalId: nodeDependencies.targetGoalId,
+        status: planNodes.status,
+        count: sql`COUNT(*)::int`.as('count'),
+      })
+      .from(nodeDependencies)
+      .innerJoin(planNodes, eq(nodeDependencies.sourceNodeId, planNodes.id))
+      .where(
+        and(
+          eq(nodeDependencies.dependencyType, 'achieves'),
+          inArray(nodeDependencies.targetGoalId, goalIds),
+        ),
+      )
+      .groupBy(nodeDependencies.targetGoalId, planNodes.status);
+    const map = new Map();
+    for (const r of rows) {
+      const slot = map.get(r.goalId) || {
+        total: 0,
+        completed: 0,
+        in_progress: 0,
+        blocked: 0,
+        not_started: 0,
+      };
+      slot[r.status] = (slot[r.status] || 0) + Number(r.count);
+      slot.total += Number(r.count);
+      map.set(r.goalId, slot);
+    }
+    for (const [, slot] of map) {
+      slot.completion_percentage =
+        slot.total > 0 ? Math.round((slot.completed / slot.total) * 100) : 0;
+    }
+    return map;
+  },
+
   async getGoalPath(goalId, maxDepth = 20) {
     const result = await db.execute(sql`
       WITH RECURSIVE goal_path AS (

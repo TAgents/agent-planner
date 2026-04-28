@@ -15,6 +15,100 @@ export const plansDal = {
     return plan;
   },
 
+  /**
+   * Deep-clone a plan into a new owner / org. Copies the plan row, all
+   * plan_nodes (with translated parent_id mappings), and all dependency
+   * edges (with translated source/target node ids). Lineage is recorded
+   * on the new plan's metadata.forked_from + .forked_at so future
+   * sessions can trace ancestry without a new column.
+   *
+   * Returns the newly-created plan row. Throws on missing source.
+   */
+  async fork(sourcePlanId, { ownerId, organizationId = null, title = null }) {
+    const { planNodes } = await import('../schema/plans.mjs');
+    const { nodeDependencies } = await import('../schema/dependencies.mjs');
+
+    const [source] = await db.select().from(plans).where(eq(plans.id, sourcePlanId)).limit(1);
+    if (!source) throw new Error(`fork: source plan ${sourcePlanId} not found`);
+
+    const [forked] = await db.insert(plans).values({
+      title: title || `${source.title} (fork)`,
+      description: source.description,
+      ownerId,
+      organizationId,
+      status: 'draft',
+      visibility: 'private',
+      metadata: {
+        ...(source.metadata || {}),
+        forked_from: source.id,
+        forked_at: new Date().toISOString(),
+      },
+    }).returning();
+
+    // Pull all nodes for the source plan in one shot.
+    const srcNodes = await db.select().from(planNodes).where(eq(planNodes.planId, sourcePlanId));
+    if (srcNodes.length === 0) return forked;
+
+    // Stable id-mapping: oldNodeId → newNodeId. Two-pass insert lets us
+    // translate parent_id without ordering nodes by depth.
+    const idMap = new Map();
+    const inserts = srcNodes.map((n) => ({
+      planId: forked.id,
+      parentId: null,
+      nodeType: n.nodeType,
+      title: n.title,
+      description: n.description,
+      // Reset progress: a fork is a starting point, not a snapshot of
+      // execution state. Quality + coherence bake in from re-running.
+      status: n.nodeType === 'root' ? n.status : 'not_started',
+      orderIndex: n.orderIndex,
+      dueDate: n.dueDate,
+      context: n.context,
+      agentInstructions: n.agentInstructions,
+      taskMode: n.taskMode,
+      metadata: { ...(n.metadata || {}), forked_from_node: n.id },
+      _sourceId: n.id,
+      _sourceParentId: n.parentId,
+    }));
+
+    // Pass 1: insert with null parent_id, capture id mapping.
+    for (const row of inserts) {
+      const { _sourceId, _sourceParentId, ...payload } = row;
+      const [created] = await db.insert(planNodes).values(payload).returning();
+      idMap.set(_sourceId, created.id);
+    }
+    // Pass 2: patch parent_id where source had a parent.
+    for (const row of inserts) {
+      if (!row._sourceParentId) continue;
+      const newId = idMap.get(row._sourceId);
+      const newParent = idMap.get(row._sourceParentId);
+      if (newId && newParent) {
+        await db.update(planNodes).set({ parentId: newParent }).where(eq(planNodes.id, newId));
+      }
+    }
+
+    // Re-create dependency edges with translated node ids.
+    const srcEdges = await db.select().from(nodeDependencies)
+      .where(eq(nodeDependencies.planId, sourcePlanId));
+    for (const e of srcEdges) {
+      const newSource = idMap.get(e.sourceNodeId);
+      const newTarget = idMap.get(e.targetNodeId);
+      if (!newSource || !newTarget) continue;
+      try {
+        await db.insert(nodeDependencies).values({
+          planId: forked.id,
+          sourceNodeId: newSource,
+          targetNodeId: newTarget,
+          dependencyType: e.dependencyType,
+        });
+      } catch {
+        // swallow per-edge errors so a single bad edge doesn't tank the fork
+      }
+    }
+
+    return forked;
+  },
+
   async update(id, data) {
     const [plan] = await db.update(plans)
       .set({ ...data, updatedAt: new Date() })

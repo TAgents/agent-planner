@@ -381,6 +381,147 @@ const githubCallback = async (req, res, next) => {
   }
 };
 
+/**
+ * Google OAuth callback handler
+ * Called by the frontend after Google redirects back with auth code.
+ * Mirrors githubCallback's contract: exchanges code → token → userinfo,
+ * find-or-create the user (linking by stable google_id, falling back
+ * to email), and returns the same {user, session} envelope so the UI
+ * can persist auth identically across providers.
+ */
+const googleCallback = async (req, res, next) => {
+  try {
+    const { code, redirect_uri } = req.body;
+
+    if (!code) return res.status(400).json({ error: 'Authorization code is required' });
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+      return res.status(503).json({ error: 'Google OAuth not configured on this deployment' });
+    }
+
+    // Exchange code → access_token + id_token. Google requires the same
+    // redirect_uri the client used for the authorize redirect.
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: process.env.GOOGLE_CLIENT_ID,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        code,
+        grant_type: 'authorization_code',
+        redirect_uri: redirect_uri || process.env.GOOGLE_REDIRECT_URI || '',
+      }).toString(),
+    });
+
+    const tokenData = await tokenResponse.json();
+    if (tokenData.error) {
+      return res.status(401).json({ error: `Google OAuth error: ${tokenData.error_description || tokenData.error}` });
+    }
+
+    // Fetch userinfo. The id_token also has these claims, but hitting
+    // /userinfo with the access token is simpler than verifying JWT
+    // signatures here and matches the GitHub flow's pattern.
+    const userResponse = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const gUser = await userResponse.json();
+
+    if (!gUser.email) {
+      return res.status(400).json({ error: 'Could not get email from Google' });
+    }
+    if (gUser.email_verified === false) {
+      return res.status(400).json({ error: 'Google email is not verified — verify it in your Google account first' });
+    }
+
+    let user = await dal.usersDal.findByGoogleId(String(gUser.sub));
+
+    if (!user) {
+      user = await dal.usersDal.findByEmail(gUser.email);
+      if (user) {
+        // Link Google to the existing email-matched account.
+        await dal.usersDal.update(user.id, {
+          googleId: String(gUser.sub),
+          googleAvatarUrl: gUser.picture || null,
+          // Don't clobber an existing avatar_url; only fill if empty.
+          ...(user.avatarUrl ? {} : { avatarUrl: gUser.picture || null }),
+        });
+      } else {
+        user = await dal.usersDal.create({
+          email: gUser.email,
+          name: gUser.name || gUser.email.split('@')[0],
+          googleId: String(gUser.sub),
+          googleAvatarUrl: gUser.picture || null,
+          avatarUrl: gUser.picture || null,
+        });
+      }
+    } else {
+      // Refresh avatar on every login so it stays current.
+      await dal.usersDal.update(user.id, {
+        googleAvatarUrl: gUser.picture || null,
+      });
+    }
+
+    user = await dal.usersDal.findById(user.id);
+
+    await logger.auth(`Google OAuth login: ${gUser.email} (sub=${gUser.sub})`);
+
+    const session = generateTokens(user);
+    const orgs = await dal.organizationsDal.listForUser(user.id);
+
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        avatar_url: user.avatarUrl,
+        organizations: orgs.map((o) => ({ id: o.id, name: o.name, slug: o.slug, role: o.role })),
+      },
+      session,
+    });
+  } catch (error) {
+    await logger.error('Google OAuth error', error);
+    next(error);
+  }
+};
+
+/**
+ * Feature-detection endpoint for the frontend SSO row. Returns the
+ * provider IDs that have a client_id+secret configured on this
+ * deployment so the UI only renders buttons that actually work.
+ */
+const oauthProviders = (req, res) => {
+  const providers = [];
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    providers.push({
+      id: 'google',
+      label: 'Continue with Google',
+      authorize_url:
+        `https://accounts.google.com/o/oauth2/v2/auth?` +
+        new URLSearchParams({
+          client_id: process.env.GOOGLE_CLIENT_ID,
+          response_type: 'code',
+          scope: 'openid email profile',
+          redirect_uri: process.env.GOOGLE_REDIRECT_URI || '',
+          access_type: 'online',
+          prompt: 'select_account',
+        }).toString(),
+    });
+  }
+  if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
+    providers.push({
+      id: 'github',
+      label: 'Continue with GitHub',
+      authorize_url:
+        `https://github.com/login/oauth/authorize?` +
+        new URLSearchParams({
+          client_id: process.env.GITHUB_CLIENT_ID,
+          scope: 'read:user user:email',
+          redirect_uri: process.env.GITHUB_REDIRECT_URI || '',
+        }).toString(),
+    });
+  }
+  res.json({ providers });
+};
+
 // Placeholder stubs for email-based flows (can be implemented later with nodemailer)
 const forgotPassword = async (req, res) => {
   res.status(501).json({ error: 'Password reset via email not yet implemented in v2' });
@@ -411,4 +552,6 @@ module.exports = {
   changePassword,
   refreshToken,
   githubCallback,
+  googleCallback,
+  oauthProviders,
 };

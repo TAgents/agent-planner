@@ -1,9 +1,29 @@
-import { eq, desc, and, inArray, sql, ilike } from 'drizzle-orm';
+import { eq, desc, and, inArray, sql, ilike, gte } from 'drizzle-orm';
 import { db } from '../connection.mjs';
-import { planNodeLogs } from '../schema/plans.mjs';
+import { planNodeLogs, planNodes } from '../schema/plans.mjs';
 import { users } from '../schema/users.mjs';
 
 export const logsDal = {
+  /**
+   * Bulk: for a list of plan ids, return the most recent
+   * plan_node_logs.created_at per plan (regardless of node). Powers
+   * the "agents-live" indicator on the Plans Index — a plan with a
+   * log within the last few minutes is still actively being worked.
+   * Returns [{plan_id, last_log_at}] for plans that have any logs.
+   */
+  async latestLogTimestampsByPlanIds(planIds) {
+    if (!Array.isArray(planIds) || planIds.length === 0) return [];
+    return db
+      .select({
+        plan_id: planNodes.planId,
+        last_log_at: sql`MAX(${planNodeLogs.createdAt})`,
+      })
+      .from(planNodeLogs)
+      .innerJoin(planNodes, eq(planNodeLogs.planNodeId, planNodes.id))
+      .where(inArray(planNodes.planId, planIds))
+      .groupBy(planNodes.planId);
+  },
+
   async create(data) {
     const [log] = await db.insert(planNodeLogs).values(data).returning();
     return log;

@@ -330,7 +330,38 @@ router.get('/public', planController.listPublicPlans);
  *       404:
  *         description: Plan not found or not public
  */
+// Sitemap for crawlers — must be declared before /public/:id so the
+// "sitemap.xml" path segment doesn't get matched as a plan id.
+router.get('/public/sitemap.xml', planController.getPublicPlansSitemap);
+
 router.get('/public/:id', planController.getPublicPlanById);
+
+/**
+ * @swagger
+ * /plans/public/{id}/og.svg:
+ *   get:
+ *     summary: Render an Open Graph share card for a public plan (SVG)
+ *     description: |
+ *       Returns a 1200×630 SVG with the plan title, owner name, and
+ *       AgentPlanner branding — sized for OG/Twitter preview cards.
+ *       Static, cacheable, no auth. Returns 404 if the plan exists but
+ *       isn't public so private titles never leak via the share-card URL.
+ *     tags: [Plans]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: SVG share card
+ *         content:
+ *           image/svg+xml:
+ *             schema: { type: string }
+ *       404:
+ *         description: Plan not found or not public
+ */
+router.get('/public/:id/og.svg', planController.getPublicPlanOgSvg);
 
 /**
  * @swagger
@@ -811,6 +842,64 @@ router.get('/:id/public', planController.getPublicPlan);
  *         description: Plan not found
  */
 router.put('/:id/visibility', authenticate, ...validate({ params: schemas.plan.planIdParam, body: schemas.plan.updateVisibility }), planController.updatePlanVisibility);
+
+/**
+ * @swagger
+ * /plans/{id}/fork:
+ *   post:
+ *     summary: Fork a plan into the caller's workspace
+ *     description: |
+ *       Deep-copies the plan, all plan_nodes (with translated parent_id),
+ *       and dependency edges into a new plan owned by the caller.
+ *       Source must be public OR the caller must already have access.
+ *       Lineage is recorded on metadata.forked_from / .forked_at.
+ *     tags: [Plans]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       201:
+ *         description: New forked plan
+ *       403:
+ *         description: Caller lacks access to source
+ *       404:
+ *         description: Source plan not found
+ */
+router.post('/:id/fork', authenticate, async (req, res) => {
+  try {
+    const dal = require('../db/dal.cjs');
+    const sourceId = req.params.id;
+    const userId = req.user.id;
+    const organizationId = req.user.organizationId || null;
+
+    const source = await dal.plansDal.findById(sourceId);
+    if (!source) return res.status(404).json({ error: 'Source plan not found' });
+
+    // Public plans are forkable by anyone authenticated; private/unlisted
+    // plans require existing access via owner/collaborator/org membership.
+    if (source.visibility !== 'public') {
+      const access = await dal.plansDal.userHasAccess(sourceId, userId);
+      if (!access?.hasAccess) {
+        return res.status(403).json({ error: 'You do not have access to this plan' });
+      }
+    }
+
+    const forked = await dal.plansDal.fork(sourceId, {
+      ownerId: userId,
+      organizationId,
+      title: req.body?.title || null,
+    });
+    return res.status(201).json({ plan: forked });
+  } catch (err) {
+    const logger = require('../utils/logger');
+    await logger.error('plan fork failed', err);
+    return res.status(500).json({ error: 'Fork failed' });
+  }
+});
 
 /**
  * @swagger

@@ -14,6 +14,10 @@ export const users = pgTable('users', {
   githubAvatarUrl: text('github_avatar_url'),
   githubProfileUrl: text('github_profile_url'),
 
+  // Google OAuth
+  googleId: varchar('google_id', { length: 255 }),
+  googleAvatarUrl: text('google_avatar_url'),
+
   // System admin
   isAdmin: boolean('is_admin').notNull().default(false),
 

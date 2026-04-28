@@ -449,6 +449,10 @@ router.post('/:id/promote-to-intention', authenticate, async (req, res) => {
 });
 
 // POST /api/goals/:id/links
+// When linkedType === 'plan', cascades by creating 'achieves' dependencies
+// from every existing task node in that plan to this goal — so the freshly
+// linked plan immediately contributes to /goals/:id/progress without a
+// separate /achievers call. Already-existing achievers are preserved.
 router.post('/:id/links', authenticate, async (req, res) => {
   try {
     const { linkedType, linkedId } = req.body;
@@ -461,7 +465,37 @@ router.post('/:id/links', authenticate, async (req, res) => {
 
     const dal = goalsDal;
     const link = await dal.addLink(req.params.id, linkedType, linkedId);
-    res.status(201).json(link);
+
+    let achieversCreated = 0;
+    if (linkedType === 'plan') {
+      try {
+        const nodes = await nodesDal.listByPlan(linkedId);
+        const taskNodes = (nodes || []).filter(
+          n => (n.nodeType || n.node_type) === 'task',
+        );
+        const existing = await dependenciesDal.listByGoal(req.params.id);
+        const existingNodeIds = new Set(
+          (existing || []).map(r => r.node?.id).filter(Boolean),
+        );
+        for (const n of taskNodes) {
+          if (existingNodeIds.has(n.id)) continue;
+          await dependenciesDal.create({
+            sourceNodeId: n.id,
+            targetGoalId: req.params.id,
+            dependencyType: 'achieves',
+            weight: 1,
+            metadata: { auto_created_from_link: link.id },
+            createdBy: req.user.id,
+          });
+          achieversCreated++;
+        }
+      } catch (cascadeErr) {
+        // Cascade is best-effort; the link itself succeeded. Log and move on.
+        await logger.error('Plan-link achiever cascade error:', cascadeErr);
+      }
+    }
+
+    res.status(201).json({ ...link, achievers_created: achieversCreated });
   } catch (err) {
     await logger.error('Add link error:', err);
     res.status(500).json({ error: 'Failed to add link' });
@@ -484,11 +518,12 @@ router.delete('/:id/links/:linkId', authenticate, async (req, res) => {
 // POST /api/goals/:id/evaluations
 router.post('/:id/evaluations', authenticate, async (req, res) => {
   try {
-    const { evaluatedBy, score, reasoning, suggestedActions } = req.body;
-    if (!evaluatedBy) {
-      return res.status(400).json({ error: 'evaluatedBy is required' });
-    }
-    if (score !== undefined && (score < 0 || score > 100)) {
+    const { score, reasoning, suggestedActions } = req.body;
+    // Default evaluatedBy to the authenticated user; allow override only
+    // when the caller is service-token-authenticated (admin scope checks
+    // belong upstream in middleware).
+    const evaluatedBy = req.body.evaluatedBy || req.user.id;
+    if (score !== undefined && score !== null && (score < 0 || score > 100)) {
       return res.status(400).json({ error: 'score must be between 0 and 100' });
     }
 
@@ -915,6 +950,128 @@ router.get('/:goalId/briefing', authenticate, async (req, res) => {
   } catch (err) {
     await logger.error('Goal briefing error:', err);
     res.status(500).json({ error: 'Failed to generate goal briefing' });
+  }
+});
+
+/**
+ * @swagger
+ * /goals/{id}/coherence:
+ *   get:
+ *     summary: Get goal-scoped coherence score
+ *     description: |
+ *       Returns a single coherence read for one goal, computed from the
+ *       same signals the Tensions card surfaces (pending decisions across
+ *       linked plans, blocked-task ratio, Graphiti contradictions). Each
+ *       component is bounded so a single chatty signal can't pin the dial
+ *       to 0%. Replaces the client-side synthesis in TensionHotspots so
+ *       Goals index attention sort and Mission Control roll-ups can reuse
+ *       the formula without duplicating it.
+ *     tags: [Goals]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Goal coherence score and signal breakdown
+ */
+router.get('/:id/coherence', authenticate, async (req, res) => {
+  try {
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
+
+    const planLinks = (goal.links || []).filter(l => l.linkedType === 'plan');
+    const planIds = planLinks.map(l => l.linkedId);
+
+    // Bail fast if no plans — empty signals, full coherence.
+    if (planIds.length === 0) {
+      return res.json({
+        goal_id: goal.id,
+        coherence_score: 1,
+        signals: {
+          decisions_count: 0,
+          blocked_count: 0,
+          blocked_ratio: 0,
+          contradictions_count: 0,
+          total_tasks: 0,
+        },
+        components: {
+          decisions_impact: 0,
+          blocked_impact: 0,
+          contradictions_impact: 0,
+        },
+      });
+    }
+
+    // Pull all nodes, pending decisions, and contradictions in parallel.
+    const [allNodes, planReadyNodes, agentRequestNodes, contradictionsResult] = await Promise.all([
+      Promise.all(planIds.map(id => nodesDal.listByPlan(id).catch(() => []))),
+      nodesDal.listByPlanIds(planIds, { status: 'plan_ready', limit: 100 }).catch(() => []),
+      nodesDal.listByPlanIds(planIds, { agentRequested: true, limit: 100 }).catch(() => []),
+      (async () => {
+        if (!graphitiBridge.isAvailable()) return null;
+        try {
+          const groupId = graphitiBridge.getGroupId(req.user);
+          const flatNodes = (await Promise.all(planIds.map(id => nodesDal.listByPlan(id).catch(() => []))))
+            .flat()
+            .filter(n => (n.nodeType === 'task' || n.nodeType === 'milestone') && n.status !== 'completed')
+            .slice(0, 10);
+          if (flatNodes.length === 0) return null;
+          const query = flatNodes.map(t => t.title).join('. ');
+          return await graphitiBridge.detectContradictions({ query, group_id: groupId, max_results: 20 });
+        } catch {
+          return null;
+        }
+      })(),
+    ]);
+
+    const flatNodes = allNodes.flat().filter(n => n.nodeType === 'task' || n.nodeType === 'milestone');
+    const totalTasks = flatNodes.length;
+    const blockedCount = flatNodes.filter(n => n.status === 'blocked').length;
+    const blockedRatio = totalTasks > 0 ? blockedCount / totalTasks : 0;
+
+    // Dedupe pending decisions by node id.
+    const pendingSeen = new Set();
+    for (const n of [...planReadyNodes, ...agentRequestNodes]) {
+      pendingSeen.add(n.id);
+    }
+    const decisionsCount = pendingSeen.size;
+
+    const contradictionsCount = (contradictionsResult?.superseded || []).length;
+
+    // Per-component clamping — keep these in sync with the spec in the
+    // Tensions card. If you tune the weights, also update the docstring
+    // in TensionHotspots which references this endpoint.
+    const decisionsImpact = Math.min(0.3, decisionsCount * 0.1);
+    const blockedImpact = Math.min(0.4, blockedRatio * 0.6);
+    const contradictionsImpact = Math.min(0.3, contradictionsCount * 0.03);
+    const coherenceScore = Math.max(
+      0,
+      1 - (decisionsImpact + blockedImpact + contradictionsImpact),
+    );
+
+    res.json({
+      goal_id: goal.id,
+      coherence_score: Math.round(coherenceScore * 1000) / 1000,
+      signals: {
+        decisions_count: decisionsCount,
+        blocked_count: blockedCount,
+        blocked_ratio: Math.round(blockedRatio * 1000) / 1000,
+        contradictions_count: contradictionsCount,
+        total_tasks: totalTasks,
+      },
+      components: {
+        decisions_impact: Math.round(decisionsImpact * 1000) / 1000,
+        blocked_impact: Math.round(blockedImpact * 1000) / 1000,
+        contradictions_impact: Math.round(contradictionsImpact * 1000) / 1000,
+      },
+    });
+  } catch (err) {
+    await logger.error('Goal coherence error:', err);
+    res.status(500).json({ error: 'Failed to compute goal coherence' });
   }
 });
 

@@ -8,6 +8,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../../middleware/auth.middleware.v2');
 const dal = require('../../db/dal.cjs');
+const graphitiBridge = require('../../services/graphitiBridge');
 
 /**
  * @swagger
@@ -72,6 +73,124 @@ router.get('/pending', authenticate, async (req, res, next) => {
       summary: summary.length > 0
         ? `${summary.join(' and ')} need${stalePlans.length + staleGoals.length === 1 ? 's' : ''} coherence review`
         : 'Everything is up to date',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /coherence/summary:
+ *   get:
+ *     summary: Workspace-wide BDI coherence score (Phase 4 starter formula)
+ *     description: |
+ *       Composes a 0..1 coherence score from already-available signals
+ *       so the BDI Coherence Dial can wire up before a more rigorous
+ *       definition lands. The response always includes the raw signal
+ *       counts so a future spec session can re-tune weights without
+ *       changing the API contract.
+ *
+ *       Starter formula (subject to change in future iterations):
+ *         start = 1.0
+ *         minus 0.10 per pending decision   (capped at -0.30)
+ *         minus 0.05 per stale plan         (capped at -0.30)
+ *         minus 0.50 × blocked-task ratio
+ *         minus 0.30 × unlinked-task ratio  (proxy: stale_plans / total_plans)
+ *       clamped to [0, 1].
+ */
+router.get('/summary', authenticate, async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const organizationId = req.user.organizationId;
+
+    const { plansDal, nodesDal, decisionsDal } = dal;
+    const planResult = await plansDal.listForUser(userId, { organizationId });
+    const allPlans = [
+      ...(planResult.owned || []),
+      ...(planResult.shared || []),
+      ...(planResult.organization || []),
+    ];
+    const activePlans = allPlans.filter(
+      (p) => p.status === 'active' || p.status === 'draft',
+    );
+
+    // Pending decisions across all accessible plans
+    let pendingDecisions = 0;
+    for (const p of activePlans) {
+      try { pendingDecisions += await decisionsDal.countPending(p.id); } catch {}
+    }
+
+    // Stale plans (have updated since last coherence check)
+    const stalePlans = activePlans.filter((p) => {
+      if (!p.coherenceCheckedAt) return true;
+      return new Date(p.updatedAt) > new Date(p.coherenceCheckedAt);
+    });
+
+    // Active task counts + blocked + workspace-wide contradictions.
+    // The contradictions sample uses a combined query of incomplete-task
+    // titles across active plans. One Graphiti round-trip — keeps the
+    // dial responsive even on workspaces with dozens of plans.
+    let totalActiveTasks = 0;
+    let blockedTasks = 0;
+    const incompleteTitles = [];
+    for (const p of activePlans) {
+      try {
+        const total = await nodesDal.countByPlan(p.id, { nodeType: 'task' });
+        const blocked = await nodesDal.countByPlan(p.id, { nodeType: 'task', status: 'blocked' });
+        totalActiveTasks += total;
+        blockedTasks += blocked;
+        const planNodes = await nodesDal.listByPlan(p.id);
+        for (const n of planNodes) {
+          if ((n.nodeType === 'task' || n.nodeType === 'milestone') && n.status !== 'completed' && n.title) {
+            incompleteTitles.push(n.title);
+          }
+        }
+      } catch {}
+    }
+
+    let contradictionsCount = 0;
+    if (graphitiBridge.isAvailable() && incompleteTitles.length > 0) {
+      try {
+        const groupId = graphitiBridge.getGroupId(req.user);
+        const query = incompleteTitles.slice(0, 30).join('. ');
+        const result = await graphitiBridge.detectContradictions({ query, group_id: groupId, max_results: 50 });
+        contradictionsCount = (result?.superseded || []).length;
+      } catch { /* graceful degradation */ }
+    }
+
+    const blockedRatio = totalActiveTasks > 0 ? blockedTasks / totalActiveTasks : 0;
+    const stalePlanRatio = activePlans.length > 0 ? stalePlans.length / activePlans.length : 0;
+
+    const decisionsPenalty = Math.min(0.3, pendingDecisions * 0.1);
+    const stalenessPenalty = Math.min(0.3, stalePlans.length * 0.05);
+    const blockedPenalty = blockedRatio * 0.5;
+    const unlinkedPenalty = stalePlanRatio * 0.3;
+
+    const score = Math.max(0, Math.min(1,
+      1 - decisionsPenalty - stalenessPenalty - blockedPenalty - unlinkedPenalty,
+    ));
+
+    res.json({
+      score: Number(score.toFixed(3)),
+      signals: {
+        pending_decisions: pendingDecisions,
+        stale_plans: stalePlans.length,
+        total_active_plans: activePlans.length,
+        blocked_tasks: blockedTasks,
+        total_active_tasks: totalActiveTasks,
+        stale_plan_ratio: Number(stalePlanRatio.toFixed(3)),
+        blocked_task_ratio: Number(blockedRatio.toFixed(3)),
+        contradictions: contradictionsCount,
+      },
+      penalties: {
+        decisions: Number(decisionsPenalty.toFixed(3)),
+        staleness: Number(stalenessPenalty.toFixed(3)),
+        blocked: Number(blockedPenalty.toFixed(3)),
+        unlinked: Number(unlinkedPenalty.toFixed(3)),
+      },
+      formula_version: 'v0.1-starter',
+      computed_at: new Date().toISOString(),
     });
   } catch (error) {
     next(error);

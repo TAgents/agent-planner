@@ -33,6 +33,12 @@ const removeCollaborator = (planId, userId) => dal.collaboratorsDal.remove(planI
 const findUserById = (userId) => dal.usersDal.findById(userId);
 const findUserByEmail = (email) => dal.usersDal.findByEmail(email);
 
+// Bulk decorators used by Plans Index row ornaments
+const listGoalTethersForPlanIds = (planIds) =>
+  dal.goalsDal.listGoalTethersForPlanIds(planIds);
+const latestLogTimestampsByPlanIds = (planIds) =>
+  dal.logsDal.latestLogTimestampsByPlanIds(planIds);
+
 module.exports = {
   // Plan CRUD
   findById,
@@ -53,4 +59,7 @@ module.exports = {
   // Users
   findUserById,
   findUserByEmail,
+  // Bulk decorators
+  listGoalTethersForPlanIds,
+  latestLogTimestampsByPlanIds,
 };

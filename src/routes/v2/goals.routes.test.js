@@ -147,9 +147,14 @@ describe('Goals v2 Routes', () => {
       expect(res.status).toBe(201);
     });
 
-    it('requires evaluatedBy', async () => {
+    it('defaults evaluatedBy to req.user.id when omitted', async () => {
+      mockGoalsDal.addEvaluation.mockResolvedValue({ id: 'e2', goalId: 'g1', score: 80 });
       const res = await request(app).post('/api/goals/g1/evaluations').send({ score: 80 });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(201);
+      const lastCall = mockGoalsDal.addEvaluation.mock.calls.at(-1);
+      // Authenticated test user is mocked via setUser middleware; evaluatedBy
+      // should fall through to that id rather than 400.
+      expect(lastCall?.[1]?.evaluatedBy).toBeTruthy();
     });
 
     it('validates score range', async () => {
