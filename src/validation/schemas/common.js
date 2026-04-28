@@ -24,8 +24,13 @@ const positiveInt = z.number().int().min(0);
 // Date string (ISO 8601)
 const dateString = z.string().datetime({ message: 'Invalid date format. Use ISO 8601 format.' }).optional().nullable();
 
-// Metadata object (flexible JSON)
-const metadata = z.record(z.unknown()).optional().default({});
+// Metadata object (flexible JSON). Zod v4 requires both key + value
+// schemas — calling z.record(z.unknown()) silently treated z.unknown
+// as the key schema and left value undefined, which blew up with
+// `Cannot read properties of undefined (reading '_zod')` on the
+// first validation pass. Every endpoint that validated a `metadata`
+// field (update_plan, decisions, queue_decision, …) was 500'ing.
+const metadata = z.record(z.string(), z.unknown()).optional().default({});
 
 // Pagination parameters
 const paginationParams = z.object({

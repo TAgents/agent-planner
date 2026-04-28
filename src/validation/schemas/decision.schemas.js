@@ -37,7 +37,7 @@ const decisionIdParam = z.object({
 });
 
 // Metadata with size limit (max 10KB when stringified)
-const metadataWithSizeLimit = z.record(z.any()).optional()
+const metadataWithSizeLimit = z.record(z.string(), z.any()).optional()
   .refine(
     (val) => !val || JSON.stringify(val).length <= 10240,
     { message: 'Metadata must be less than 10KB' }
@@ -63,7 +63,7 @@ const updateDecisionRequest = z.object({
   options: z.array(decisionOption).max(10).optional(),
   urgency: urgency.optional(),
   expires_at: z.string().datetime().optional().nullable(),
-  metadata: z.record(z.any()).optional()
+  metadata: z.record(z.string(), z.any()).optional()
 }).strict();
 
 // Resolve decision request
