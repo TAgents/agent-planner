@@ -55,6 +55,14 @@ services:
       FRONTEND_URL: https://${DOMAIN}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       GRAPHITI_INTERNAL_URL: http://graphiti:8000
+      # OAuth — left as ${VAR} so an unset value passes through as empty
+      # and authController.oauthProviders correctly hides the provider.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:-}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
       interval: 15s
