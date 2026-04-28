@@ -158,6 +158,17 @@ const getPublicPlan = async (req, res, next) => {
 
 const getPublicPlanById = getPublicPlan;
 
+const getPublicPlanKnowledgeDigest = async (req, res, next) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 5, 20);
+    const result = await planService.getPublicPlanKnowledgeDigest(req.params.id, { limit });
+    res.json(result);
+  } catch (error) {
+    if (error instanceof planService.ServiceError) return res.status(error.statusCode).json({ error: error.message });
+    next(error);
+  }
+};
+
 /**
  * Render an Open Graph share-card SVG for a public plan.
  * Static, no auth, cacheable. 404s on private plans so titles never leak.
@@ -291,6 +302,6 @@ module.exports = {
   listPlans, createPlan, getPlan, updatePlan, deletePlan,
   listCollaborators, addCollaborator, removeCollaborator,
   getPlanContext, getPlanProgress,
-  listPublicPlans, getPublicPlan, getPublicPlanById, getPublicPlanOgSvg, getPublicPlansSitemap,
+  listPublicPlans, getPublicPlan, getPublicPlanById, getPublicPlanKnowledgeDigest, getPublicPlanOgSvg, getPublicPlansSitemap,
   updatePlanVisibility, incrementViewCount, linkGitHubRepo,
 };

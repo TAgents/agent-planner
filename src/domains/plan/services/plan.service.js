@@ -370,6 +370,68 @@ async function getPublicPlan(planId) {
   };
 }
 
+/**
+ * Public knowledge digest for a published plan. Returns recent Graphiti
+ * episodes that either (a) carry plan_id in metadata or (b) link to a node
+ * in this plan via episode_node_links. No auth — only works on plans whose
+ * visibility is `public`.
+ */
+async function getPublicPlanKnowledgeDigest(planId, { limit = 5 } = {}) {
+  const plan = await repo.findById(planId);
+  if (!plan || (plan.visibility !== 'public' && !plan.isPublic)) {
+    throw new ServiceError('Plan not found', 404);
+  }
+
+  const graphitiBridge = require('../../../services/graphitiBridge');
+  if (!graphitiBridge.isAvailable()) {
+    return { episodes: [], available: false };
+  }
+
+  const groupId = graphitiBridge.orgGroupId(plan.organizationId);
+  // Fetch a wider pool from Graphiti, then filter to plan-attributed ones.
+  const result = await graphitiBridge.getEpisodes({ group_id: groupId, max_episodes: 50 });
+  const all = Array.isArray(result?.episodes) ? result.episodes : Array.isArray(result) ? result : [];
+
+  // Filter (a): episodes whose metadata.plan_id matches.
+  const byMetadata = all.filter((e) => {
+    const meta = e?.metadata || e?.source_metadata;
+    return meta && (meta.plan_id === planId || meta.planId === planId);
+  });
+
+  // Filter (b): episodes linked to a node in this plan via episode_node_links.
+  const dal = require('../../../db/dal.cjs');
+  const episodeIds = all.map((e) => e.uuid).filter(Boolean);
+  const links = episodeIds.length > 0
+    ? await dal.episodeLinksDal.listByEpisodeIdsWithTitles(episodeIds)
+    : [];
+  const linkedEpisodeIds = new Set(
+    links.filter((l) => l.plan_id === planId).map((l) => l.episode_id),
+  );
+  const byLink = all.filter((e) => linkedEpisodeIds.has(e.uuid));
+
+  // Merge + dedupe + sort by created_at desc + cap.
+  const seen = new Set();
+  const merged = [...byMetadata, ...byLink]
+    .filter((e) => {
+      if (!e?.uuid || seen.has(e.uuid)) return false;
+      seen.add(e.uuid);
+      return true;
+    })
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, Math.min(Math.max(limit, 1), 20));
+
+  return {
+    available: true,
+    episodes: merged.map((e) => ({
+      uuid: e.uuid,
+      name: e.name || null,
+      content: e.content || '',
+      created_at: e.created_at,
+      source: e.source || null,
+    })),
+  };
+}
+
 // ── Visibility & Misc ──────────────────────────────────────
 
 async function updatePlanVisibility(planId, userId, visibility) {
@@ -423,6 +485,7 @@ module.exports = {
   getPlanProgress,
   listPublicPlans,
   getPublicPlan,
+  getPublicPlanKnowledgeDigest,
   updatePlanVisibility,
   incrementViewCount,
   linkGitHubRepo,

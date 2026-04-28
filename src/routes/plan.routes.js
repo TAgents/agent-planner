@@ -365,6 +365,34 @@ router.get('/public/:id/og.svg', planController.getPublicPlanOgSvg);
 
 /**
  * @swagger
+ * /plans/public/{id}/knowledge-digest:
+ *   get:
+ *     summary: Recent agent-learned knowledge for a public plan
+ *     description: |
+ *       Returns up to N recent Graphiti episodes attributed to this plan
+ *       (via metadata.plan_id or episode_node_links). No auth — only works
+ *       on plans whose visibility is `public`. Returns `available: false`
+ *       when the knowledge graph is offline so callers can degrade
+ *       gracefully without an error.
+ *     tags: [Plans]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, minimum: 1, maximum: 20, default: 5 }
+ *     responses:
+ *       200:
+ *         description: Episodes (possibly empty)
+ *       404:
+ *         description: Plan not found or not public
+ */
+router.get('/public/:id/knowledge-digest', planController.getPublicPlanKnowledgeDigest);
+
+/**
+ * @swagger
  * /plans/{id}:
  *   get:
  *     summary: Get a specific plan with its root node
