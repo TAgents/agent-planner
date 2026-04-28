@@ -1031,6 +1031,76 @@
         }
       }
     },
+    "/auth/oauth/providers": {
+      "get": {
+        "summary": "List configured OAuth providers",
+        "description": "Returns the OAuth providers that have client_id+secret env vars\nset on this deployment, so the frontend SSO row only renders\nbuttons that will actually work. Each entry includes the\nauthorize_url the UI should redirect to.\n",
+        "tags": [
+          "Authentication"
+        ],
+        "responses": {
+          "200": {
+            "description": "List of configured providers"
+          }
+        }
+      }
+    },
+    "/auth/google/callback": {
+      "post": {
+        "summary": "Exchange a Google authorization code for a session",
+        "description": "Frontend posts the `code` (and the `redirect_uri` it used for\nthe authorize redirect) after Google bounces the user back.\nServer exchanges code → access_token → userinfo, finds-or-creates\nthe user (linked by stable `google_id`, falling back to email),\nand returns the same {user, session} envelope as /auth/login.\n",
+        "tags": [
+          "Authentication"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "redirect_uri": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/github/callback": {
+      "post": {
+        "summary": "Exchange a GitHub authorization code for a session",
+        "tags": [
+          "Authentication"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/logout": {
       "post": {
         "summary": "Logout user",
@@ -3426,6 +3496,42 @@
         }
       }
     },
+    "/nodes/{nodeId}": {
+      "get": {
+        "tags": [
+          "Nodes"
+        ],
+        "summary": "Look up a node by id (returns plan_id + basic node fields)",
+        "description": "Plan-agnostic node lookup. Used by MCP tools and other clients that\nhave a node_id but not a plan_id (e.g., resolving plan context for\nlink_intentions, move_node, etc.). Returns the node with snake_case\nfields including plan_id; full structural traversal still requires\nthe plan-scoped routes.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nodeId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Node found"
+          },
+          "403": {
+            "description": "Access denied to the plan containing this node"
+          },
+          "404": {
+            "description": "Node not found"
+          }
+        }
+      }
+    },
     "/plans/{id}/nodes": {
       "get": {
         "summary": "Get all nodes for a plan (tree structure)",
@@ -5421,6 +5527,34 @@
         }
       }
     },
+    "/onboarding/test-connection": {
+      "post": {
+        "summary": "Test that an MCP/REST client can read a briefing",
+        "tags": [
+          "Onboarding"
+        ],
+        "responses": {
+          "200": {
+            "description": "Connection ok; returns briefing stat-card payload"
+          },
+          "500": {
+            "description": "Briefing failed; returns structured error envelope"
+          }
+        }
+      }
+    },
+    "/onboarding/recent-calls": {
+      "get": {
+        "summary": "Recent tool_calls for the authenticated token (or org)",
+        "description": "Powers the last-call liveness on connect pages and Settings Integrations."
+      }
+    },
+    "/onboarding/releases/mcpb/latest": {
+      "get": {
+        "summary": "Latest .mcpb bundle metadata for one-click Claude Desktop install",
+        "description": "Static metadata JSON; refreshed at release time."
+      }
+    },
     "/plans": {
       "get": {
         "summary": "List all plans accessible to the user",
@@ -5849,6 +5983,40 @@
                       "description": "Hierarchical structure of all plan nodes"
                     }
                   }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Plan not found or not public"
+          }
+        }
+      }
+    },
+    "/plans/public/{id}/og.svg": {
+      "get": {
+        "summary": "Render an Open Graph share card for a public plan (SVG)",
+        "description": "Returns a 1200×630 SVG with the plan title, owner name, and\nAgentPlanner branding — sized for OG/Twitter preview cards.\nStatic, cacheable, no auth. Returns 404 if the plan exists but\nisn't public so private titles never leak via the share-card URL.\n",
+        "tags": [
+          "Plans"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SVG share card",
+            "content": {
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -6569,6 +6737,42 @@
           },
           "404": {
             "description": "Plan not found"
+          }
+        }
+      }
+    },
+    "/plans/{id}/fork": {
+      "post": {
+        "summary": "Fork a plan into the caller's workspace",
+        "description": "Deep-copies the plan, all plan_nodes (with translated parent_id),\nand dependency edges into a new plan owned by the caller.\nSource must be public OR the caller must already have access.\nLineage is recorded on metadata.forked_from / .forked_at.\n",
+        "tags": [
+          "Plans"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "New forked plan"
+          },
+          "403": {
+            "description": "Caller lacks access to source"
+          },
+          "404": {
+            "description": "Source plan not found"
           }
         }
       }
@@ -7675,6 +7879,12 @@
         }
       }
     },
+    "/coherence/summary": {
+      "get": {
+        "summary": "Workspace-wide BDI coherence score (Phase 4 starter formula)",
+        "description": "Composes a 0..1 coherence score from already-available signals\nso the BDI Coherence Dial can wire up before a more rigorous\ndefinition lands. The response always includes the raw signal\ncounts so a future spec session can re-tune weights without\nchanging the API contract.\n\nStarter formula (subject to change in future iterations):\n  start = 1.0\n  minus 0.10 per pending decision   (capped at -0.30)\n  minus 0.05 per stale plan         (capped at -0.30)\n  minus 0.50 × blocked-task ratio\n  minus 0.30 × unlinked-task ratio  (proxy: stale_plans / total_plans)\nclamped to [0, 1].\n"
+      }
+    },
     "/goals/dashboard": {
       "get": {
         "summary": "Get health dashboard for all user goals",
@@ -7869,6 +8079,36 @@
           },
           "404": {
             "description": "Goal not found"
+          }
+        }
+      }
+    },
+    "/goals/{id}/coherence": {
+      "get": {
+        "summary": "Get goal-scoped coherence score",
+        "description": "Returns a single coherence read for one goal, computed from the\nsame signals the Tensions card surfaces (pending decisions across\nlinked plans, blocked-task ratio, Graphiti contradictions). Each\ncomponent is bounded so a single chatty signal can't pin the dial\nto 0%. Replaces the client-side synthesis in TensionHotspots so\nGoals index attention sort and Mission Control roll-ups can reuse\nthe formula without duplicating it.\n",
+        "tags": [
+          "Goals"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Goal coherence score and signal breakdown"
           }
         }
       }
@@ -8342,6 +8582,46 @@
         }
       }
     },
+    "/knowledge/episode-task-links": {
+      "post": {
+        "summary": "Resolve plan/task tethers for a list of Graphiti episodes",
+        "description": "Accepts a batch of Graphiti episode UUIDs and returns the linked\n(plan, task) tuples from `episode_node_links`. Powers the\nKnowledge Graph entity inspector's \"Linked tasks\" panel and any\nother surface that needs to walk entity → facts → episodes →\ntasks without N+1 round-trips.\n",
+        "tags": [
+          "Knowledge"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "episode_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "{links: [{episode_id, node_id, node_title, plan_id, plan_title, link_type}]}\n"
+          },
+          "400": {
+            "description": "Missing episode_ids"
+          }
+        }
+      }
+    },
     "/knowledge/coverage-map": {
       "get": {
         "summary": "Get knowledge coverage map",
@@ -8362,6 +8642,12 @@
             "description": "Knowledge graph not available"
           }
         }
+      }
+    },
+    "/knowledge/coverage": {
+      "get": {
+        "summary": "Per-plan + per-task knowledge coverage aggregation (Phase 3)",
+        "description": "Computes coverage from the structured `episode_node_links` table —\nexact, not text-match-based like /coverage-map. Returns:\n\n  - org_summary: { total_tasks, tasks_with_facts, ratio }\n  - plans: [{ plan_id, plan_title, total_tasks, tasks_with_facts,\n              ratio, stale_tasks: [...], conflict_tasks: [...] }]\n\nA task is \"stale\" if its most-recent episode link is older than\nSTALE_DAYS (default 5). A task is \"conflict\" if it has at least\none link with link_type='contradicts'.\n"
       }
     },
     "/plans/{id}/knowledge-loop/start": {

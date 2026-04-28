@@ -10,4 +10,5 @@ module.exports = {
   knowledge: require('./knowledge'),
   collaboration: require('./collaboration'),
   search: require('./search'),
+  agent: require('./agent'),
 };

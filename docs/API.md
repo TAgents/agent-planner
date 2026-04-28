@@ -111,6 +111,16 @@ The context engine assembles information in 4 progressive layers, each including
 - `DELETE /nodes/{nodeId}/claim` - Release a claim
 - `GET /nodes/{nodeId}/claim` - Get active claim for a node
 
+### Agent Loop (Recommended for agents)
+
+- `GET /agent/briefing` - Bundled mission-control state: goal health, pending decisions, active claims, recent activity, recommendations
+- `POST /agent/work-sessions` - Pick or claim a task, mark it `in_progress`, and return progressive context
+- `POST /agent/work-sessions/{sessionId}/complete` - Complete a claimed task, write a log, optionally record learning, and release the claim
+- `POST /agent/work-sessions/{sessionId}/block` - Block a claimed task, write a challenge log, optionally queue a decision, and release the claim
+- `POST /agent/intentions` - Create a plan tree under a goal and link it atomically
+
+These endpoints are a facade over the lower-level domain APIs. Prefer them for MCP clients, coding agents, scheduled autopilots, and validation loops.
+
 ### Agent View (Agent-first context)
 
 - `GET /nodes/{nodeId}/agent-view?depth=1-4` - Progressive context layers for agent consumption
@@ -150,6 +160,118 @@ The context engine assembles information in 4 progressive layers, each including
 ### Advanced (Specialized)
 
 - Collaboration, Assignment, Activity, Knowledge, Goals, Organizations, Decisions, Search, Dashboard endpoints
+
+---
+
+## Agent Loop API
+
+The Agent Loop API is the narrow, opinionated surface for autonomous work. It keeps the domain API intact, but bundles the common agent workflow into fewer atomic calls.
+
+### GET /agent/briefing
+
+Returns the current mission-control state for an agent.
+
+**Query:** `goal_id`, `plan_id`, `recent_window_hours`
+
+**Response includes:**
+- `goal_health.summary` and `goal_health.goals`
+- `pending_decisions`
+- `active_claims`
+- `recent_activity`
+- `top_recommendation`
+
+### POST /agent/work-sessions
+
+Pick or claim a task and start work.
+
+**Body:**
+```json
+{
+  "plan_id": "optional plan UUID",
+  "goal_id": "optional goal UUID",
+  "task_id": "optional explicit task UUID",
+  "ttl_minutes": 30,
+  "depth": 3,
+  "token_budget": 6000,
+  "fresh": false,
+  "dry_run": false,
+  "agent_id": "mcp-agent"
+}
+```
+
+If `dry_run` is false, the endpoint claims the task, marks it `in_progress`, and returns progressive context. If `dry_run` is true, it returns the candidate without mutating state.
+
+### POST /agent/work-sessions/{sessionId}/complete
+
+Complete a work session.
+
+**Body:**
+```json
+{
+  "summary": "What changed",
+  "learning": {
+    "content": "Reusable fact or lesson"
+  }
+}
+```
+
+The endpoint updates task status, writes a log, optionally records knowledge, and releases the claim.
+
+### POST /agent/work-sessions/{sessionId}/block
+
+Block a work session.
+
+**Body:**
+```json
+{
+  "summary": "What is blocked and why",
+  "decision": {
+    "title": "Decision needed",
+    "context": "Background",
+    "urgency": "blocking",
+    "options": []
+  }
+}
+```
+
+The endpoint marks the task blocked, writes a challenge log, optionally queues a decision, and releases the claim.
+
+### POST /agent/intentions
+
+Create a plan tree under a goal.
+
+**Body:**
+```json
+{
+  "goal_id": "goal UUID",
+  "title": "Plan title",
+  "rationale": "Why this plan exists",
+  "description": "Optional details",
+  "status": "draft",
+  "visibility": "private",
+  "tree": [
+    {
+      "node_type": "phase",
+      "title": "Research",
+      "children": [
+        { "node_type": "task", "title": "Investigate options", "task_mode": "research" }
+      ]
+    }
+  ]
+}
+```
+
+Use `status: "draft"` when an autonomous agent proposes work for human review; use `active` for human-directed creation.
+
+### Validation Loop
+
+The backend includes a focused validation command:
+
+```bash
+npm run validate:agent-loop
+```
+
+It verifies the main loop: briefing, task selection/claim/context, dry-run behavior, completion logging, and claim release.
 
 ---
 

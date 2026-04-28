@@ -48,6 +48,9 @@ const userRoutes = domains.collaboration.routes.userRoutes;
 // Search domain
 const searchRoutes = domains.search.routes.searchRoutes;
 
+// Agent loop facade
+const agentLoopRoutes = domains.agent.routes.agentLoopRoutes;
+
 // Non-domain routes (cross-cutting, infra, integrations)
 const authRoutes = require('./routes/auth.routes');
 const tokenRoutes = require('./routes/token.routes');
@@ -166,6 +169,7 @@ app.use('/goals', generalLimiter, goalsV2Routes);
 app.use('/knowledge', generalLimiter, knowledgeV2Routes);
 app.use('/knowledge/search', searchLimiter);  // stricter limit for semantic search
 app.use('/v2/agent', generalLimiter, agentV2Routes);
+app.use('/agent', generalLimiter, agentLoopRoutes);
 // Agent context routes (leaf-up context loading)
 app.use('/context', generalLimiter, contextRoutes);
 
@@ -197,8 +201,6 @@ app.use('/integrations/slack', generalLimiter, slackRoutes);
 app.use('/admin', generalLimiter, adminRoutes);
 
 // Removed: artifact download endpoint (Phase 0 simplification)
-const { authenticate } = require('./middleware/auth.middleware');
-
 // Direct file access endpoint for development
 if (process.env.NODE_ENV === 'development') {
   app.get('/files/*', (req, res) => {
@@ -236,7 +238,7 @@ app.get('/health', (req, res) => {
 });
 
 // Error handling middleware
-app.use(async (err, req, res, next) => {
+app.use(async (err, req, res, _next) => {
   const status = err.statusCode || 500;
   const message = err.message || 'Internal Server Error';
   

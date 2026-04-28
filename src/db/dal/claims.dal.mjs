@@ -3,6 +3,14 @@ import { db } from '../connection.mjs';
 import { nodeClaims } from '../schema/claims.mjs';
 
 export const claimsDal = {
+  async findById(id) {
+    const [claim] = await db.select()
+      .from(nodeClaims)
+      .where(eq(nodeClaims.id, id))
+      .limit(1);
+    return claim ?? null;
+  },
+
   /**
    * Claim a node for an agent. Rejects if an active claim already exists
    * (not released and not expired).

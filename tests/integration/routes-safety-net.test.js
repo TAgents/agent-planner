@@ -288,6 +288,7 @@ jest.mock('../../src/db/dal.cjs', () => {
       getEvaluations: jest.fn().mockResolvedValue([]),
       getDashboardData: jest.fn().mockResolvedValue([]),
       getActiveGoalsForOwner: jest.fn().mockResolvedValue([]),
+      listGoalTethersForPlanIds: jest.fn().mockResolvedValue([]),
     },
     dependenciesDal: {
       listByPlan: jest.fn().mockResolvedValue([]),
@@ -341,6 +342,7 @@ jest.mock('../../src/db/dal.cjs', () => {
       listByNode: jest.fn().mockResolvedValue([]),
       listByPlan: jest.fn().mockResolvedValue({ logs: [], total: 0 }),
       create: jest.fn().mockResolvedValue(null),
+      latestLogTimestampsByPlanIds: jest.fn().mockResolvedValue([]),
     },
     commentsDal: {
       listByNode: jest.fn().mockResolvedValue([]),
