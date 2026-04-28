@@ -430,18 +430,29 @@ export const dependenciesDal = {
    */
   async getActivityDensityByGoalIds(goalIds, days = 10) {
     if (!goalIds || goalIds.length === 0) return new Map();
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    // Drizzle renders ${array} as a parameter list, which doesn't bind
+    // cleanly to ANY()::uuid[] — switch to a literal array via the
+    // shared `pgArray` helper (with a uuid cast) so the planner sees a
+    // single uuid[] parameter. Drift on this same trap was uncovered
+    // by the golden-dataset run.
+    const safeIds = goalIds.map((v) => String(v).replace(/'/g, "''"));
+    const idsArr = sql.raw(`ARRAY['${safeIds.join("','")}']::uuid[]`);
+    // Pass timestamps as ISO strings — drizzle's postgres-js driver
+    // refuses to serialize a JS Date as a parameter and throws
+    // "argument must be of type string". `.toISOString()` keeps UTC
+    // semantics intact.
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     const rows = await db.execute(sql`
       SELECT
         nd.target_goal_id AS goal_id,
-        FLOOR(EXTRACT(EPOCH FROM (NOW() - nl.created_at)) / 86400)::int AS days_ago,
+        FLOOR(EXTRACT(EPOCH FROM (NOW() - pnl.created_at)) / 86400)::int AS days_ago,
         COUNT(*)::int AS count
       FROM node_dependencies nd
       JOIN plan_nodes pn ON pn.id = nd.source_node_id
-      JOIN node_logs nl ON nl.plan_node_id = pn.id
+      JOIN plan_node_logs pnl ON pnl.plan_node_id = pn.id
       WHERE nd.dependency_type = 'achieves'
-        AND nd.target_goal_id = ANY(${goalIds}::uuid[])
-        AND nl.created_at >= ${since}
+        AND nd.target_goal_id = ANY(${idsArr})
+        AND pnl.created_at >= ${since}
       GROUP BY nd.target_goal_id, days_ago
     `);
     const map = new Map();

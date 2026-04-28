@@ -105,7 +105,33 @@ router.get('/episodes', authenticate, async (req, res) => {
     // Flatten the bridge's {message, episodes: [...]} envelope so consumers
     // receive {episodes: [...], group_id} instead of {episodes: {episodes: [...]}}.
     const episodes = Array.isArray(result?.episodes) ? result.episodes : Array.isArray(result) ? result : [];
-    res.json({ episodes, group_id });
+
+    // Decorate each episode with plan/task attribution from
+    // episode_node_links so the Timeline can surface "→ Plan / Task"
+    // chips inline. One bulk join keeps the page-load to two round-trips
+    // (Graphiti + Postgres) rather than N+1.
+    const dal = require('../../db/dal.cjs');
+    const episodeIds = episodes.map((e) => e.uuid).filter(Boolean);
+    const links = episodeIds.length > 0
+      ? await dal.episodeLinksDal.listByEpisodeIdsWithTitles(episodeIds)
+      : [];
+    const linksByEpisode = new Map();
+    for (const l of links) {
+      if (!linksByEpisode.has(l.episode_id)) linksByEpisode.set(l.episode_id, []);
+      linksByEpisode.get(l.episode_id).push({
+        node_id: l.node_id,
+        node_title: l.node_title,
+        plan_id: l.plan_id,
+        plan_title: l.plan_title,
+        link_type: l.link_type,
+      });
+    }
+    const decorated = episodes.map((e) => ({
+      ...e,
+      links: linksByEpisode.get(e.uuid) || [],
+    }));
+
+    res.json({ episodes: decorated, group_id });
   } catch (err) {
     await logger.error('Graphiti get episodes error:', err);
     res.status(500).json({ error: 'Failed to get episodes' });
@@ -476,6 +502,56 @@ router.post('/contradictions', authenticate, async (req, res) => {
   } catch (err) {
     await logger.error('Contradiction detection error:', err);
     res.status(500).json({ error: 'Failed to detect contradictions' });
+  }
+});
+
+// ─── EPISODE → TASK LINKS (bulk lookup) ───────────────────────
+/**
+ * @swagger
+ * /knowledge/episode-task-links:
+ *   post:
+ *     summary: Resolve plan/task tethers for a list of Graphiti episodes
+ *     description: |
+ *       Accepts a batch of Graphiti episode UUIDs and returns the linked
+ *       (plan, task) tuples from `episode_node_links`. Powers the
+ *       Knowledge Graph entity inspector's "Linked tasks" panel and any
+ *       other surface that needs to walk entity → facts → episodes →
+ *       tasks without N+1 round-trips.
+ *     tags: [Knowledge]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               episode_ids:
+ *                 type: array
+ *                 items: { type: string }
+ *     responses:
+ *       200:
+ *         description: |
+ *           {links: [{episode_id, node_id, node_title, plan_id, plan_title, link_type}]}
+ *       400:
+ *         description: Missing episode_ids
+ */
+router.post('/episode-task-links', authenticate, async (req, res) => {
+  try {
+    const { episode_ids } = req.body || {};
+    if (!Array.isArray(episode_ids)) {
+      return res.status(400).json({ error: 'episode_ids must be an array' });
+    }
+    if (episode_ids.length === 0) {
+      return res.json({ links: [] });
+    }
+    const dal = require('../../db/dal.cjs');
+    const links = await dal.episodeLinksDal.listByEpisodeIdsWithTitles(episode_ids);
+    res.json({ links });
+  } catch (err) {
+    await logger.error('episode-task-links failed', err);
+    res.status(500).json({ error: 'Failed to resolve episode task links' });
   }
 });
 

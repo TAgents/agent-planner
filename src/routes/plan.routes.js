@@ -330,7 +330,38 @@ router.get('/public', planController.listPublicPlans);
  *       404:
  *         description: Plan not found or not public
  */
+// Sitemap for crawlers — must be declared before /public/:id so the
+// "sitemap.xml" path segment doesn't get matched as a plan id.
+router.get('/public/sitemap.xml', planController.getPublicPlansSitemap);
+
 router.get('/public/:id', planController.getPublicPlanById);
+
+/**
+ * @swagger
+ * /plans/public/{id}/og.svg:
+ *   get:
+ *     summary: Render an Open Graph share card for a public plan (SVG)
+ *     description: |
+ *       Returns a 1200×630 SVG with the plan title, owner name, and
+ *       AgentPlanner branding — sized for OG/Twitter preview cards.
+ *       Static, cacheable, no auth. Returns 404 if the plan exists but
+ *       isn't public so private titles never leak via the share-card URL.
+ *     tags: [Plans]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: SVG share card
+ *         content:
+ *           image/svg+xml:
+ *             schema: { type: string }
+ *       404:
+ *         description: Plan not found or not public
+ */
+router.get('/public/:id/og.svg', planController.getPublicPlanOgSvg);
 
 /**
  * @swagger

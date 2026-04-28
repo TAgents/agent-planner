@@ -232,6 +232,25 @@ export const goalsDal = {
     return rows.map(r => r.goalId);
   },
 
+  /**
+   * Bulk: for a set of plan ids, return [{plan_id, goal_id, goal_title}].
+   * Powers the Plans Index "goal tether" chip — one query for the whole
+   * page rather than N+1 lookups.
+   */
+  async listGoalTethersForPlanIds(planIds) {
+    if (!Array.isArray(planIds) || planIds.length === 0) return [];
+    const rows = await db
+      .select({
+        plan_id: goalLinks.linkedId,
+        goal_id: goalLinks.goalId,
+        goal_title: goals.title,
+      })
+      .from(goalLinks)
+      .innerJoin(goals, eq(goalLinks.goalId, goals.id))
+      .where(and(eq(goalLinks.linkedType, 'plan'), inArray(goalLinks.linkedId, planIds)));
+    return rows;
+  },
+
   async removeLink(linkId) {
     const [link] = await db.delete(goalLinks)
       .where(eq(goalLinks.id, linkId))

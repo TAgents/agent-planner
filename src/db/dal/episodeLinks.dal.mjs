@@ -1,6 +1,7 @@
 import { eq, and, inArray } from 'drizzle-orm';
 import { db } from '../connection.mjs';
 import { episodeNodeLinks } from '../schema/episodeLinks.mjs';
+import { planNodes, plans } from '../schema/plans.mjs';
 
 export const episodeLinksDal = {
   /**
@@ -81,5 +82,31 @@ export const episodeLinksDal = {
     if (nodeIds.length === 0) return [];
     return db.select().from(episodeNodeLinks)
       .where(inArray(episodeNodeLinks.nodeId, nodeIds));
+  },
+
+  /**
+   * Batch resolution: for a list of Graphiti episode UUIDs, return every
+   * (episode, node, plan) tuple linked. Joins onto plan_nodes + plans so
+   * the Timeline can render plan/task chips inline without N+1 follow-up
+   * fetches.
+   *
+   * @param {string[]} episodeIds - Graphiti episode UUIDs (text)
+   * @returns {Array<{episode_id, node_id, node_title, plan_id, plan_title, link_type}>}
+   */
+  async listByEpisodeIdsWithTitles(episodeIds) {
+    if (episodeIds.length === 0) return [];
+    return db
+      .select({
+        episode_id: episodeNodeLinks.episodeId,
+        node_id: episodeNodeLinks.nodeId,
+        node_title: planNodes.title,
+        plan_id: plans.id,
+        plan_title: plans.title,
+        link_type: episodeNodeLinks.linkType,
+      })
+      .from(episodeNodeLinks)
+      .innerJoin(planNodes, eq(episodeNodeLinks.nodeId, planNodes.id))
+      .innerJoin(plans, eq(planNodes.planId, plans.id))
+      .where(inArray(episodeNodeLinks.episodeId, episodeIds));
   },
 };

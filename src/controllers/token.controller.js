@@ -11,7 +11,18 @@ const getTokens = async (req, res, next) => {
     const userId = req.user.id;
 
     const data = await tokensDal.listActiveByUserAndOrg(userId, req.user.organizationId || null);
-    res.json(data);
+    // The DAL projects to camelCase (Drizzle's default for `db.select({...})`)
+    // but our public API contract — and the OpenAPI schema — uses snake_case
+    // for token timestamps. Map at the controller boundary so internal code
+    // can keep camelCase without leaking it to clients.
+    const out = (Array.isArray(data) ? data : []).map((t) => ({
+      id: t.id,
+      name: t.name,
+      permissions: t.permissions,
+      created_at: t.createdAt,
+      last_used: t.lastUsed,
+    }));
+    res.json(out);
   } catch (error) {
     next(error);
   }

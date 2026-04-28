@@ -954,6 +954,128 @@ router.get('/:goalId/briefing', authenticate, async (req, res) => {
 });
 
 /**
+ * @swagger
+ * /goals/{id}/coherence:
+ *   get:
+ *     summary: Get goal-scoped coherence score
+ *     description: |
+ *       Returns a single coherence read for one goal, computed from the
+ *       same signals the Tensions card surfaces (pending decisions across
+ *       linked plans, blocked-task ratio, Graphiti contradictions). Each
+ *       component is bounded so a single chatty signal can't pin the dial
+ *       to 0%. Replaces the client-side synthesis in TensionHotspots so
+ *       Goals index attention sort and Mission Control roll-ups can reuse
+ *       the formula without duplicating it.
+ *     tags: [Goals]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Goal coherence score and signal breakdown
+ */
+router.get('/:id/coherence', authenticate, async (req, res) => {
+  try {
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
+
+    const planLinks = (goal.links || []).filter(l => l.linkedType === 'plan');
+    const planIds = planLinks.map(l => l.linkedId);
+
+    // Bail fast if no plans — empty signals, full coherence.
+    if (planIds.length === 0) {
+      return res.json({
+        goal_id: goal.id,
+        coherence_score: 1,
+        signals: {
+          decisions_count: 0,
+          blocked_count: 0,
+          blocked_ratio: 0,
+          contradictions_count: 0,
+          total_tasks: 0,
+        },
+        components: {
+          decisions_impact: 0,
+          blocked_impact: 0,
+          contradictions_impact: 0,
+        },
+      });
+    }
+
+    // Pull all nodes, pending decisions, and contradictions in parallel.
+    const [allNodes, planReadyNodes, agentRequestNodes, contradictionsResult] = await Promise.all([
+      Promise.all(planIds.map(id => nodesDal.listByPlan(id).catch(() => []))),
+      nodesDal.listByPlanIds(planIds, { status: 'plan_ready', limit: 100 }).catch(() => []),
+      nodesDal.listByPlanIds(planIds, { agentRequested: true, limit: 100 }).catch(() => []),
+      (async () => {
+        if (!graphitiBridge.isAvailable()) return null;
+        try {
+          const groupId = graphitiBridge.getGroupId(req.user);
+          const flatNodes = (await Promise.all(planIds.map(id => nodesDal.listByPlan(id).catch(() => []))))
+            .flat()
+            .filter(n => (n.nodeType === 'task' || n.nodeType === 'milestone') && n.status !== 'completed')
+            .slice(0, 10);
+          if (flatNodes.length === 0) return null;
+          const query = flatNodes.map(t => t.title).join('. ');
+          return await graphitiBridge.detectContradictions({ query, group_id: groupId, max_results: 20 });
+        } catch {
+          return null;
+        }
+      })(),
+    ]);
+
+    const flatNodes = allNodes.flat().filter(n => n.nodeType === 'task' || n.nodeType === 'milestone');
+    const totalTasks = flatNodes.length;
+    const blockedCount = flatNodes.filter(n => n.status === 'blocked').length;
+    const blockedRatio = totalTasks > 0 ? blockedCount / totalTasks : 0;
+
+    // Dedupe pending decisions by node id.
+    const pendingSeen = new Set();
+    for (const n of [...planReadyNodes, ...agentRequestNodes]) {
+      pendingSeen.add(n.id);
+    }
+    const decisionsCount = pendingSeen.size;
+
+    const contradictionsCount = (contradictionsResult?.superseded || []).length;
+
+    // Per-component clamping — keep these in sync with the spec in the
+    // Tensions card. If you tune the weights, also update the docstring
+    // in TensionHotspots which references this endpoint.
+    const decisionsImpact = Math.min(0.3, decisionsCount * 0.1);
+    const blockedImpact = Math.min(0.4, blockedRatio * 0.6);
+    const contradictionsImpact = Math.min(0.3, contradictionsCount * 0.03);
+    const coherenceScore = Math.max(
+      0,
+      1 - (decisionsImpact + blockedImpact + contradictionsImpact),
+    );
+
+    res.json({
+      goal_id: goal.id,
+      coherence_score: Math.round(coherenceScore * 1000) / 1000,
+      signals: {
+        decisions_count: decisionsCount,
+        blocked_count: blockedCount,
+        blocked_ratio: Math.round(blockedRatio * 1000) / 1000,
+        contradictions_count: contradictionsCount,
+        total_tasks: totalTasks,
+      },
+      components: {
+        decisions_impact: Math.round(decisionsImpact * 1000) / 1000,
+        blocked_impact: Math.round(blockedImpact * 1000) / 1000,
+        contradictions_impact: Math.round(contradictionsImpact * 1000) / 1000,
+      },
+    });
+  } catch (err) {
+    await logger.error('Goal coherence error:', err);
+    res.status(500).json({ error: 'Failed to compute goal coherence' });
+  }
+});
+
+/**
  * Compute the critical path: longest chain of 'blocks' edges through incomplete nodes.
  * Uses dynamic programming on the DAG to find the longest path.
  */

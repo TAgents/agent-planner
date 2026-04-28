@@ -8,6 +8,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../../middleware/auth.middleware.v2');
 const dal = require('../../db/dal.cjs');
+const graphitiBridge = require('../../services/graphitiBridge');
 
 /**
  * @swagger
@@ -126,16 +127,36 @@ router.get('/summary', authenticate, async (req, res, next) => {
       return new Date(p.updatedAt) > new Date(p.coherenceCheckedAt);
     });
 
-    // Active task counts + blocked
+    // Active task counts + blocked + workspace-wide contradictions.
+    // The contradictions sample uses a combined query of incomplete-task
+    // titles across active plans. One Graphiti round-trip — keeps the
+    // dial responsive even on workspaces with dozens of plans.
     let totalActiveTasks = 0;
     let blockedTasks = 0;
+    const incompleteTitles = [];
     for (const p of activePlans) {
       try {
         const total = await nodesDal.countByPlan(p.id, { nodeType: 'task' });
         const blocked = await nodesDal.countByPlan(p.id, { nodeType: 'task', status: 'blocked' });
         totalActiveTasks += total;
         blockedTasks += blocked;
+        const planNodes = await nodesDal.listByPlan(p.id);
+        for (const n of planNodes) {
+          if ((n.nodeType === 'task' || n.nodeType === 'milestone') && n.status !== 'completed' && n.title) {
+            incompleteTitles.push(n.title);
+          }
+        }
       } catch {}
+    }
+
+    let contradictionsCount = 0;
+    if (graphitiBridge.isAvailable() && incompleteTitles.length > 0) {
+      try {
+        const groupId = graphitiBridge.getGroupId(req.user);
+        const query = incompleteTitles.slice(0, 30).join('. ');
+        const result = await graphitiBridge.detectContradictions({ query, group_id: groupId, max_results: 50 });
+        contradictionsCount = (result?.superseded || []).length;
+      } catch { /* graceful degradation */ }
     }
 
     const blockedRatio = totalActiveTasks > 0 ? blockedTasks / totalActiveTasks : 0;
@@ -160,6 +181,7 @@ router.get('/summary', authenticate, async (req, res, next) => {
         total_active_tasks: totalActiveTasks,
         stale_plan_ratio: Number(stalePlanRatio.toFixed(3)),
         blocked_task_ratio: Number(blockedRatio.toFixed(3)),
+        contradictions: contradictionsCount,
       },
       penalties: {
         decisions: Number(decisionsPenalty.toFixed(3)),
