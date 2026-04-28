@@ -5,7 +5,6 @@
  * This service owns all node business logic and orchestration.
  * All data access goes through node.repository.js — never imports DAL directly.
  */
-const { v4: uuidv4 } = require('uuid');
 const repo = require('../repositories/node.repository');
 const { checkPlanAccess } = require('../../../middleware/planAccess.middleware');
 const { broadcastPlanUpdate } = require('../../../websocket/broadcast');
@@ -498,7 +497,7 @@ async function requestAgent(planId, nodeId, userId, userName, { requestType, mes
   }
 
   await requireAccess(planId, userId);
-  const node = await requireNode(nodeId, planId);
+  await requireNode(nodeId, planId);
 
   const updated = await repo.setAgentRequest(nodeId, {
     type: requestType, message: message || null, requestedBy: userId,

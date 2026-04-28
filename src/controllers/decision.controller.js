@@ -300,7 +300,7 @@ const deleteDecisionRequest = async (req, res, next) => {
     const { id: planId, decisionId } = req.params;
     const userId = req.user.id;
 
-    const { hasAccess, role } = await plansDal.userHasAccess(planId, userId);
+    const { role } = await plansDal.userHasAccess(planId, userId);
     if (role !== 'owner') {
       return res.status(403).json({ error: 'Only plan owners can delete decision requests' });
     }

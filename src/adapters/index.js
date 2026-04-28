@@ -5,7 +5,6 @@ const { WebhookAdapter } = require('./webhook.adapter');
 const { SlackAdapter } = require('./slack.adapter');
 const { ConsoleAdapter } = require('./console.adapter');
 const { WebSocketAdapter } = require('./websocket.adapter');
-const logger = require('../utils/logger');
 
 const adapters = [
   new WebhookAdapter(),

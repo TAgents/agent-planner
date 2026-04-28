@@ -6,7 +6,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth.middleware');
 const { plansDal, usersDal, collaboratorsDal, invitesDal } = require('../db/dal.cjs');
-const { sendPlanInviteEmail, sendCollaboratorAddedEmail, sendInviteAcceptedEmail } = require('../services/email');
+const { sendPlanInviteEmail, sendCollaboratorAddedEmail } = require('../services/email');
 const logger = require('../utils/logger');
 
 // ─── Share plan by email ─────────────────────────────────────────
@@ -23,7 +23,7 @@ router.post('/:id/share', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Role must be viewer, editor, or admin' });
     }
 
-    const { hasAccess, role: userRole, plan } = await plansDal.userHasAccess(planId, userId);
+    const { role: userRole, plan } = await plansDal.userHasAccess(planId, userId);
     if (!plan) return res.status(404).json({ error: 'Plan not found' });
     if (userRole !== 'owner' && userRole !== 'admin') {
       return res.status(403).json({ error: 'Only plan owners and admins can share' });

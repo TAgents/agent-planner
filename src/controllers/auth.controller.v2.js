@@ -3,7 +3,6 @@
  */
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
 const logger = require('../utils/logger');
 const dal = require('../db/dal.cjs');
 

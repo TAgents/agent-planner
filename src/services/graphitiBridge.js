@@ -394,7 +394,6 @@ async function detectContradictions({ query, group_id, max_results = 10 }) {
   if (Array.isArray(result)) facts = result;
   else if (result.facts) facts = result.facts;
   else if (result.results) facts = result.results;
-  else if (result.message && result.facts) facts = result.facts;
 
   const current = facts.filter(f => !f.expired_at);
   const superseded = facts.filter(f => f.expired_at);

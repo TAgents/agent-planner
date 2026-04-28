@@ -176,7 +176,7 @@ router.post('/test-connection', authenticate, async (req, res) => {
  * /onboarding/recent-calls:
  *   get:
  *     summary: Recent tool_calls for the authenticated token (or org)
- *     description: Powers the "last call: 12s ago" liveness on /connect/* and Settings → Integrations.
+ *     description: "Powers the last-call liveness on connect pages and Settings Integrations."
  */
 router.get('/recent-calls', authenticate, async (req, res) => {
   try {

@@ -4,7 +4,6 @@
 const { deliverToAll } = require('../adapters');
 const { publish } = require('./messageBus');
 const { planUrl, taskUrl } = require('../utils/urls');
-const logger = require('../utils/logger');
 
 async function notify(payload) {
   // Deliver directly via adapters

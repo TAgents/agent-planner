@@ -1,5 +1,4 @@
 const { plansDal, nodesDal, usersDal } = require('../db/dal.cjs');
-const logger = require('../utils/logger');
 
 // This will be set by the main server file
 let collaborationServer = null;

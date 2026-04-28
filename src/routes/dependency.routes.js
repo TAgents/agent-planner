@@ -16,8 +16,6 @@ const {
   getDownstream,
   getImpact,
   getCriticalPath,
-  createCrossPlanDependency,
-  listCrossPlanDependencies,
 } = require('../controllers/dependency.controller.v2');
 
 /**

@@ -22,7 +22,7 @@ const formatError = (message, statusCode = 500) => {
  */
 const validateRequired = (obj, required) => {
   return required.every(prop => 
-    obj.hasOwnProperty(prop) && 
+    Object.prototype.hasOwnProperty.call(obj, prop) && 
     obj[prop] !== undefined && 
     obj[prop] !== null && 
     obj[prop] !== ''

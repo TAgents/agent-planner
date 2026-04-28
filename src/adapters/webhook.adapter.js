@@ -2,7 +2,6 @@
  * Webhook Adapter — delivers notifications via HTTP POST
  */
 const { BaseAdapter } = require('./base.adapter');
-const dal = require('../db/dal.cjs');
 const logger = require('../utils/logger');
 
 class WebhookAdapter extends BaseAdapter {

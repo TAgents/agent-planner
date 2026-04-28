@@ -1,5 +1,4 @@
 const { usersDal } = require('../db/dal.cjs');
-const logger = require('../utils/logger');
 
 /**
  * Get the GitHub access token for the authenticated user.
@@ -8,7 +7,7 @@ const logger = require('../utils/logger');
  * This function currently returns null. To enable GitHub integration,
  * implement a direct GitHub OAuth flow and store the token in the users table.
  */
-const getGitHubToken = async (req) => {
+const getGitHubToken = async (_req) => {
   return null;
 };
 

@@ -38,13 +38,6 @@ async function propagateStatus(nodeId, newStatus) {
       // Check if ALL upstream blockers of this target are now completed
       const upstream = await dal.dependenciesDal.listByNode(targetId, 'upstream');
       const upstreamList = Array.isArray(upstream) ? upstream : [];
-      const allResolved = upstreamList.every(u => {
-        const uDep = u.dependency || u;
-        if (uDep.dependencyType !== 'blocks' && uDep.dependencyType !== 'requires') return true;
-        // Check source node status
-        return false; // We need to fetch each source node
-      });
-
       // More accurate check: fetch all source nodes
       const blockerIds = upstreamList
         .filter(u => {

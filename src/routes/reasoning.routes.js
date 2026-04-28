@@ -6,7 +6,6 @@ const router = express.Router();
 const { authenticate } = require('../middleware/auth.middleware.v2');
 const { plansDal } = require('../db/dal.cjs');
 const {
-  propagateStatus,
   detectBottlenecks,
   detectRpiChains,
   topologicalSort,

@@ -24,7 +24,7 @@ const searchNodes = async (req, res, next) => {
 /**
  * Search for artifacts (deprecated - returns empty array)
  */
-const searchArtifacts = async (req, res, next) => {
+const searchArtifacts = async (_req, res, _next) => {
   res.json([]);
 };
 

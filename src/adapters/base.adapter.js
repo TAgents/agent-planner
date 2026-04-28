@@ -16,7 +16,7 @@ class BaseAdapter {
    * @param {Object} payload - { event, plan, task, request, actor, message, userId }
    * @returns {Promise<{success: boolean, details?: any}>}
    */
-  async deliver(payload) {
+  async deliver(_payload) {
     throw new Error(`${this.name}: deliver() not implemented`);
   }
 
@@ -25,7 +25,7 @@ class BaseAdapter {
    * @param {string} userId 
    * @returns {Promise<boolean>}
    */
-  async isConfigured(userId) {
+  async isConfigured(_userId) {
     return false;
   }
 
@@ -34,7 +34,7 @@ class BaseAdapter {
    * @param {string} userId 
    * @returns {Promise<Object|null>}
    */
-  async getSettings(userId) {
+  async getSettings(_userId) {
     return null;
   }
 }

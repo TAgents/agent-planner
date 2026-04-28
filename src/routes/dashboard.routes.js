@@ -5,7 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth.middleware');
-const { plansDal, nodesDal, decisionsDal, collaboratorsDal, usersDal, logsDal, goalsDal } = require('../db/dal.cjs');
+const { plansDal, nodesDal, decisionsDal, goalsDal } = require('../db/dal.cjs');
 const logger = require('../utils/logger');
 
 /**

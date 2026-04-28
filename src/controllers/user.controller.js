@@ -1,5 +1,4 @@
 const { usersDal, plansDal, nodesDal, collaboratorsDal } = require('../db/dal.cjs');
-const logger = require('../utils/logger');
 const bcrypt = require('bcryptjs');
 
 const getUserProfile = async (req, res, next) => {
@@ -26,7 +25,7 @@ const getUserProfile = async (req, res, next) => {
   }
 };
 
-const updateUserProfile = async (req, res, next) => {
+const updateUserProfile = async (req, res, _next) => {
   try {
     const userId = req.user.id;
     const { name, avatar_url } = req.body;

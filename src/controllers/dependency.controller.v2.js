@@ -2,7 +2,6 @@
  * Dependency Controller v2 — Manages node dependency edges
  */
 const dal = require('../db/dal.cjs');
-const { broadcastPlanUpdate } = require('../websocket/broadcast');
 const { checkPlanAccess } = require('../middleware/planAccess.middleware');
 
 function classifyPgError(err) {

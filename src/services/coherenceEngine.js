@@ -223,7 +223,7 @@ function initCoherenceEngine(messageBus) {
 
   messageBus.subscribe('episode.created', async (event) => {
     try {
-      const { episodeId, content, groupId, planId, organizationId } = event;
+      const { episodeId, content, groupId, organizationId } = event;
       if (!content) return;
 
       await checkCoherence({

@@ -1,5 +1,3 @@
-const logger = require('../utils/logger');
-
 /**
  * Upload controller — File storage not yet implemented.
  * Avatar uploads are not yet implemented for v2.
