@@ -22,6 +22,7 @@ export { episodeLinksDal } from './episodeLinks.dal.mjs';
 export { knowledgeLoopDal } from './knowledgeLoop.dal.mjs';
 export { toolCallsDal } from './toolCalls.dal.mjs';
 export { workspacesDal } from './workspaces.dal.mjs';
+export { blueprintsDal } from './blueprints.dal.mjs';
 
 // Raw SQL client for admin queries
 export { sql as rawSql } from '../connection.mjs';
