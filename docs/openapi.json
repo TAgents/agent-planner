@@ -429,6 +429,426 @@
     }
   },
   "paths": {
+    "0": {
+      "0": "/"
+    },
+    "1": {
+      "0": "p"
+    },
+    "2": {
+      "0": "l"
+    },
+    "3": {
+      "0": "a"
+    },
+    "4": {
+      "0": "n"
+    },
+    "5": {
+      "0": "s"
+    },
+    "6": {
+      "0": "/"
+    },
+    "7": {
+      "0": "{"
+    },
+    "8": {
+      "0": "p"
+    },
+    "9": {
+      "0": "l"
+    },
+    "10": {
+      "0": "a"
+    },
+    "11": {
+      "0": "n"
+    },
+    "12": {
+      "0": "I"
+    },
+    "13": {
+      "0": "d"
+    },
+    "14": {
+      "0": "}"
+    },
+    "15": {
+      "0": "/"
+    },
+    "16": {
+      "0": "s"
+    },
+    "17": {
+      "0": "a"
+    },
+    "18": {
+      "0": "v"
+    },
+    "19": {
+      "0": "e"
+    },
+    "20": {
+      "0": "_"
+    },
+    "21": {
+      "0": "a"
+    },
+    "22": {
+      "0": "s"
+    },
+    "23": {
+      "0": "_"
+    },
+    "24": {
+      "0": "b"
+    },
+    "25": {
+      "0": "l"
+    },
+    "26": {
+      "0": "u"
+    },
+    "27": {
+      "0": "e"
+    },
+    "28": {
+      "0": "p"
+    },
+    "29": {
+      "0": "r"
+    },
+    "30": {
+      "0": "i"
+    },
+    "31": {
+      "0": "n"
+    },
+    "32": {
+      "0": "t"
+    },
+    "33": {
+      "0": " "
+    },
+    "34": {
+      "0": "i"
+    },
+    "35": {
+      "0": "s"
+    },
+    "36": {
+      "0": " "
+    },
+    "37": {
+      "0": "t"
+    },
+    "38": {
+      "0": "h"
+    },
+    "39": {
+      "0": "e"
+    },
+    "40": {
+      "0": " "
+    },
+    "41": {
+      "0": "s"
+    },
+    "42": {
+      "0": "y"
+    },
+    "43": {
+      "0": "m"
+    },
+    "44": {
+      "0": "m"
+    },
+    "45": {
+      "0": "e"
+    },
+    "46": {
+      "0": "t"
+    },
+    "47": {
+      "0": "r"
+    },
+    "48": {
+      "0": "i"
+    },
+    "49": {
+      "0": "c"
+    },
+    "50": {
+      "0": " "
+    },
+    "51": {
+      "0": "r"
+    },
+    "52": {
+      "0": "o"
+    },
+    "53": {
+      "0": "u"
+    },
+    "54": {
+      "0": "t"
+    },
+    "55": {
+      "0": "e"
+    },
+    "56": {
+      "0": " "
+    },
+    "57": {
+      "0": "—"
+    },
+    "58": {
+      "0": " "
+    },
+    "59": {
+      "0": "i"
+    },
+    "60": {
+      "0": "m"
+    },
+    "61": {
+      "0": "p"
+    },
+    "62": {
+      "0": "l"
+    },
+    "63": {
+      "0": "e"
+    },
+    "64": {
+      "0": "m"
+    },
+    "65": {
+      "0": "e"
+    },
+    "66": {
+      "0": "n"
+    },
+    "67": {
+      "0": "t"
+    },
+    "68": {
+      "0": "e"
+    },
+    "69": {
+      "0": "d"
+    },
+    "70": {
+      "0": " "
+    },
+    "71": {
+      "0": "h"
+    },
+    "72": {
+      "0": "e"
+    },
+    "73": {
+      "0": "r"
+    },
+    "74": {
+      "0": "e"
+    },
+    "75": {
+      "0": " "
+    },
+    "76": {
+      "0": "u"
+    },
+    "77": {
+      "0": "n"
+    },
+    "78": {
+      "0": "d"
+    },
+    "79": {
+      "0": "e"
+    },
+    "80": {
+      "0": "r"
+    },
+    "81": {
+      "0": " "
+    },
+    "82": {
+      "0": "/"
+    },
+    "83": {
+      "0": "b"
+    },
+    "84": {
+      "0": "l"
+    },
+    "85": {
+      "0": "u"
+    },
+    "86": {
+      "0": "e"
+    },
+    "87": {
+      "0": "p"
+    },
+    "88": {
+      "0": "r"
+    },
+    "89": {
+      "0": "i"
+    },
+    "90": {
+      "0": "n"
+    },
+    "91": {
+      "0": "t"
+    },
+    "92": {
+      "0": "s"
+    },
+    "93": {
+      "0": "/"
+    },
+    "94": {
+      "0": "f"
+    },
+    "95": {
+      "0": "r"
+    },
+    "96": {
+      "0": "o"
+    },
+    "97": {
+      "0": "m"
+    },
+    "98": {
+      "0": "_"
+    },
+    "99": {
+      "0": "p"
+    },
+    "100": {
+      "0": "l"
+    },
+    "101": {
+      "0": "a"
+    },
+    "102": {
+      "0": "n"
+    },
+    "103": {
+      "0": " "
+    },
+    "104": {
+      "0": "t"
+    },
+    "105": {
+      "0": "o"
+    },
+    "106": {
+      "0": " "
+    },
+    "107": {
+      "0": "a"
+    },
+    "108": {
+      "0": "v"
+    },
+    "109": {
+      "0": "o"
+    },
+    "110": {
+      "0": "i"
+    },
+    "111": {
+      "0": "d"
+    },
+    "112": {
+      "0": " "
+    },
+    "113": {
+      "0": "p"
+    },
+    "114": {
+      "0": "o"
+    },
+    "115": {
+      "0": "l"
+    },
+    "116": {
+      "0": "l"
+    },
+    "117": {
+      "0": "u"
+    },
+    "118": {
+      "0": "t"
+    },
+    "119": {
+      "0": "i"
+    },
+    "120": {
+      "0": "n"
+    },
+    "121": {
+      "0": "g"
+    },
+    "122": {
+      "0": " "
+    },
+    "123": {
+      "0": "t"
+    },
+    "124": {
+      "0": "h"
+    },
+    "125": {
+      "0": "e"
+    },
+    "126": {
+      "0": " "
+    },
+    "127": {
+      "0": "p"
+    },
+    "128": {
+      "0": "l"
+    },
+    "129": {
+      "0": "a"
+    },
+    "130": {
+      "0": "n"
+    },
+    "131": {
+      "0": "s"
+    },
+    "132": {
+      "0": " "
+    },
+    "133": {
+      "0": "r"
+    },
+    "134": {
+      "0": "o"
+    },
+    "135": {
+      "0": "u"
+    },
+    "136": {
+      "0": "t"
+    },
+    "137": {
+      "0": "e"
+    },
+    "138": {
+      "0": "r"
+    },
+    "139": {
+      "0": "."
+    },
     "/activity/feed": {
       "get": {
         "summary": "Get activity feed for the current user across all accessible plans",
@@ -1739,6 +2159,188 @@
           },
           "404": {
             "description": "Token not found"
+          }
+        }
+      }
+    },
+    "/blueprints": {
+      "get": {
+        "summary": "List blueprints owned by the user, plus public/unlisted",
+        "tags": [
+          "Blueprints"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "plan",
+                "workspace"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "visibility",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "private",
+                "public",
+                "unlisted"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "owner_only",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of blueprints"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a blueprint from a payload (advanced; usually use save_as endpoints)",
+        "tags": [
+          "Blueprints"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title",
+                  "scope",
+                  "payload"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "plan",
+                      "workspace"
+                    ]
+                  },
+                  "visibility": {
+                    "type": "string",
+                    "enum": [
+                      "private",
+                      "public",
+                      "unlisted"
+                    ]
+                  },
+                  "payload": {
+                    "type": "object"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "organization_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Blueprint created"
+          },
+          "400": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/blueprints/{id}/fork": {
+      "post": {
+        "summary": "Fork a plan-scope blueprint into a target workspace",
+        "tags": [
+          "Blueprints"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workspace_id"
+                ],
+                "properties": {
+                  "workspace_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "title": {
+                    "type": "string",
+                    "description": "Optional override for the new plan title"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "New plan created from blueprint"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "403": {
+            "description": "Access denied to blueprint or workspace"
+          },
+          "404": {
+            "description": "Blueprint or workspace not found"
           }
         }
       }
@@ -6027,6 +6629,43 @@
         }
       }
     },
+    "/plans/public/{id}/knowledge-digest": {
+      "get": {
+        "summary": "Recent agent-learned knowledge for a public plan",
+        "description": "Returns up to N recent Graphiti episodes attributed to this plan\n(via metadata.plan_id or episode_node_links). No auth — only works\non plans whose visibility is `public`. Returns `available: false`\nwhen the knowledge graph is offline so callers can degrade\ngracefully without an error.\n",
+        "tags": [
+          "Plans"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 5
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Episodes (possibly empty)"
+          },
+          "404": {
+            "description": "Plan not found or not public"
+          }
+        }
+      }
+    },
     "/plans/{id}": {
       "get": {
         "summary": "Get a specific plan with its root node",
@@ -8864,6 +9503,236 @@
           },
           "404": {
             "description": "No running loop for this plan"
+          }
+        }
+      }
+    },
+    "/workspaces": {
+      "get": {
+        "summary": "List workspaces in an organization",
+        "tags": [
+          "Workspaces"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of workspaces"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a workspace",
+        "tags": [
+          "Workspaces"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "organization_id",
+                  "title"
+                ],
+                "properties": {
+                  "organization_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "slug": {
+                    "type": "string",
+                    "description": "Optional. Generated from title if absent."
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "icon": {
+                    "type": "string"
+                  },
+                  "is_default": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Workspace created"
+          }
+        }
+      }
+    },
+    "/workspaces/{id}": {
+      "get": {
+        "summary": "Get workspace details (with goal + plan counts)",
+        "tags": [
+          "Workspaces"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace details"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update workspace title, description, icon, or slug",
+        "tags": [
+          "Workspaces"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "icon": {
+                    "type": "string"
+                  },
+                  "slug": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Workspace updated"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Hard-delete a workspace. Goals/plans inside have their workspace_id set to NULL.",
+        "tags": [
+          "Workspaces"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/workspaces/{id}/archive": {
+      "post": {
+        "summary": "Archive a workspace (soft-delete; recoverable via /restore)",
+        "tags": [
+          "Workspaces"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Archived"
           }
         }
       }

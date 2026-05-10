@@ -39,6 +39,8 @@ async function userOwnsOrCanRead(blueprint, userId) {
  *       - in: query
  *         name: owner_only
  *         schema: { type: boolean, default: false }
+ *     responses:
+ *       200: { description: List of blueprints }
  */
 router.get('/', authenticate, async (req, res) => {
   try {
@@ -92,6 +94,9 @@ router.get('/:id', authenticate, async (req, res) => {
  *               payload: { type: object }
  *               tags: { type: array, items: { type: string } }
  *               organization_id: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: Blueprint created }
+ *       400: { description: Validation error }
  */
 router.post('/', authenticate, async (req, res) => {
   try {
@@ -180,6 +185,11 @@ router.delete('/:id', authenticate, async (req, res) => {
  *             properties:
  *               workspace_id: { type: string, format: uuid }
  *               title: { type: string, description: 'Optional override for the new plan title' }
+ *     responses:
+ *       201: { description: New plan created from blueprint }
+ *       400: { description: Validation error }
+ *       403: { description: Access denied to blueprint or workspace }
+ *       404: { description: Blueprint or workspace not found }
  */
 router.post('/:id/fork', authenticate, async (req, res) => {
   try {
