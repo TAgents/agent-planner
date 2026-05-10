@@ -9,6 +9,7 @@ export const goals = pgTable('goals', {
   description: text('description'),
   ownerId: uuid('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'set null' }),
+  workspaceId: uuid('workspace_id'),       // FK added via migration; nullable until backfill+tighten
   type: text('type').notNull(),            // outcome | constraint | metric | principle
   status: text('status').notNull().default('active'),  // draft | active | achieved | paused | abandoned | archived
   // BDI desire/intention distinction
