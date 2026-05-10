@@ -9,7 +9,8 @@ const planService = require('../domains/plan/services/plan.service');
 const listPlans = async (req, res, next) => {
   try {
     const statusFilter = req.query.status ? req.query.status.split(',') : undefined;
-    const result = await planService.listPlans(req.user.id, req.user.organizationId || null, { statusFilter });
+    const workspaceId = req.query.workspace_id || undefined;
+    const result = await planService.listPlans(req.user.id, req.user.organizationId || null, { statusFilter, workspaceId });
     res.json(result);
   } catch (error) {
     if (error instanceof planService.ServiceError) return res.status(error.statusCode).json({ error: error.message });
@@ -22,6 +23,7 @@ const createPlan = async (req, res, next) => {
     const userName = req.user.name || req.user.email;
     const organizationId = req.body.organization_id || req.user.organizationId || null;
     const result = await planService.createPlan(req.user.id, userName, {
+      workspaceId: req.body.workspace_id || null,
       title: req.body.title,
       description: req.body.description,
       status: req.body.status,

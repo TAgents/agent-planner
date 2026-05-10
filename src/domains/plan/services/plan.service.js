@@ -90,8 +90,8 @@ const requirePlan = async (planId) => {
 
 // ── List & Get ─────────────────────────────────────────────
 
-async function listPlans(userId, organizationId, { statusFilter } = {}) {
-  const { owned, shared, organization = [] } = await repo.listForUser(userId, { organizationId, status: statusFilter });
+async function listPlans(userId, organizationId, { statusFilter, workspaceId } = {}) {
+  const { owned, shared, organization = [] } = await repo.listForUser(userId, { organizationId, status: statusFilter, workspaceId });
 
   const ownedResults = await Promise.all(owned.map(async (p) => ({
     ...snakePlan(p), role: 'owner',
@@ -152,7 +152,7 @@ async function getPlan(planId, userId) {
 
 // ── Create ─────────────────────────────────────────────────
 
-async function createPlan(userId, userName, { title, description, status, visibility, metadata, organizationId }) {
+async function createPlan(userId, userName, { title, description, status, visibility, metadata, organizationId, workspaceId }) {
   if (!title) throw new ServiceError('Plan title is required', 400);
 
   const plan = await repo.create({
@@ -161,6 +161,7 @@ async function createPlan(userId, userName, { title, description, status, visibi
     visibility: visibility || 'private',
     metadata: metadata || {},
     organizationId,
+    workspaceId: workspaceId || null,
   });
 
   await repo.createNode({

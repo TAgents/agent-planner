@@ -264,10 +264,11 @@ router.get('/', authenticate, async (req, res) => {
   try {
     const dal = goalsDal;
     const { status, type } = req.query;
+    const workspaceId = req.query.workspace_id || undefined;
     const goals = await dal.findAll({
       organizationId: req.user.organizationId,
       userId: req.user.id,
-    }, { status, type });
+    }, { status, type, workspaceId });
     res.json({ goals });
   } catch (err) {
     await logger.error('List goals error:', err);
@@ -279,11 +280,13 @@ router.get('/', authenticate, async (req, res) => {
 router.post('/', authenticate, validateBody(createGoalSchema), async (req, res) => {
   try {
     const { title, description, type, goalType, status, successCriteria, priority, parentGoalId, organizationId } = req.body;
+    const workspaceId = req.body.workspaceId || req.body.workspace_id || null;
     const goal = await goalsDal.create({
       title,
       description: description || null,
       ownerId: req.user.id,
       organizationId: organizationId || req.user.organizationId || null,
+      workspaceId,
       type,
       goalType,
       status,

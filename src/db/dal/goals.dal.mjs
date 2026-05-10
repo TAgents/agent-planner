@@ -20,6 +20,7 @@ export const goalsDal = {
         description: goals.description,
         ownerId: goals.ownerId,
         organizationId: goals.organizationId,
+        workspaceId: goals.workspaceId,
         type: goals.type,
         status: goals.status,
         goalType: goals.goalType,
@@ -40,6 +41,7 @@ export const goalsDal = {
     return rows.filter(r => {
       if (filters.status && r.status !== filters.status) return false;
       if (filters.type && r.type !== filters.type) return false;
+      if (filters.workspaceId && r.workspaceId !== filters.workspaceId) return false;
       return true;
     });
   },
