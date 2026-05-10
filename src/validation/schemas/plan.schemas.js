@@ -22,7 +22,10 @@ const createPlan = z.object({
   title: nonEmptyString(255).describe('Plan title'),
   description: optionalString(5000).describe('Plan description'),
   status: planStatus.optional().default('draft'),
-  metadata: metadata
+  metadata: metadata,
+  // v1.1 — Workspace + org. Both optional; server defaults to user's active org.
+  workspace_id: z.string().uuid().optional().nullable().describe('Workspace this plan belongs to'),
+  organization_id: z.string().uuid().optional().nullable().describe('Org scope (defaults to user active org)'),
 }).strict();
 
 /**

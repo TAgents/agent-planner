@@ -34,6 +34,9 @@ const createGoal = z.object({
   priority: z.number().int().min(0).max(10).optional().default(0),
   parentGoalId: optionalUuid,
   organizationId: optionalUuid,
+  // v1.1 — Workspace this goal belongs to (camel + snake for compat)
+  workspaceId: optionalUuid,
+  workspace_id: optionalUuid,
 }).strict();
 
 const updateGoal = z.object({
