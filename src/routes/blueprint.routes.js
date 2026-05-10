@@ -225,6 +225,43 @@ router.post('/:id/fork', authenticate, async (req, res) => {
   }
 });
 
+// ─── List plans forked from a blueprint ──────────────────────────
+/**
+ * @swagger
+ * /blueprints/{id}/forks:
+ *   get:
+ *     summary: List plans forked from this blueprint, with workspace decoration
+ *     tags: [Blueprints]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 50 }
+ *     responses:
+ *       200: { description: Array of plan rows decorated with their workspace }
+ *       403: { description: Access denied }
+ *       404: { description: Blueprint not found }
+ */
+router.get('/:id/forks', authenticate, async (req, res) => {
+  try {
+    const bp = await blueprintsDal.findById(req.params.id);
+    if (!bp) return res.status(404).json({ error: 'Blueprint not found' });
+    if (!(await userOwnsOrCanRead(bp, req.user.id))) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const limit = Math.max(1, Math.min(200, parseInt(req.query.limit, 10) || 50));
+    const rows = await blueprintsDal.listForks(bp.id, { limit });
+    return res.json({ forks: rows });
+  } catch (error) {
+    await logger.error('List blueprint forks error:', error);
+    return res.status(500).json({ error: 'Failed to list forks' });
+  }
+});
+
 // ─── Save a plan as a new blueprint ──────────────────────────────
 /**
  * @swagger

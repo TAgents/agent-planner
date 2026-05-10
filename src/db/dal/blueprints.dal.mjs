@@ -80,6 +80,47 @@ export const blueprintsDal = {
       .where(eq(blueprints.id, id));
   },
 
+  /**
+   * List plans (and their workspace) forked from a given blueprint.
+   * Used by the Blueprint Detail page's "Derived Workspaces" panel
+   * and any "where has this been used?" feature.
+   */
+  async listForks(blueprintId, { limit = 50 } = {}) {
+    const rows = await db.select({
+      id: plans.id,
+      title: plans.title,
+      status: plans.status,
+      visibility: plans.visibility,
+      ownerId: plans.ownerId,
+      organizationId: plans.organizationId,
+      workspaceId: plans.workspaceId,
+      forkedAt: plans.forkedAt,
+      createdAt: plans.createdAt,
+      updatedAt: plans.updatedAt,
+    })
+    .from(plans)
+    .where(eq(plans.forkedFromBlueprintId, blueprintId))
+    .orderBy(desc(plans.forkedAt))
+    .limit(limit);
+
+    if (rows.length === 0) return [];
+
+    // Decorate each row with its workspace title (if any)
+    const wsIds = Array.from(new Set(rows.map((r) => r.workspaceId).filter(Boolean)));
+    let wsMap = new Map();
+    if (wsIds.length > 0) {
+      const wsRows = await db.select({ id: workspaces.id, title: workspaces.title, slug: workspaces.slug })
+        .from(workspaces)
+        .where(inArray(workspaces.id, wsIds));
+      wsMap = new Map(wsRows.map((w) => [w.id, w]));
+    }
+
+    return rows.map((r) => ({
+      ...r,
+      workspace: r.workspaceId ? (wsMap.get(r.workspaceId) || null) : null,
+    }));
+  },
+
   // ─── Snapshot a live plan → blueprint payload ───────────────────
   /**
    * Reads a plan + its node tree + dependencies and returns a
