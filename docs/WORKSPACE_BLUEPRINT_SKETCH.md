@@ -1,6 +1,6 @@
 # Workspace + Blueprint — Schema Sketch
 
-**Status:** design sketch, not implementation. Branch: `workspace-blueprint-sketch`.
+**Status:** v1.1 implemented on branch `feat/workspace-blueprint` (API, MCP, tests). Workspace-scope Blueprints (multi-plan/multi-goal payloads), frontend nav, and `NOT NULL` tightening are still pending — see Open questions at the end.
 
 ## The two concepts
 

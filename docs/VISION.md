@@ -151,7 +151,7 @@ The current system enables a single organization to orchestrate agents toward go
 - **Multi-agent coordination** — Intelligent task dispatch based on agent capabilities, claim/lease mechanisms for concurrent execution, cross-agent notifications
 - **Goal-driven autonomy** — Agents that monitor goal health, identify stale or blocked work, and proactively create plans to advance objectives
 - **Learning organizations** — Knowledge that accumulates across the entire organization, with agents that get smarter based on collective experience
-- **Public plan ecosystem** — Teams sharing plans publicly, enabling others to learn from agent-driven approaches to common problems
+- **Workspaces and Blueprints** — Organizations are subdivided into Workspaces (folders that own goals and plans) so a single org isn't a flat soup of unrelated work. Blueprints are dehydrated, reusable shapes that fork into a Workspace as a new plan — the public plan ecosystem made concrete: someone publishes a Blueprint, others fork it, agents execute
 
 ## Summary
 

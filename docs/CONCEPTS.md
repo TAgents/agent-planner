@@ -2,29 +2,33 @@
 
 ## Overview
 
-AgentPlanner is an agent orchestration platform where AI agents autonomously plan and execute work toward human-defined goals. The API, UI, and MCP server form a shared workspace where agents and humans collaborate through structured plans, dependencies, and a persistent knowledge graph.
+AgentPlanner is an agent orchestration platform where AI agents autonomously plan and execute work toward human-defined goals. The API, UI, and MCP server form a shared surface where agents and humans collaborate through structured plans, dependencies, and a persistent knowledge graph.
 
 The key insight: **agents drive, humans steer**. Humans define what success looks like. Agents figure out how to get there — breaking down goals into plans, researching approaches, logging decisions, and executing tasks. Humans review, redirect, and approve at key gates.
 
 ---
 
-## The Hierarchy: Goals → Plans → Nodes
+## The Hierarchy: Organization → Workspace → Goals + Plans → Nodes
 
-Everything in the platform is organized into a three-level hierarchy:
+Everything in the platform is organized into a five-level hierarchy:
 
 ```
-Goal: "Launch auth service by Q2"
- └── Plan: "Auth Service Implementation"
-      └── root
-           ├── Phase: "Research & Design"
-           │    ├── Task: "Research OAuth providers"
-           │    ├── Task: "Design token schema"
-           │    └── Milestone: "Design approved"
-           └── Phase: "Implementation"
-                ├── Task: "Implement JWT middleware"
-                ├── Task: "Build login flow"
-                └── Milestone: "Auth service deployed"
+Organization: "Acme Inc"
+ └── Workspace: "Q2 Launch"           ← folder, groups goals + plans
+      ├── Goal: "Launch auth service by Q2"
+      └── Plan: "Auth Service Implementation"
+           └── root
+                ├── Phase: "Research & Design"
+                │    ├── Task: "Research OAuth providers"
+                │    ├── Task: "Design token schema"
+                │    └── Milestone: "Design approved"
+                └── Phase: "Implementation"
+                     ├── Task: "Implement JWT middleware"
+                     ├── Task: "Build login flow"
+                     └── Milestone: "Auth service deployed"
 ```
+
+A **Blueprint** is a reusable, dehydrated form of a Plan (and eventually of a whole Workspace) that forks into a Workspace as a new Plan. Blueprints are the public-plan-ecosystem primitive: someone publishes a Blueprint, others fork it. See `WORKSPACE_BLUEPRINT_SKETCH.md` for design details.
 
 ### Goals
 
@@ -239,12 +243,16 @@ Claims prevent multiple agents from working on the same task simultaneously.
 
 ---
 
-## Organizations
+## Organizations and Workspaces
 
 Organizations provide multi-tenancy. Each org gets:
 - **Isolated knowledge namespace** — knowledge graph entries are scoped to the org
 - **Shared plans** — members collaborate on plans within the org
 - **Role-based access** — `owner`, `admin`, `member`
+
+Inside an organization, work is grouped into **Workspaces**. A Workspace is a folder that owns goals and plans — purely a grouping primitive, no semantic behavior. Every org gets a `Default` workspace; users can create more (e.g., `Q2 Launch`, `Internal Tools`, `Client X`) to keep distinct streams of work separate.
+
+**Blueprints** are reusable, dehydrated shapes that fork into a Workspace as a new Plan. A Blueprint captures structure, agent_instructions, and dependencies; it explicitly excludes run-state (statuses, claims, knowledge episodes, logs, decisions). Save a working plan as a Blueprint, share it (private/unlisted/public), let others fork it.
 
 ---
 
