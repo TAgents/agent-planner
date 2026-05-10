@@ -64,6 +64,9 @@ export const goalsDal = {
       description: goal.description,
       ownerId: goal.owner_id,
       organizationId: goal.organization_id,
+      // v1.1 — Workspace this goal belongs to (snake + camel for compat)
+      workspaceId: goal.workspace_id,
+      workspace_id: goal.workspace_id,
       type: goal.type,
       status: goal.status,
       goalType: goal.goal_type,

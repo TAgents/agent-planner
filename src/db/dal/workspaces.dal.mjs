@@ -31,7 +31,31 @@ export const workspacesDal = {
     const where = includeArchived
       ? eq(workspaces.organizationId, organizationId)
       : and(eq(workspaces.organizationId, organizationId), isNull(workspaces.archivedAt));
-    return db.select().from(workspaces).where(where).orderBy(asc(workspaces.createdAt));
+    // Decorate each row with goal + plan counts in a single round trip via
+    // correlated subqueries — keeps the list endpoint useful for the
+    // Workspaces Index without an N+1 fan-out from the UI.
+    return db
+      .select({
+        id: workspaces.id,
+        organizationId: workspaces.organizationId,
+        ownerId: workspaces.ownerId,
+        title: workspaces.title,
+        slug: workspaces.slug,
+        description: workspaces.description,
+        icon: workspaces.icon,
+        isDefault: workspaces.isDefault,
+        archivedAt: workspaces.archivedAt,
+        forkedFromBlueprintId: workspaces.forkedFromBlueprintId,
+        forkedAt: workspaces.forkedAt,
+        metadata: workspaces.metadata,
+        createdAt: workspaces.createdAt,
+        updatedAt: workspaces.updatedAt,
+        goalCount: drizzleSql`(SELECT COUNT(*)::int FROM goals g WHERE g.workspace_id = workspaces.id)`.as('goal_count'),
+        planCount: drizzleSql`(SELECT COUNT(*)::int FROM plans p WHERE p.workspace_id = workspaces.id)`.as('plan_count'),
+      })
+      .from(workspaces)
+      .where(where)
+      .orderBy(asc(workspaces.createdAt));
   },
 
   async findDefault(organizationId) {

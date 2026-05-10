@@ -22,6 +22,10 @@ class ServiceError extends Error {
 const snakePlan = (p) => ({
   id: p.id, title: p.title, description: p.description,
   owner_id: p.ownerId, organization_id: p.organizationId,
+  // v1.1 — Workspace + Blueprint provenance
+  workspace_id: p.workspaceId ?? null,
+  forked_from_blueprint_id: p.forkedFromBlueprintId ?? null,
+  forked_at: p.forkedAt ?? null,
   status: p.status, visibility: p.visibility,
   is_public: p.isPublic, view_count: p.viewCount,
   github_repo_owner: p.githubRepoOwner, github_repo_name: p.githubRepoName,

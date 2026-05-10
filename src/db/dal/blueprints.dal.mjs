@@ -133,7 +133,11 @@ export const blueprintsDal = {
     if (!plan) return null;
 
     const nodes = await db.select().from(planNodes).where(eq(planNodes.planId, planId));
-    const deps = await db.select().from(nodeDependencies).where(eq(nodeDependencies.planId, planId));
+    // node_dependencies has no plan_id column — filter by membership in this plan's node set
+    const nodeIds = nodes.map((n) => n.id);
+    const deps = nodeIds.length === 0
+      ? []
+      : await db.select().from(nodeDependencies).where(inArray(nodeDependencies.sourceNodeId, nodeIds));
 
     // Map UUIDs to opaque keys local to the payload so consumers don't think
     // they're meaningful database IDs.
@@ -274,7 +278,7 @@ export const blueprintsDal = {
       if (!sourceId || !targetId) continue;
       try {
         await db.insert(nodeDependencies).values({
-          planId: newPlan.id,
+          // node_dependencies has no plan_id column; the plan is implied by source_node_id
           sourceNodeId: sourceId,
           targetNodeId: targetId,
           dependencyType: d.dependency_type || 'blocks',
