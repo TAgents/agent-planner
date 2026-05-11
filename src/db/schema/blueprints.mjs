@@ -30,6 +30,15 @@ export const blueprints = pgTable('blueprints', {
   forkCount: integer('fork_count').notNull().default(0),
   tags: text('tags').array().default([]),
 
+  // Gallery curation (v1.1) — see scripts/curate-blueprints.mjs.
+  // tier: 'featured' | 'community' | 'experimental' | 'example'
+  tier: text('tier'),
+  audience: text('audience').array().default([]),
+  useCase: text('use_case').array().default([]),
+  durationLabel: text('duration_label'),
+  outcome: text('outcome'),
+  whyFork: text('why_fork'),
+
   publishedAt: timestamp('published_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
@@ -37,4 +46,5 @@ export const blueprints = pgTable('blueprints', {
   index('blueprints_owner_idx').on(table.ownerId),
   index('blueprints_visibility_idx').on(table.visibility),
   index('blueprints_scope_idx').on(table.scope),
+  index('blueprints_tier_idx').on(table.tier),
 ]);
