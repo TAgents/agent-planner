@@ -121,6 +121,7 @@ export const goalsDal = {
         description: goals.description,
         ownerId: goals.ownerId,
         organizationId: goals.organizationId,
+        workspaceId: goals.workspaceId,
         type: goals.type,
         status: goals.status,
         goalType: goals.goalType,

@@ -199,6 +199,7 @@ async function updatePlan(planId, userId, userName, data) {
   if (data.qualityScore !== undefined) updates.qualityScore = data.qualityScore;
   if (data.qualityAssessedAt !== undefined) updates.qualityAssessedAt = data.qualityAssessedAt;
   if (data.qualityRationale !== undefined) updates.qualityRationale = data.qualityRationale;
+  if (data.workspaceId !== undefined) updates.workspaceId = data.workspaceId;
 
   const plan = await repo.update(planId, updates);
   if (!plan) throw new ServiceError('Plan not found', 404);

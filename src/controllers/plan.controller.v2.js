@@ -56,6 +56,7 @@ const updatePlan = async (req, res, next) => {
       description: req.body.description,
       status: req.body.status,
       metadata: req.body.metadata,
+      workspaceId: req.body.workspace_id === null ? null : (req.body.workspace_id || undefined),
       qualityScore: req.body.quality_score,
       qualityAssessedAt: req.body.quality_assessed_at,
       qualityRationale: req.body.quality_rationale,

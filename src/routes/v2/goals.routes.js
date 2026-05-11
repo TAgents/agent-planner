@@ -320,6 +320,9 @@ router.put('/:id', authenticate, validateBody(updateGoalSchema), async (req, res
     if (!existing) return;
 
     const { title, description, type, status, goalType, successCriteria, priority, parentGoalId } = req.body;
+    const workspaceId = req.body.workspaceId !== undefined
+      ? req.body.workspaceId
+      : (req.body.workspace_id !== undefined ? req.body.workspace_id : undefined);
     const updates = {};
     if (title !== undefined) updates.title = title;
     if (description !== undefined) updates.description = description;
@@ -329,6 +332,7 @@ router.put('/:id', authenticate, validateBody(updateGoalSchema), async (req, res
     if (successCriteria !== undefined) updates.successCriteria = successCriteria;
     if (priority !== undefined) updates.priority = priority;
     if (parentGoalId !== undefined) updates.parentGoalId = parentGoalId;
+    if (workspaceId !== undefined) updates.workspaceId = workspaceId;
 
     const goal = await goalsDal.update(req.params.id, updates);
     res.json(goal);

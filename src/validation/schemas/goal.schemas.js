@@ -48,6 +48,9 @@ const updateGoal = z.object({
   successCriteria: successCriteria,
   priority: z.number().int().min(0).max(10).optional(),
   parentGoalId: optionalUuid,
+  // v1.1 — move this goal to a different workspace, or unassign with null
+  workspaceId: z.string().uuid().nullable().optional(),
+  workspace_id: z.string().uuid().nullable().optional(),
 }).strict();
 
 const goalIdParam = z.object({
