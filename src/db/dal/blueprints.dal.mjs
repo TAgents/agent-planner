@@ -13,6 +13,16 @@ export const blueprintsDal = {
     return row ?? null;
   },
 
+  async listPublic({ scope, limit = 50 } = {}) {
+    const conditions = [eq(blueprints.visibility, 'public')];
+    if (scope) conditions.push(eq(blueprints.scope, scope));
+    return db.select()
+      .from(blueprints)
+      .where(and(...conditions))
+      .orderBy(desc(blueprints.forkCount), desc(blueprints.publishedAt))
+      .limit(limit);
+  },
+
   async listForUser(userId, { scope, visibility, ownerOnly = false } = {}) {
     const conditions = [];
     if (ownerOnly) {

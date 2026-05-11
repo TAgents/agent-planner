@@ -21,6 +21,67 @@ async function userOwnsOrCanRead(blueprint, userId) {
   return false;
 }
 
+// ─── Public list (unauthenticated) ───────────────────────────────
+// Mounted at /blueprints/public before the authenticated /:id route.
+// Returns only blueprints with visibility=public; for unlisted, the
+// caller needs the direct id (handled by /public/:id below).
+/**
+ * @swagger
+ * /blueprints/public:
+ *   get:
+ *     summary: List blueprints with visibility=public (no auth required)
+ *     tags: [Blueprints]
+ *     parameters:
+ *       - in: query
+ *         name: scope
+ *         schema: { type: string, enum: [plan, workspace] }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 50 }
+ *     responses:
+ *       200: { description: List of public blueprints }
+ */
+router.get('/public', async (req, res) => {
+  try {
+    const all = await blueprintsDal.listPublic({
+      scope: req.query.scope,
+      limit: Math.max(1, Math.min(200, parseInt(req.query.limit, 10) || 50)),
+    });
+    return res.json({ blueprints: all });
+  } catch (error) {
+    await logger.error('List public blueprints error:', error);
+    return res.status(500).json({ error: 'Failed to list public blueprints' });
+  }
+});
+
+/**
+ * @swagger
+ * /blueprints/public/{id}:
+ *   get:
+ *     summary: Get a single Blueprint by id when visibility is public or unlisted
+ *     tags: [Blueprints]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Blueprint detail }
+ *       404: { description: Not found or not shareable }
+ */
+router.get('/public/:id', async (req, res) => {
+  try {
+    const bp = await blueprintsDal.findById(req.params.id);
+    if (!bp || !['public', 'unlisted'].includes(bp.visibility)) {
+      return res.status(404).json({ error: 'Blueprint not found' });
+    }
+    return res.json(bp);
+  } catch (error) {
+    await logger.error('Get public blueprint error:', error);
+    return res.status(500).json({ error: 'Failed to get blueprint' });
+  }
+});
+
 // ─── List blueprints visible to the user ─────────────────────────
 /**
  * @swagger
