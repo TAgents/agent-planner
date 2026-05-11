@@ -63,6 +63,8 @@ const dashboardRoutes = require('./routes/dashboard.routes');
 const onboardingRoutes = require('./routes/onboarding.routes');
 const slackRoutes = require('./routes/slack.routes');
 const adminRoutes = require('./routes/admin.routes');
+const workspaceRoutes = require('./routes/workspace.routes');
+const blueprintRoutes = require('./routes/blueprint.routes');
 
 // Import WebSocket collaboration server
 const CollaborationServer = require('./websocket/collaboration');
@@ -163,6 +165,12 @@ app.use('/invites', generalLimiter, shareRoutes);
 
 // Organization routes
 app.use('/organizations', generalLimiter, organizationRoutes);
+
+// Workspace routes (folders under an organization, own goals + plans)
+app.use('/workspaces', generalLimiter, workspaceRoutes);
+
+// Blueprint routes (reusable templates; fork into a workspace)
+app.use('/blueprints', generalLimiter, blueprintRoutes);
 
 app.use('/goals', generalLimiter, goalsV2Routes);
 

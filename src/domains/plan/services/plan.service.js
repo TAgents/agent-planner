@@ -22,6 +22,10 @@ class ServiceError extends Error {
 const snakePlan = (p) => ({
   id: p.id, title: p.title, description: p.description,
   owner_id: p.ownerId, organization_id: p.organizationId,
+  // v1.1 — Workspace + Blueprint provenance
+  workspace_id: p.workspaceId ?? null,
+  forked_from_blueprint_id: p.forkedFromBlueprintId ?? null,
+  forked_at: p.forkedAt ?? null,
   status: p.status, visibility: p.visibility,
   is_public: p.isPublic, view_count: p.viewCount,
   github_repo_owner: p.githubRepoOwner, github_repo_name: p.githubRepoName,
@@ -90,8 +94,8 @@ const requirePlan = async (planId) => {
 
 // ── List & Get ─────────────────────────────────────────────
 
-async function listPlans(userId, organizationId, { statusFilter } = {}) {
-  const { owned, shared, organization = [] } = await repo.listForUser(userId, { organizationId, status: statusFilter });
+async function listPlans(userId, organizationId, { statusFilter, workspaceId } = {}) {
+  const { owned, shared, organization = [] } = await repo.listForUser(userId, { organizationId, status: statusFilter, workspaceId });
 
   const ownedResults = await Promise.all(owned.map(async (p) => ({
     ...snakePlan(p), role: 'owner',
@@ -152,7 +156,7 @@ async function getPlan(planId, userId) {
 
 // ── Create ─────────────────────────────────────────────────
 
-async function createPlan(userId, userName, { title, description, status, visibility, metadata, organizationId }) {
+async function createPlan(userId, userName, { title, description, status, visibility, metadata, organizationId, workspaceId }) {
   if (!title) throw new ServiceError('Plan title is required', 400);
 
   const plan = await repo.create({
@@ -161,6 +165,7 @@ async function createPlan(userId, userName, { title, description, status, visibi
     visibility: visibility || 'private',
     metadata: metadata || {},
     organizationId,
+    workspaceId: workspaceId || null,
   });
 
   await repo.createNode({
@@ -194,6 +199,7 @@ async function updatePlan(planId, userId, userName, data) {
   if (data.qualityScore !== undefined) updates.qualityScore = data.qualityScore;
   if (data.qualityAssessedAt !== undefined) updates.qualityAssessedAt = data.qualityAssessedAt;
   if (data.qualityRationale !== undefined) updates.qualityRationale = data.qualityRationale;
+  if (data.workspaceId !== undefined) updates.workspaceId = data.workspaceId;
 
   const plan = await repo.update(planId, updates);
   if (!plan) throw new ServiceError('Plan not found', 404);

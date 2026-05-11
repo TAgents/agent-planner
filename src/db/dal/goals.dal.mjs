@@ -20,6 +20,7 @@ export const goalsDal = {
         description: goals.description,
         ownerId: goals.ownerId,
         organizationId: goals.organizationId,
+        workspaceId: goals.workspaceId,
         type: goals.type,
         status: goals.status,
         goalType: goals.goalType,
@@ -40,6 +41,7 @@ export const goalsDal = {
     return rows.filter(r => {
       if (filters.status && r.status !== filters.status) return false;
       if (filters.type && r.type !== filters.type) return false;
+      if (filters.workspaceId && r.workspaceId !== filters.workspaceId) return false;
       return true;
     });
   },
@@ -62,6 +64,9 @@ export const goalsDal = {
       description: goal.description,
       ownerId: goal.owner_id,
       organizationId: goal.organization_id,
+      // v1.1 — Workspace this goal belongs to (snake + camel for compat)
+      workspaceId: goal.workspace_id,
+      workspace_id: goal.workspace_id,
       type: goal.type,
       status: goal.status,
       goalType: goal.goal_type,
@@ -116,6 +121,7 @@ export const goalsDal = {
         description: goals.description,
         ownerId: goals.ownerId,
         organizationId: goals.organizationId,
+        workspaceId: goals.workspaceId,
         type: goals.type,
         status: goals.status,
         goalType: goals.goalType,

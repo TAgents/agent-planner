@@ -14,3 +14,5 @@ export * from './claims.mjs';
 export * from './episodeLinks.mjs';
 export * from './knowledgeLoop.mjs';
 export * from './toolCalls.mjs';
+export * from './workspaces.mjs';
+export * from './blueprints.mjs';

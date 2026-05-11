@@ -68,13 +68,19 @@ const register = async (req, res, next) => {
 
     await logger.auth(`User registered: ${email} (${user.id})`);
 
+    // v1.1 invariant: every user belongs to ≥1 org with ≥1 workspace.
+    // Provisions a personal org (is_personal=true) + Default workspace.
+    // Non-fatal on failure — backfill-personal-workspaces.mjs can cover gaps.
+    const { ensurePersonalScope } = require('../services/personalScope');
+    await ensurePersonalScope(user);
+
     // Generate tokens
     const session = generateTokens(user);
 
     // Convert pending invites
     // TODO: migrate convertPendingInvites to use DAL
 
-    // Include org memberships in response
+    // Include org memberships in response (now includes the personal org)
     const orgs = await dal.organizationsDal.listForUser(user.id);
 
     res.status(201).json({

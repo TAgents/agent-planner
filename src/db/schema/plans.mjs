@@ -15,6 +15,9 @@ export const plans = pgTable('plans', {
   visibility: varchar('visibility', { length: 20 }).notNull().default('private'), // private | public | unlisted
   isPublic: boolean('is_public').notNull().default(false),     // legacy compat
   organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'set null' }),
+  workspaceId: uuid('workspace_id'),                       // FK added via migration; nullable until backfill+tighten
+  forkedFromBlueprintId: uuid('forked_from_blueprint_id'), // FK added via migration
+  forkedAt: timestamp('forked_at', { withTimezone: true }),
 
   // GitHub integration
   githubRepoOwner: varchar('github_repo_owner', { length: 255 }),
