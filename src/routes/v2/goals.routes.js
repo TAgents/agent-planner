@@ -16,6 +16,7 @@ const dependenciesDal = require('../../db/dal.cjs').dependenciesDal;
 const nodesDal = require('../../db/dal.cjs').nodesDal;
 const plansDal = require('../../db/dal.cjs').plansDal;
 const logsDal = require('../../db/dal.cjs').logsDal;
+const workspacesDal = require('../../db/dal.cjs').workspacesDal;
 const graphitiBridge = require('../../services/graphitiBridge');
 const reasoning = require('../../services/reasoning');
 
@@ -280,12 +281,19 @@ router.get('/', authenticate, async (req, res) => {
 router.post('/', authenticate, validateBody(createGoalSchema), async (req, res) => {
   try {
     const { title, description, type, goalType, status, successCriteria, priority, parentGoalId, organizationId } = req.body;
-    const workspaceId = req.body.workspaceId || req.body.workspace_id || null;
+    const resolvedOrgId = organizationId || req.user.organizationId || null;
+    let workspaceId = req.body.workspaceId || req.body.workspace_id || null;
+    // Workspace-first invariant: fall back to the org's default workspace so
+    // every goal lands inside the structure the rest of the UI assumes.
+    if (!workspaceId && resolvedOrgId) {
+      const defaultWs = await workspacesDal.findDefault(resolvedOrgId);
+      if (defaultWs) workspaceId = defaultWs.id;
+    }
     const goal = await goalsDal.create({
       title,
       description: description || null,
       ownerId: req.user.id,
-      organizationId: organizationId || req.user.organizationId || null,
+      organizationId: resolvedOrgId,
       workspaceId,
       type,
       goalType,

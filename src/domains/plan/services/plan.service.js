@@ -159,13 +159,22 @@ async function getPlan(planId, userId) {
 async function createPlan(userId, userName, { title, description, status, visibility, metadata, organizationId, workspaceId }) {
   if (!title) throw new ServiceError('Plan title is required', 400);
 
+  // Workspace-first invariant: if the caller didn't pin a workspace, drop the
+  // plan into the org's default workspace so it never floats outside the
+  // structure. Stays null only when the org genuinely has no workspaces.
+  let resolvedWorkspaceId = workspaceId || null;
+  if (!resolvedWorkspaceId && organizationId) {
+    const defaultWs = await repo.findDefaultWorkspace(organizationId);
+    if (defaultWs) resolvedWorkspaceId = defaultWs.id;
+  }
+
   const plan = await repo.create({
     title, description: description || '',
     ownerId: userId, status: status || 'draft',
     visibility: visibility || 'private',
     metadata: metadata || {},
     organizationId,
-    workspaceId: workspaceId || null,
+    workspaceId: resolvedWorkspaceId,
   });
 
   await repo.createNode({

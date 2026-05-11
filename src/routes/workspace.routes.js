@@ -47,7 +47,10 @@ async function requireWorkspaceAccess(workspaceId, userId) {
  */
 router.get('/', authenticate, async (req, res) => {
   try {
-    const orgId = req.query.organization_id;
+    // Fall back to the authenticated user's active org so API consumers
+    // (and direct curl tests) don't need to thread organization_id manually.
+    // Explicit query param still wins for multi-org users switching context.
+    const orgId = req.query.organization_id || req.user.organizationId;
     if (!orgId) return res.status(400).json({ error: 'organization_id is required' });
 
     const membership = await requireOrgAccess(orgId, req.user.id);

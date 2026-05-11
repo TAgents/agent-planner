@@ -8,6 +8,9 @@ const request = require('supertest');
 jest.mock('../../utils/logger', () => ({
   error: jest.fn(),
   warn: jest.fn(),
+  api: jest.fn(),
+  auth: jest.fn(),
+  info: jest.fn(),
 }));
 
 // Mock auth middleware
@@ -31,8 +34,12 @@ const mockGoalsDal = {
   getEvaluations: jest.fn(),
 };
 
+const mockWorkspacesDal = {
+  findDefault: jest.fn().mockResolvedValue(null),
+};
+
 // Mock DAL via CJS bridge
-jest.mock('../../db/dal.cjs', () => ({ goalsDal: mockGoalsDal }));
+jest.mock('../../db/dal.cjs', () => ({ goalsDal: mockGoalsDal, workspacesDal: mockWorkspacesDal }));
 
 const goalsRoutes = require('./goals.routes');
 

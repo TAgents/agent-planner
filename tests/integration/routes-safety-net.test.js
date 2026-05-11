@@ -362,6 +362,15 @@ jest.mock('../../src/db/dal.cjs', () => {
       create: jest.fn().mockResolvedValue(null),
       release: jest.fn().mockResolvedValue(null),
     },
+    workspacesDal: {
+      findDefault: jest.fn().mockResolvedValue(null),
+      findById: jest.fn().mockResolvedValue(null),
+      findBySlug: jest.fn().mockResolvedValue(null),
+      listForOrganization: jest.fn().mockResolvedValue([]),
+      create: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue(null),
+      delete: jest.fn().mockResolvedValue(null),
+    },
   };
   return dalProxy;
 });

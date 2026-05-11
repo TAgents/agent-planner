@@ -39,6 +39,10 @@ const listGoalTethersForPlanIds = (planIds) =>
 const latestLogTimestampsByPlanIds = (planIds) =>
   dal.logsDal.latestLogTimestampsByPlanIds(planIds);
 
+// Workspace fallback for create-plan — enforce the workspace-first invariant.
+const findDefaultWorkspace = (organizationId) =>
+  dal.workspacesDal.findDefault(organizationId);
+
 module.exports = {
   // Plan CRUD
   findById,
@@ -62,4 +66,6 @@ module.exports = {
   // Bulk decorators
   listGoalTethersForPlanIds,
   latestLogTimestampsByPlanIds,
+  // Workspace fallback
+  findDefaultWorkspace,
 };
