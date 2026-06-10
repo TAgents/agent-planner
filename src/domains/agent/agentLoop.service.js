@@ -243,13 +243,23 @@ async function chooseTask(user, { plan_id, goal_id, fresh = false }) {
     }
   }
 
-  const fallback = await dal.nodesDal.listByPlanIds(planIds, {
+  // Fail closed: not_started tasks may exist but be dep-blocked. Distinguish
+  // "no work in scope" from "all remaining work is blocked on incomplete deps"
+  // so callers can act on it instead of being handed a dep-blind task.
+  const notStartedExists = await dal.nodesDal.listByPlanIds(planIds, {
     nodeType: 'task',
     status: 'not_started',
     limit: 1,
   });
-  if (fallback[0]) return { node: fallback[0], source: 'my_tasks_fallback' };
-  throw new AgentLoopError('No actionable task found in scope', 404, 'not_found');
+  if (notStartedExists[0]) {
+    throw new AgentLoopError(
+      'All remaining tasks are blocked on incomplete dependencies',
+      404,
+      'not_found',
+      { reason: 'blocked_on_dep' },
+    );
+  }
+  throw new AgentLoopError('No actionable task found in scope', 404, 'not_found', { reason: 'no_work_in_scope' });
 }
 
 async function startWorkSession(user, {
