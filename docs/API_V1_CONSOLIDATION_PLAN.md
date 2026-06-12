@@ -1,6 +1,6 @@
 # API v1 Consolidation Plan — 231 endpoints → ~55 public
 
-**Status:** Phase 3 complete — `/v1` router mounted + dual OpenAPI specs; next: Phase 4 MCP client migration
+**Status:** Phase 4 complete — MCP 1.2.0 calls the /v1 facades (fallback kept); next: Phase 5 deletions (gated on 30-day `tool_calls` telemetry on prod)
 **Branch:** `api-v1-consolidation` (phases may split into separate PRs)
 **Origin:** Architecture review (2026-06-12) — the REST surface accumulated through
 four pivots and now exposes ~231 endpoints, while the MCP layer proves the same
@@ -171,10 +171,20 @@ API; this plan makes a v1 public surface shaped like it.
   fixed a malformed `@swagger` comment in `blueprint.routes.js` that was
   spraying 140 bogus numeric path keys into the spec.
 
-### Phase 4 — MCP client migration *(agent-planner-mcp repo)*
+### Phase 4 — MCP client migration *(agent-planner-mcp repo — DONE, v1.2.0)*
 - Point `api-client.js` at `/v1` paths; replace client-side fan-outs with the
   new server-side facades where they exist (briefing already does this).
 - Release as a minor version; old backend paths still work.
+- **Shipped (commit f1f5b71):** `api-client.js` exposes a `v1` module on the
+  default client and the per-session factory; `goal_state` (5→1 calls),
+  `recall_knowledge` (4→1), `update_task` (4→1), `share_plan` (N→1),
+  `briefing` and `claim_next_task` call /v1 first. Old backends detected via
+  `isV1Unavailable()` (bare 404 = route missing) — every handler keeps its
+  legacy fan-out as fallback. 115 tests green incl. new
+  `__tests__/v1-facade-migration.test.js`. Remaining (optional): migrating
+  the plain CRUD methods (plans/nodes/goals/orgs/etc.) to /v1 paths — zero
+  behavior gain (identical handlers), only telemetry value; do alongside
+  Phase 5 deprecation headers. npm publish of 1.2.0 not yet done.
 
 ### Phase 5 — Deletions & deprecation headers
 - Endpoints classified `remove` in Phase 1 get deleted after a telemetry check
