@@ -7,9 +7,21 @@ A collaborative planning system for humans and AI agents with dependency graphs,
 ## Base URL
 
 - **Local development:** `http://localhost:3000`
-- **Production:** `https://api.agent-planner.com`
-- **Swagger UI:** `http://localhost:3000/api-docs` (interactive docs)
-- **OpenAPI JSON:** `http://localhost:3000/api-docs-json`
+- **Production:** `https://agentplanner.io/api`
+
+## Public v1 API vs internal routes
+
+The **public, versioned surface lives under `/v1`** (~70 intent-shaped
+operations — see `docs/API_V1_CONSOLIDATION_PLAN.md`). It aliases the
+internal routes below plus composed facades (`/v1/goals/:id/state`,
+`/v1/plans/:id/analysis`, `/v1/knowledge/search`, `/v1/tasks/:nodeId/update`,
+`/v1/plans/:id/share`, `/v1/briefing`, `/v1/tasks/claim-next`). External
+integrations should use `/v1`; the unversioned routes documented below remain
+mounted as the web UI's contract but may change without notice.
+
+- **Swagger UI (v1):** `http://localhost:3000/api-docs`
+- **Swagger UI (internal):** `http://localhost:3000/api-docs/internal`
+- **Spec files:** `docs/openapi.v1.json` (strictly validated) and `docs/openapi.json` (full internal)
 
 ## Authentication
 
@@ -146,16 +158,21 @@ These endpoints are a facade over the lower-level domain APIs. Prefer them for M
 
 - `GET /context/progressive?node_id=X&depth=1-4&token_budget=N` - Progressive context assembly
 - `GET /context/suggest?plan_id=X&limit=5` - Suggest next actionable tasks
-- `POST /context/compact` - Trigger research output compaction
 - `GET /context?node_id=X` - Legacy focused context (leaf-up)
 - `GET /context/plan?plan_id=X` - Legacy plan context
+
+Research compaction runs automatically via the message bus on status change
+(the manual `POST /context/compact` trigger was removed).
 
 ### Reasoning (Automated analysis)
 
 - `GET /plans/{id}/bottlenecks` - Bottleneck detection (high fan-out nodes)
 - `GET /plans/{id}/rpi-chains` - RPI chain detection
-- `GET /plans/{id}/schedule` - Topological execution order
-- `GET /plans/{id}/decomposition-alerts` - Tasks needing decomposition
+
+Topological scheduling and decomposition detection remain available as
+internal services (`reasoning.js`); their standalone endpoints were removed.
+Bottlenecks, critical path, RPI chains, and coherence are bundled in
+`GET /v1/plans/{id}/analysis`.
 
 ### Advanced (Specialized)
 
