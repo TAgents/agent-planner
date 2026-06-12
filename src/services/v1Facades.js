@@ -37,23 +37,25 @@ async function coherenceIssues(planId) {
   const flaggedNodes = await dal.nodesDal.listByPlan(planId, {
     coherenceStatus: 'stale_beliefs,contradiction_detected',
   });
-  const issues = await Promise.all(
-    flaggedNodes.map(async (node) => {
-      const links = await dal.episodeLinksDal.listByNode(node.id);
-      return {
-        node_id: node.id,
-        title: node.title,
-        status: node.status,
-        node_type: node.nodeType,
-        coherence_status: node.coherenceStatus,
-        triggering_episodes: links.map(l => ({
-          episode_id: l.episodeId,
-          link_type: l.linkType,
-          linked_at: l.createdAt,
-        })),
-      };
-    })
-  );
+  // One IN(...) query for every flagged node's episode links.
+  const allLinks = await dal.episodeLinksDal.listByNodeIds(flaggedNodes.map(n => n.id));
+  const linksByNode = new Map();
+  for (const link of allLinks) {
+    if (!linksByNode.has(link.nodeId)) linksByNode.set(link.nodeId, []);
+    linksByNode.get(link.nodeId).push(link);
+  }
+  const issues = flaggedNodes.map((node) => ({
+    node_id: node.id,
+    title: node.title,
+    status: node.status,
+    node_type: node.nodeType,
+    coherence_status: node.coherenceStatus,
+    triggering_episodes: (linksByNode.get(node.id) || []).map(l => ({
+      episode_id: l.episodeId,
+      link_type: l.linkType,
+      linked_at: l.createdAt,
+    })),
+  }));
   return { issues, count: issues.length };
 }
 
@@ -219,13 +221,21 @@ async function updateTask(user, nodeId, {
   }
 
   // Claim release — auto if status is terminal, explicit override otherwise.
+  // Only the user who created the claim may release it through this facade;
+  // another agent's lease is reported as a failure, not silently broken
+  // (explicit handoff goes through DELETE /v1/tasks/:nodeId/claim).
   const shouldRelease = typeof release_claim === 'boolean'
     ? release_claim
     : status === 'completed' || status === 'blocked';
   if (shouldRelease) {
     try {
       const claim = await dal.claimsDal.getActiveClaim(nodeId);
-      if (claim) {
+      if (claim && claim.createdBy && claim.createdBy !== user.id) {
+        result.failures.push({
+          step: 'release_claim',
+          error: `Task is claimed by another agent (${claim.agentId}); not released`,
+        });
+      } else if (claim) {
         const released = await dal.claimsDal.release(nodeId, claim.agentId);
         result.applied.claim_released = Boolean(released);
       }

@@ -142,15 +142,19 @@ router.post('/workspaces', forwardTo(workspaceRoutes, () => '/'));
  */
 router.get('/workspaces/:id', forwardTo(workspaceRoutes, (req) => `/${e(req.params.id)}`));
 // archive/restore are folded into PATCH via the `archived` boolean; any other
-// body fields go to the plain PATCH handler.
+// body fields go to the plain PATCH handler. Both branches use forwardTo so
+// query strings are preserved like every other v1 alias.
+const forwardWorkspaceArchive = forwardTo(
+  workspaceRoutes,
+  (req) => `/${e(req.params.id)}/${req.body.archived ? 'archive' : 'restore'}`,
+  { method: 'POST' }
+);
+const forwardWorkspacePatch = forwardTo(workspaceRoutes, (req) => `/${e(req.params.id)}`);
 router.patch('/workspaces/:id', (req, res, next) => {
   if (req.body && typeof req.body.archived === 'boolean') {
-    req.method = 'POST';
-    req.url = `/${e(req.params.id)}/${req.body.archived ? 'archive' : 'restore'}`;
-    return workspaceRoutes(req, res, next);
+    return forwardWorkspaceArchive(req, res, next);
   }
-  req.url = `/${e(req.params.id)}`;
-  workspaceRoutes(req, res, next);
+  forwardWorkspacePatch(req, res, next);
 });
 router.delete('/workspaces/:id', forwardTo(workspaceRoutes, (req) => `/${e(req.params.id)}`));
 

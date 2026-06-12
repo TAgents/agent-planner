@@ -19,7 +19,14 @@ const { forwardTo, sendFacadeError, e } = require('./forward');
 const agentLoopRoutes = domains.agent.routes.agentLoopRoutes;
 const nodeRoutes = domains.node.routes.nodeRoutes;
 
-/** Resolve the owning plan for /v1/tasks/:nodeId/* routes. */
+/**
+ * Resolve the owning plan for /v1/tasks/:nodeId/* routes.
+ *
+ * Routes using this resolver carry an explicit `authenticate` BEFORE it even
+ * though the forwarded internal route authenticates again — the resolver hits
+ * the DB and its 404 would otherwise leak task existence to unauthenticated
+ * callers. The double token verification is accepted overhead.
+ */
 const resolvePlanFromNode = async (req, res, next) => {
   try {
     const node = await dal.nodesDal.findById(req.params.nodeId);

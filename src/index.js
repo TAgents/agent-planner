@@ -64,6 +64,11 @@ const adminRoutes = require('./routes/admin.routes');
 const workspaceRoutes = require('./routes/workspace.routes');
 const blueprintRoutes = require('./routes/blueprint.routes');
 
+// Public versioned API surface — aliases + facades over the routes above.
+// Internal routes stay mounted (the UI depends on them); /v1 is the
+// documented contract. See docs/API_V1_CONSOLIDATION_PLAN.md.
+const v1Routes = require('./routes/v1');
+
 // Import WebSocket collaboration server
 const CollaborationServer = require('./websocket/collaboration');
 const { setCollaborationServer: setCollaborationServerController } = require('./controllers/collaboration.controller');
@@ -138,6 +143,11 @@ app.use(recordToolCall);
 
 // Routes with rate limiting
 // Auth routes - strict rate limiting to prevent brute force
+// Public versioned API (v1) — mounted first so /v1/* never collides with
+// internal routes. Auth/search subgroups apply their stricter limiters
+// per-route inside the v1 router.
+app.use('/v1', generalLimiter, v1Routes);
+
 app.use('/auth', authLimiter, authRoutes);
 
 // Search routes - moderate rate limiting for expensive operations

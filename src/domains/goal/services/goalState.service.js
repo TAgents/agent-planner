@@ -121,7 +121,7 @@ async function assessGoalQuality(goal, user) {
  * with no related facts in the knowledge graph. Degrades gracefully when
  * Graphiti is unavailable.
  */
-async function detectKnowledgeGaps(goal, user) {
+async function detectKnowledgeGaps(goal, user, pathPromise = null) {
   if (!graphitiBridge.isAvailable()) {
     return {
       available: false,
@@ -133,8 +133,9 @@ async function detectKnowledgeGaps(goal, user) {
     };
   }
 
-  // Get all tasks on the goal path
-  const { nodes } = await dal.dependenciesDal.getGoalPath(goal.id);
+  // Get all tasks on the goal path (shared promise when called from
+  // getGoalState so the path is only fetched once per request)
+  const { nodes } = await (pathPromise || dal.dependenciesDal.getGoalPath(goal.id));
   if (nodes.length === 0) {
     return {
       available: true,
@@ -210,8 +211,8 @@ async function detectKnowledgeGaps(goal, user) {
 /**
  * Calculate goal progress from the dependency graph (achieves edges).
  */
-async function getGoalProgress(goalId) {
-  const { nodes, stats } = await dal.dependenciesDal.getGoalPath(goalId);
+async function getGoalProgress(goalId, pathPromise = null) {
+  const { nodes, stats } = await (pathPromise || dal.dependenciesDal.getGoalPath(goalId));
   const directAchievers = nodes.filter(n => n.depth === 1);
   const directCompleted = directAchievers.filter(n => n.status === 'completed').length;
   const directProgress = directAchievers.length > 0
@@ -235,11 +236,14 @@ async function getGoalProgress(goalId) {
  * and authorized for `user`).
  */
 async function getGoalState(goal, user) {
+  // One goal-path query shared across progress, knowledge gaps, and
+  // bottlenecks (each fetches its own when called standalone).
+  const pathPromise = dal.dependenciesDal.getGoalPath(goal.id);
   const settled = await Promise.allSettled([
     assessGoalQuality(goal, user),
-    getGoalProgress(goal.id),
-    detectKnowledgeGaps(goal, user),
-    dal.dependenciesDal.getGoalPath(goal.id),
+    getGoalProgress(goal.id, pathPromise),
+    detectKnowledgeGaps(goal, user, pathPromise),
+    pathPromise,
   ]);
 
   const failures = [];

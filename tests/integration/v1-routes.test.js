@@ -359,6 +359,7 @@ jest.mock('../../src/db/dal.cjs', () => ({
   },
   episodeLinksDal: {
     listByNode: jest.fn().mockResolvedValue([]),
+    listByNodeIds: jest.fn().mockResolvedValue([]),
     listByEpisodeIdsWithTitles: jest.fn().mockResolvedValue([]),
     create: jest.fn().mockResolvedValue(null),
   },
@@ -654,6 +655,27 @@ describe('v1 Routes', () => {
       expect(res.body.failures).toEqual([]);
     });
 
+    it('POST /v1/tasks/:nodeId/update — does not release another user\'s claim', async () => {
+      dal.nodesDal.findById.mockResolvedValue(mockNode);
+      dal.nodesDal.findByIdAndPlan.mockResolvedValue(mockNode);
+      dal.nodesDal.updateStatus.mockResolvedValue({ ...mockNode, status: 'completed' });
+      dal.claimsDal.getActiveClaim.mockResolvedValue({
+        id: uuidv4(), nodeId: NODE_ID, agentId: 'other-agent', createdBy: uuidv4(),
+      });
+
+      const res = await request(app)
+        .post(`/v1/tasks/${NODE_ID}/update`)
+        .set('Authorization', AUTH)
+        .send({ status: 'completed' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.applied.claim_released).toBe(false);
+      expect(dal.claimsDal.release).not.toHaveBeenCalled();
+      expect(res.body.failures).toEqual([
+        expect.objectContaining({ step: 'release_claim' }),
+      ]);
+    });
+
     it('POST /v1/tasks/:nodeId/update — 404 for missing task', async () => {
       dal.nodesDal.findById.mockResolvedValue(null);
       const res = await request(app)
@@ -682,6 +704,86 @@ describe('v1 Routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.applied_changes).toContain('visibility:public');
       expect(res.body.failures).toEqual([]);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // Additional alias coverage (review follow-ups)
+  // ══════════════════════════════════════════════════════════════════
+  describe('alias edge cases', () => {
+    const WS_ID = uuidv4();
+
+    it('PATCH /v1/workspaces/:id with archived=true dispatches to /archive', async () => {
+      dal.workspacesDal.findById.mockResolvedValue({ id: WS_ID, organizationId: ORG_ID, isDefault: false });
+      dal.workspacesDal.archive.mockResolvedValue({ id: WS_ID, archivedAt: now });
+      const res = await request(app)
+        .patch(`/v1/workspaces/${WS_ID}`)
+        .set('Authorization', AUTH)
+        .send({ archived: true });
+      expect(res.status).toBe(200);
+      expect(dal.workspacesDal.archive).toHaveBeenCalledWith(WS_ID);
+      expect(dal.workspacesDal.update).not.toHaveBeenCalled();
+    });
+
+    it('PATCH /v1/workspaces/:id with archived=false dispatches to /restore', async () => {
+      dal.workspacesDal.findById.mockResolvedValue({ id: WS_ID, organizationId: ORG_ID, isDefault: false });
+      dal.workspacesDal.unarchive.mockResolvedValue({ id: WS_ID, archivedAt: null });
+      const res = await request(app)
+        .patch(`/v1/workspaces/${WS_ID}`)
+        .set('Authorization', AUTH)
+        .send({ archived: false });
+      expect(res.status).toBe(200);
+      expect(dal.workspacesDal.unarchive).toHaveBeenCalledWith(WS_ID);
+    });
+
+    it('PATCH /v1/workspaces/:id without archived forwards to the plain PATCH handler', async () => {
+      dal.workspacesDal.findById.mockResolvedValue({ id: WS_ID, organizationId: ORG_ID, isDefault: false });
+      dal.workspacesDal.update.mockResolvedValue({ id: WS_ID, title: 'Renamed' });
+      const res = await request(app)
+        .patch(`/v1/workspaces/${WS_ID}`)
+        .set('Authorization', AUTH)
+        .send({ title: 'Renamed' });
+      expect(res.status).toBe(200);
+      expect(dal.workspacesDal.update).toHaveBeenCalled();
+    });
+
+    it('DELETE /v1/tasks/:nodeId/claim — resolves plan and releases', async () => {
+      dal.nodesDal.findById.mockResolvedValue(mockNode);
+      dal.claimsDal.release.mockResolvedValue({ id: uuidv4(), nodeId: NODE_ID });
+      const res = await request(app)
+        .delete(`/v1/tasks/${NODE_ID}/claim`)
+        .set('Authorization', AUTH)
+        .send({ agent_id: 'agent-1' });
+      expect(res.status).toBeLessThan(400);
+      expect(dal.claimsDal.release).toHaveBeenCalled();
+    });
+
+    it('POST /v1/dependencies — forwards to the cross-plan handler', async () => {
+      const targetId = uuidv4();
+      dal.nodesDal.findById.mockResolvedValue(mockNode);
+      dal.dependenciesDal.wouldCreateCycle.mockResolvedValue({ hasCycle: false, cyclePath: [] });
+      dal.dependenciesDal.create.mockResolvedValue({ id: uuidv4(), sourceNodeId: NODE_ID, targetNodeId: targetId });
+      const res = await request(app)
+        .post('/v1/dependencies')
+        .set('Authorization', AUTH)
+        .send({ source_node_id: NODE_ID, target_node_id: targetId, dependency_type: 'blocks' });
+      expect(res.status).toBeLessThan(400);
+      expect(dal.dependenciesDal.create).toHaveBeenCalled();
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // Deployment wiring: /v1 must be mounted in the real server entry point.
+  // The suites above build their own Express app, so this guard is what
+  // catches a missing mount in src/index.js (it has happened).
+  // ══════════════════════════════════════════════════════════════════
+  describe('server wiring', () => {
+    it('src/index.js mounts the v1 router', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const indexSrc = fs.readFileSync(path.join(__dirname, '../../src/index.js'), 'utf8');
+      expect(indexSrc).toMatch(/require\('\.\/routes\/v1'\)/);
+      expect(indexSrc).toMatch(/app\.use\('\/v1',\s*generalLimiter,\s*v1Routes\)/);
     });
   });
 

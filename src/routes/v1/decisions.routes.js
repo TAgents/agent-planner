@@ -13,7 +13,13 @@ const { forwardTo, e } = require('./forward');
 
 const decisionRoutes = domains.decision.routes.decisionRoutes;
 
-/** Resolve the owning plan for /v1/decisions/:id/* routes. */
+/**
+ * Resolve the owning plan for /v1/decisions/:id/* routes.
+ *
+ * The explicit `authenticate` before this resolver is intentional (despite
+ * the forwarded route authenticating again): the resolver hits the DB and
+ * its 404 would otherwise leak decision existence to unauthenticated callers.
+ */
 const resolvePlanFromDecision = async (req, res, next) => {
   try {
     const decision = await dal.decisionsDal.findById(req.params.id);
