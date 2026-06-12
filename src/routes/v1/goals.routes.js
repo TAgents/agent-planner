@@ -78,7 +78,7 @@ router.get(`/goals/:id${UUID}/state`, authenticate, async (req, res) => {
  *     responses:
  *       200: { description: Promotion result with readiness gaps if not ready }
  */
-router.post(`/goals/:id${UUID}/promote`, forwardTo(goalsRoutes, (req) => `/${e(req.params.id)}/promote-to-intention`));
+router.post(`/goals/:id${UUID}/promote`, forwardTo(goalsRoutes, (req) => `/${e(req.params.id)}/promote`));
 
 /**
  * @swagger

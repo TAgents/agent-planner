@@ -9582,10 +9582,10 @@
         }
       }
     },
-    "/goals/{id}/promote-to-intention": {
+    "/goals/{id}/promote": {
       "post": {
-        "summary": "Promote a desire goal to an intention",
-        "description": "Checks readiness (success criteria, linked plan, optional knowledge coverage) and promotes the goal from desire to intention if ready. Returns readiness gaps if not ready. Part of BDI desire/intention workflow.",
+        "summary": "Commit to a goal (promote)",
+        "description": "Checks readiness (success criteria, linked plan, optional knowledge coverage) and marks the goal committed by setting promoted_at. Returns readiness gaps if not ready. Also mounted at the deprecated path /goals/{id}/promote-to-intention.",
         "tags": [
           "Goals"
         ],

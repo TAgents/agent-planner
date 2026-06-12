@@ -12,9 +12,10 @@ export const goals = pgTable('goals', {
   workspaceId: uuid('workspace_id').notNull(),  // FK (ON DELETE RESTRICT) added via migrations 0019+0021
   type: text('type').notNull(),            // outcome | constraint | metric | principle
   status: text('status').notNull().default('active'),  // draft | active | achieved | paused | abandoned | archived
-  // BDI desire/intention distinction
-  goalType: text('goal_type').notNull().default('desire'),  // desire | intention
-  promotedAt: timestamp('promoted_at', { withTimezone: true }),  // when desire became intention
+  // Commitment: promoted_at IS NOT NULL means the goal is committed
+  // (has success criteria + a linked plan). The old goal_type column was
+  // dropped in migration 0022; the API emits a derived goal_type for compat.
+  promotedAt: timestamp('promoted_at', { withTimezone: true }),
   successCriteria: jsonb('success_criteria'),
   priority: integer('priority').default(0),
   parentGoalId: uuid('parent_goal_id'),    // self-ref for hierarchy

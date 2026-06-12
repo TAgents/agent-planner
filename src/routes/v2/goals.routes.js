@@ -381,10 +381,10 @@ router.delete('/:id', authenticate, async (req, res) => {
 
 /**
  * @swagger
- * /goals/{id}/promote-to-intention:
+ * /goals/{id}/promote:
  *   post:
- *     summary: Promote a desire goal to an intention
- *     description: Checks readiness (success criteria, linked plan, optional knowledge coverage) and promotes the goal from desire to intention if ready. Returns readiness gaps if not ready. Part of BDI desire/intention workflow.
+ *     summary: Commit to a goal (promote)
+ *     description: Checks readiness (success criteria, linked plan, optional knowledge coverage) and marks the goal committed by setting promoted_at. Returns readiness gaps if not ready. Also mounted at the deprecated path /goals/{id}/promote-to-intention.
  *     tags: [Goals]
  *     security:
  *       - bearerAuth: []
@@ -397,13 +397,13 @@ router.delete('/:id', authenticate, async (req, res) => {
  *       200:
  *         description: Promotion result with ready status and gaps (if any)
  */
-router.post('/:id/promote-to-intention', authenticate, async (req, res) => {
+const promoteGoalHandler = async (req, res) => {
   try {
     const goal = await requireGoalAccess(req, res);
     if (!goal) return;
 
-    if (goal.goalType === 'intention') {
-      return res.json({ ready: true, goal, message: 'Goal is already an intention' });
+    if (goal.committed) {
+      return res.json({ ready: true, goal, message: 'Goal is already committed' });
     }
 
     // Readiness checks
@@ -411,13 +411,13 @@ router.post('/:id/promote-to-intention', authenticate, async (req, res) => {
 
     // 1. Must have success criteria
     if (!goal.successCriteria || (typeof goal.successCriteria === 'object' && Object.keys(goal.successCriteria).length === 0)) {
-      gaps.push('Missing success criteria — intentions require measurable success criteria');
+      gaps.push('Missing success criteria — committed goals require measurable success criteria');
     }
 
     // 2. Must have at least one linked plan
     const hasLinkedPlan = goal.links && goal.links.some(l => l.linkedType === 'plan');
     if (!hasLinkedPlan) {
-      gaps.push('No linked plan — intentions require at least one plan to execute against');
+      gaps.push('No linked plan — committed goals require at least one plan to execute against');
     }
 
     // 3. Optional: knowledge coverage advisory (if Graphiti available)
@@ -452,7 +452,10 @@ router.post('/:id/promote-to-intention', authenticate, async (req, res) => {
     await logger.error('Promote goal error:', err);
     res.status(500).json({ error: 'Failed to promote goal' });
   }
-});
+};
+router.post('/:id/promote', authenticate, promoteGoalHandler);
+// Deprecated alias — old BDI vocabulary; kept for existing MCP/UI clients.
+router.post('/:id/promote-to-intention', authenticate, promoteGoalHandler);
 
 // POST /api/goals/:id/links
 // When linkedType === 'plan', cascades by creating 'achieves' dependencies

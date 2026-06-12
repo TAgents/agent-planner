@@ -73,18 +73,19 @@ async function assessGoalQuality(goal, user) {
   }
   dimensions.knowledge_grounding = { score: knowledgeScore, detail: knowledgeDetail };
 
-  // 5. Commitment — is it an intention with a deadline-like signal?
-  const isIntention = goal.goalType === 'intention';
+  // 5. Commitment — is the goal committed, with a deadline-like signal?
+  // (goal_type column dropped in migration 0022; commitment = promoted_at.)
+  const isCommitted = Boolean(goal.committed);
   const hasDeadline = goal.title.match(/by\s+(Q[1-4]|20\d{2}|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i);
-  const commitScore = isIntention ? (hasDeadline ? 1.0 : 0.7) : (hasDeadline ? 0.5 : 0.2);
+  const commitScore = isCommitted ? (hasDeadline ? 1.0 : 0.7) : (hasDeadline ? 0.5 : 0.2);
   dimensions.commitment = {
     score: commitScore,
-    detail: isIntention
-      ? (hasDeadline ? 'Promoted to intention with time reference' : 'Promoted to intention but no deadline')
-      : 'Still a desire — promote to intention when ready',
+    detail: isCommitted
+      ? (hasDeadline ? 'Committed with time reference' : 'Committed but no deadline')
+      : 'Not committed yet — promote when ready',
   };
-  if (!isIntention) suggestions.push('Promote from desire to intention when success criteria and plans are in place');
-  if (!hasDeadline && isIntention) suggestions.push('Add a time-bound target to the goal title or description');
+  if (!isCommitted) suggestions.push('Promote the goal when success criteria and plans are in place');
+  if (!hasDeadline && isCommitted) suggestions.push('Add a time-bound target to the goal title or description');
 
   // Overall score
   const scores = Object.values(dimensions).map(d => d.score);
@@ -275,7 +276,9 @@ async function getGoalState(goal, user) {
       title: goal.title,
       description: goal.description,
       type: goal.type,
+      // goal_type is derived since migration 0022; `committed` is canonical.
       goal_type: goal.goalType,
+      committed: Boolean(goal.committed),
       status: goal.status,
       priority: goal.priority,
       owner_id: goal.ownerId,
