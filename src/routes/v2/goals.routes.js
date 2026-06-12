@@ -17,6 +17,7 @@ const nodesDal = require('../../db/dal.cjs').nodesDal;
 const plansDal = require('../../db/dal.cjs').plansDal;
 const logsDal = require('../../db/dal.cjs').logsDal;
 const workspacesDal = require('../../db/dal.cjs').workspacesDal;
+const organizationsDal = require('../../db/dal.cjs').organizationsDal;
 const graphitiBridge = require('../../services/graphitiBridge');
 const reasoning = require('../../services/reasoning');
 
@@ -285,9 +286,22 @@ router.post('/', authenticate, validateBody(createGoalSchema), async (req, res) 
     let workspaceId = req.body.workspaceId || req.body.workspace_id || null;
     // Workspace-first invariant: fall back to the org's default workspace so
     // every goal lands inside the structure the rest of the UI assumes.
+    // workspace_id is NOT NULL since migration 0021 — last resort is the
+    // default workspace of the user's personal/first org.
     if (!workspaceId && resolvedOrgId) {
       const defaultWs = await workspacesDal.findDefault(resolvedOrgId);
       if (defaultWs) workspaceId = defaultWs.id;
+    }
+    if (!workspaceId) {
+      const orgs = await organizationsDal.listForUser(req.user.id);
+      const ordered = [...(orgs || [])].sort((a, b) => (b.isPersonal === true) - (a.isPersonal === true));
+      for (const org of ordered) {
+        const defaultWs = await workspacesDal.findDefault(org.id);
+        if (defaultWs) { workspaceId = defaultWs.id; break; }
+      }
+    }
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'No workspace available — provide workspace_id' });
     }
     const goal = await goalsDal.create({
       title,

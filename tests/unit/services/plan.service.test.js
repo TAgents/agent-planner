@@ -21,6 +21,8 @@ jest.mock('../../../src/domains/plan/repositories/plan.repository', () => ({
   removeCollaborator: jest.fn(),
   findUserById: jest.fn(),
   findUserByEmail: jest.fn(),
+  findDefaultWorkspace: jest.fn(),
+  findFallbackWorkspaceForUser: jest.fn(),
 }));
 
 // Mock planAccess middleware
@@ -87,6 +89,10 @@ describe('Plan Service', () => {
       const plan = makePlan();
       repo.create.mockResolvedValue(plan);
       repo.createNode.mockResolvedValue({});
+      repo.findFallbackWorkspaceForUser.mockResolvedValue({
+        workspace: { id: 'ws-1' },
+        organizationId: 'org-1',
+      });
 
       const result = await planService.createPlan(USER_ID, USER_NAME, {
         title: 'Test Plan',
@@ -99,11 +105,41 @@ describe('Plan Service', () => {
         ownerId: USER_ID,
         status: 'draft',
         visibility: 'private',
+        workspaceId: 'ws-1',
+        organizationId: 'org-1',
       }));
       expect(repo.createNode).toHaveBeenCalledWith(expect.objectContaining({
         planId: PLAN_ID,
         nodeType: 'root',
       }));
+    });
+
+    it('should use the org default workspace when organization_id is given', async () => {
+      const plan = makePlan();
+      repo.create.mockResolvedValue(plan);
+      repo.createNode.mockResolvedValue({});
+      repo.findDefaultWorkspace.mockResolvedValue({ id: 'ws-org-default' });
+
+      await planService.createPlan(USER_ID, USER_NAME, {
+        title: 'Test Plan',
+        organizationId: 'org-1',
+      });
+
+      expect(repo.findDefaultWorkspace).toHaveBeenCalledWith('org-1');
+      expect(repo.findFallbackWorkspaceForUser).not.toHaveBeenCalled();
+      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceId: 'ws-org-default',
+        organizationId: 'org-1',
+      }));
+    });
+
+    it('should reject when no workspace can be resolved', async () => {
+      repo.findFallbackWorkspaceForUser.mockResolvedValue(null);
+
+      await expect(planService.createPlan(USER_ID, USER_NAME, {
+        title: 'Test Plan',
+      })).rejects.toMatchObject({ statusCode: 400 });
+      expect(repo.create).not.toHaveBeenCalled();
     });
 
     it('should reject missing title', async () => {

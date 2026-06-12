@@ -916,9 +916,35 @@ router.post('/:id/fork', authenticate, async (req, res) => {
       }
     }
 
+    // Resolve target workspace: explicit > caller-org default > first-org
+    // default (plans.workspace_id is NOT NULL since migration 0021).
+    let workspaceId = req.body?.workspace_id || null;
+    let targetOrgId = organizationId;
+    if (workspaceId) {
+      const ws = await dal.workspacesDal.findById(workspaceId);
+      if (!ws) return res.status(404).json({ error: 'Target workspace not found' });
+      const wsAccess = await dal.workspacesDal.userHasAccess(workspaceId, userId);
+      if (!wsAccess) return res.status(403).json({ error: 'You do not have access to the target workspace' });
+      targetOrgId = ws.organizationId;
+    } else if (targetOrgId) {
+      const ws = await dal.workspacesDal.findDefault(targetOrgId);
+      workspaceId = ws?.id || null;
+    }
+    if (!workspaceId) {
+      const orgs = await dal.organizationsDal.listForUser(userId);
+      for (const org of orgs) {
+        const ws = await dal.workspacesDal.findDefault(org.id);
+        if (ws) { workspaceId = ws.id; targetOrgId = org.id; break; }
+      }
+    }
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'No workspace available — provide workspace_id' });
+    }
+
     const forked = await dal.plansDal.fork(sourceId, {
       ownerId: userId,
-      organizationId,
+      organizationId: targetOrgId,
+      workspaceId,
       title: req.body?.title || null,
     });
     return res.status(201).json({ plan: forked });

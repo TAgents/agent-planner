@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 /**
+ * SUPERSEDED by migrations/0021_workspace_id_not_null.sql, which performs
+ * this backfill (plus personal-org provisioning) in SQL and then sets
+ * workspace_id NOT NULL. Kept for reference / pre-0021 environments only.
+ *
  * Backfill: ensure every Organization has a Default workspace and that
  * any goal/plan with workspace_id = NULL is assigned to it.
  *

@@ -160,12 +160,24 @@ async function createPlan(userId, userName, { title, description, status, visibi
   if (!title) throw new ServiceError('Plan title is required', 400);
 
   // Workspace-first invariant: if the caller didn't pin a workspace, drop the
-  // plan into the org's default workspace so it never floats outside the
-  // structure. Stays null only when the org genuinely has no workspaces.
+  // plan into the org's default workspace. workspace_id is NOT NULL since
+  // migration 0021, so fall back to the user's own default workspace as a
+  // last resort and reject only when no workspace exists at all.
   let resolvedWorkspaceId = workspaceId || null;
-  if (!resolvedWorkspaceId && organizationId) {
-    const defaultWs = await repo.findDefaultWorkspace(organizationId);
+  let resolvedOrganizationId = organizationId || null;
+  if (!resolvedWorkspaceId && resolvedOrganizationId) {
+    const defaultWs = await repo.findDefaultWorkspace(resolvedOrganizationId);
     if (defaultWs) resolvedWorkspaceId = defaultWs.id;
+  }
+  if (!resolvedWorkspaceId) {
+    const fallback = await repo.findFallbackWorkspaceForUser(userId);
+    if (fallback) {
+      resolvedWorkspaceId = fallback.workspace.id;
+      resolvedOrganizationId = resolvedOrganizationId || fallback.organizationId;
+    }
+  }
+  if (!resolvedWorkspaceId) {
+    throw new ServiceError('No workspace available — provide workspace_id', 400);
   }
 
   const plan = await repo.create({
@@ -173,7 +185,7 @@ async function createPlan(userId, userName, { title, description, status, visibi
     ownerId: userId, status: status || 'draft',
     visibility: visibility || 'private',
     metadata: metadata || {},
-    organizationId,
+    organizationId: resolvedOrganizationId,
     workspaceId: resolvedWorkspaceId,
   });
 
