@@ -99,6 +99,7 @@ HTTP request
 - **Controllers are `.v2.js`.** v1 is deleted; the suffix is historical. All new controllers keep the suffix for now.
 - **Workspaces + Blueprints.** Goals and plans hang off a `workspace_id` (organization-scoped container). Blueprints are dehydrated reusable shapes (`scope: 'plan'` only in v1) that fork into a workspace via `POST /blueprints/:id/fork`. Run-state (claims, episodes, statuses, agent assignments) is excluded from blueprints. Schema: `migrations/0019_workspaces_and_blueprints.sql`. Sketch: `docs/WORKSPACE_BLUEPRINT_SKETCH.md`.
 - **Task claims have a partial unique index** — one active (non-expired) claim per node. See `claimsDal` + `node_claims` schema; don't bypass with raw inserts.
+- **`goal_type` is derived, not stored.** The desire/intention column was dropped in migration 0022; commitment = `promoted_at IS NOT NULL` (`committed` boolean on DAL rows). `goalsDal` still emits a derived `goalType` and accepts legacy `goalType` writes (translated to `promoted_at`) for API/UI/MCP compatibility. Don't reintroduce the column; new code should read `committed`.
 
 ## Adding an endpoint — checklist
 
