@@ -1,6 +1,6 @@
 # API v1 Consolidation Plan — 231 endpoints → ~55 public
 
-**Status:** Phase 1 in progress
+**Status:** Phase 2 complete — `/v1` router mounted (aliases + facades, `src/routes/v1/`); next: Phase 3 OpenAPI split
 **Branch:** `api-v1-consolidation` (phases may split into separate PRs)
 **Origin:** Architecture review (2026-06-12) — the REST surface accumulated through
 four pivots and now exposes ~231 endpoints, while the MCP layer proves the same
@@ -142,7 +142,7 @@ API; this plan makes a v1 public surface shaped like it.
   api-client, devops scripts).
 - Deliverable: the classification table + this plan committed.
 
-### Phase 2 — v1 router skeleton *(this branch)*
+### Phase 2 — v1 router skeleton *(this branch — DONE)*
 - `src/routes/v1/index.js`: one router that re-mounts existing handlers under
   `/v1` paths. Zero logic changes; thin param-mapping wrappers where path
   shapes differ (e.g. `/v1/tasks/:nodeId/...` resolves plan from node).
@@ -150,6 +150,14 @@ API; this plan makes a v1 public surface shaped like it.
   implemented by composing existing services — port the composition logic from
   `agent-planner-mcp/src/tools/bdi/*.js` server-side.
 - Mount in `src/index.js` under `/v1` with `generalLimiter`.
+- **Shipped:** `src/routes/v1/` (forward helper + 10 group files, every route
+  Swagger-tagged `[v1]`), `src/services/v1Facades.js` (plan analysis,
+  knowledge search, task update, share plan), goal quality/gaps/progress
+  extracted to `src/domains/goal/services/goalState.service.js` (goals routes
+  now call the service), `:id` params UUID-constrained where internal routers
+  have literal sibling paths (`/plans/public`, `/goals/tree`,
+  `/blueprints/public` are not reachable through v1). Smoke test:
+  `tests/integration/v1-routes.test.js` (52 tests, DB-free).
 
 ### Phase 3 — OpenAPI split
 - `npm run docs:generate` produces **two** specs: `openapi.v1.json` (only
