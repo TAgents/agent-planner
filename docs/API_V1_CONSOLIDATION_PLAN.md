@@ -1,6 +1,6 @@
 # API v1 Consolidation Plan — 231 endpoints → ~55 public
 
-**Status:** Phase 2 complete — `/v1` router mounted (aliases + facades, `src/routes/v1/`); next: Phase 3 OpenAPI split
+**Status:** Phase 3 complete — `/v1` router mounted + dual OpenAPI specs; next: Phase 4 MCP client migration
 **Branch:** `api-v1-consolidation` (phases may split into separate PRs)
 **Origin:** Architecture review (2026-06-12) — the REST surface accumulated through
 four pivots and now exposes ~231 endpoints, while the MCP layer proves the same
@@ -159,11 +159,17 @@ API; this plan makes a v1 public surface shaped like it.
   `/blueprints/public` are not reachable through v1). Smoke test:
   `tests/integration/v1-routes.test.js` (52 tests, DB-free).
 
-### Phase 3 — OpenAPI split
+### Phase 3 — OpenAPI split *(DONE)*
 - `npm run docs:generate` produces **two** specs: `openapi.v1.json` (only
   routes tagged `[v1]`) and the existing full internal spec.
 - Swagger UI serves v1 by default at `/api-docs`; internal spec at
   `/api-docs/internal`.
+- **Shipped:** `src/utils/v1Spec.js` (shared `extractV1Spec` used by both the
+  runtime UI and `scripts/generate-docs.js`), `docs/openapi.v1.json` (70
+  operations, strictly validated — `docs:validate` now fails on any
+  undocumented v1 operation, internal spec is lenient/report-only). Also
+  fixed a malformed `@swagger` comment in `blueprint.routes.js` that was
+  spraying 140 bogus numeric path keys into the spec.
 
 ### Phase 4 — MCP client migration *(agent-planner-mcp repo)*
 - Point `api-client.js` at `/v1` paths; replace client-side fan-outs with the

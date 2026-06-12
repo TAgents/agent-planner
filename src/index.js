@@ -122,9 +122,14 @@ if (process.env.NODE_ENV === 'development') {
   logger.api('Debug middleware enabled - detailed request/response logging activated');
 }
 
-// Setup Swagger documentation
+// Setup Swagger documentation — public v1 spec by default, full internal
+// spec at /api-docs/internal. (Internal mount must come first so it isn't
+// shadowed by the /api-docs mount.)
+const { extractV1Spec } = require('./utils/v1Spec');
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
+const swaggerDocsV1 = extractV1Spec(swaggerDocs);
+app.use('/api-docs/internal', swaggerUi.serveFiles(swaggerDocs), swaggerUi.setup(swaggerDocs));
+app.use('/api-docs', swaggerUi.serveFiles(swaggerDocsV1), swaggerUi.setup(swaggerDocsV1));
 
 // Tool-call telemetry: records one row per authenticated request via
 // res.finish. Mounted globally; reads req.user lazily so route-level
