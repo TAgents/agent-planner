@@ -33,10 +33,15 @@ class FacadeError extends Error {
 
 // ── Plan analysis ────────────────────────────────────────────────
 
+// Cap the analysis read on degenerate plans (hundreds of flagged nodes);
+// `total` still reports the full flagged count.
+const COHERENCE_ISSUES_LIMIT = 50;
+
 async function coherenceIssues(planId) {
-  const flaggedNodes = await dal.nodesDal.listByPlan(planId, {
+  const allFlagged = await dal.nodesDal.listByPlan(planId, {
     coherenceStatus: 'stale_beliefs,contradiction_detected',
   });
+  const flaggedNodes = allFlagged.slice(0, COHERENCE_ISSUES_LIMIT);
   // One IN(...) query for every flagged node's episode links.
   const allLinks = await dal.episodeLinksDal.listByNodeIds(flaggedNodes.map(n => n.id));
   const linksByNode = new Map();
@@ -56,7 +61,12 @@ async function coherenceIssues(planId) {
       linked_at: l.createdAt,
     })),
   }));
-  return { issues, count: issues.length };
+  return {
+    issues,
+    count: issues.length,
+    total: allFlagged.length,
+    truncated: allFlagged.length > flaggedNodes.length,
+  };
 }
 
 /**
@@ -236,6 +246,10 @@ async function updateTask(user, nodeId, {
           error: `Task is claimed by another agent (${claim.agentId}); not released`,
         });
       } else if (claim) {
+        // Ownership is checked via createdBy (a user id) above; the release
+        // itself is keyed by the claim's agentId label because that is what
+        // claimsDal.release matches on (one user can hold claims under
+        // several agent labels).
         const released = await dal.claimsDal.release(nodeId, claim.agentId);
         result.applied.claim_released = Boolean(released);
       }
@@ -278,6 +292,13 @@ async function sharePlan(user, planId, {
 } = {}) {
   if (!visibility && add_collaborators.length === 0 && remove_collaborators.length === 0) {
     throw new FacadeError('Nothing to apply: provide visibility, add_collaborators, or remove_collaborators', 400, 'invalid_arg');
+  }
+
+  // Fail fast before any mutation. The downstream service calls enforce
+  // their own role requirements (owner for visibility, owner/admin for
+  // collaborators); this guard rejects callers with no access at all.
+  if (!(await checkPlanAccess(planId, user.id))) {
+    throw new FacadeError('You do not have access to this plan', 403, 'forbidden');
   }
 
   const applied = [];

@@ -127,6 +127,13 @@ jest.mock('../../src/services/graphitiBridge', () => ({
   queryForContext: jest.fn().mockResolvedValue([]),
 }));
 
+// ─── Mock context engine (used by /context/progressive forwarding) ──
+jest.mock('../../src/services/contextEngine', () => ({
+  assembleContext: jest.fn().mockResolvedValue({ task: {}, layers: [] }),
+  suggestNextTasks: jest.fn().mockResolvedValue([]),
+  initContextCacheInvalidation: jest.fn(),
+}));
+
 // ─── Mock reasoning service (used by the plan analysis facade) ──────
 jest.mock('../../src/services/reasoning', () => ({
   detectBottlenecks: jest.fn().mockResolvedValue([]),
@@ -307,6 +314,8 @@ jest.mock('../../src/db/dal.cjs', () => ({
     findByPlanAndUser: jest.fn().mockResolvedValue(null),
     create: jest.fn().mockResolvedValue(null),
     delete: jest.fn().mockResolvedValue(null),
+    add: jest.fn().mockResolvedValue({ id: 'collab-1' }),
+    remove: jest.fn().mockResolvedValue(null),
     listPlanIdsForUser: jest.fn().mockResolvedValue([]),
   },
   usersDal: {
@@ -376,6 +385,8 @@ jest.mock('../../src/db/dal.cjs', () => ({
 }));
 
 const dal = require('../../src/db/dal.cjs');
+const graphitiBridge = require('../../src/services/graphitiBridge');
+const contextEngine = require('../../src/services/contextEngine');
 
 // ─── Build test app: just the v1 router, like index.js mounts it ────
 function createApp() {
@@ -403,6 +414,10 @@ describe('v1 Routes', () => {
     dal.logsDal.create.mockResolvedValue({ id: 'log-1' });
     dal.dependenciesDal.getGoalPath.mockResolvedValue({ nodes: [], stats: { completion_percentage: 0 } });
     dal.dependenciesDal.getCriticalPath.mockResolvedValue({ path: [], totalWeight: 0 });
+    // jest.clearAllMocks wipes implementations set inside tests but not the
+    // factory defaults — re-pin the ones individual tests override.
+    graphitiBridge.isAvailable.mockReturnValue(false);
+    contextEngine.assembleContext.mockResolvedValue({ task: {}, layers: [] });
   });
 
   // ══════════════════════════════════════════════════════════════════
@@ -705,6 +720,53 @@ describe('v1 Routes', () => {
       expect(res.body.applied_changes).toContain('visibility:public');
       expect(res.body.failures).toEqual([]);
     });
+
+    it('POST /v1/plans/:id/share — adds and removes collaborators', async () => {
+      const addId = uuidv4();
+      const removeId = uuidv4();
+      const res = await request(app)
+        .post(`/v1/plans/${PLAN_ID}/share`)
+        .set('Authorization', AUTH)
+        .send({
+          add_collaborators: [{ user_id: addId, role: 'editor' }],
+          remove_collaborators: [removeId],
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.applied_changes).toEqual([`add:${addId}:editor`, `remove:${removeId}`]);
+      expect(dal.collaboratorsDal.add).toHaveBeenCalledWith(PLAN_ID, addId, 'editor');
+      expect(dal.collaboratorsDal.remove).toHaveBeenCalledWith(PLAN_ID, removeId);
+    });
+
+    it('POST /v1/plans/:id/share — 403 without any plan access', async () => {
+      dal.plansDal.userHasAccess.mockResolvedValue({ hasAccess: false, role: null });
+      const res = await request(app)
+        .post(`/v1/plans/${PLAN_ID}/share`)
+        .set('Authorization', AUTH)
+        .send({ visibility: 'public' });
+      expect(res.status).toBe(403);
+      expect(dal.plansDal.update).not.toHaveBeenCalled();
+    });
+
+    it('POST /v1/tasks/:nodeId/update — records learning when Graphiti is available', async () => {
+      graphitiBridge.isAvailable.mockReturnValue(true);
+      graphitiBridge.addEpisode.mockResolvedValue({ ok: true });
+      dal.nodesDal.findById.mockResolvedValue(mockNode);
+
+      const res = await request(app)
+        .post(`/v1/tasks/${NODE_ID}/update`)
+        .set('Authorization', AUTH)
+        .send({ add_learning: 'Postgres LISTEN/NOTIFY drops messages over 8kB' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.applied.learning_recorded).toBe(true);
+      expect(res.body.failures).toEqual([]);
+      expect(graphitiBridge.addEpisode).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: 'Postgres LISTEN/NOTIFY drops messages over 8kB',
+          name: `Task: ${mockNode.title}`,
+        })
+      );
+    });
   });
 
   // ══════════════════════════════════════════════════════════════════
@@ -756,6 +818,31 @@ describe('v1 Routes', () => {
         .send({ agent_id: 'agent-1' });
       expect(res.status).toBeLessThan(400);
       expect(dal.claimsDal.release).toHaveBeenCalled();
+    });
+
+    it('PATCH /v1/orgs/:id/members/:userId — maps to the internal role PUT', async () => {
+      const memberId = uuidv4();
+      dal.organizationsDal.getMembership.mockResolvedValue({ role: 'owner' });
+      dal.organizationsDal.listMembers.mockResolvedValue([{ id: memberId, role: 'member' }]);
+      dal.organizationsDal.updateMemberRole.mockResolvedValue({ id: memberId, role: 'admin' });
+      const res = await request(app)
+        .patch(`/v1/orgs/${ORG_ID}/members/${memberId}`)
+        .set('Authorization', AUTH)
+        .send({ role: 'admin' });
+      expect(res.status).toBe(200);
+      expect(dal.organizationsDal.updateMemberRole).toHaveBeenCalledWith(ORG_ID, memberId, 'admin');
+    });
+
+    it('GET /v1/tasks/:nodeId/context — merges node_id with caller query params', async () => {
+      dal.nodesDal.findById.mockResolvedValue(mockNode);
+      const res = await request(app)
+        .get(`/v1/tasks/${NODE_ID}/context?depth=4&token_budget=2000`)
+        .set('Authorization', AUTH);
+      expect(res.status).toBe(200);
+      expect(contextEngine.assembleContext).toHaveBeenCalledWith(
+        NODE_ID,
+        expect.objectContaining({ depth: 4, token_budget: 2000 })
+      );
     });
 
     it('POST /v1/dependencies — forwards to the cross-plan handler', async () => {

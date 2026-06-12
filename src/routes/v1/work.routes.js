@@ -10,11 +10,12 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../../middleware/auth.middleware');
+const { checkPlanAccess } = require('../../middleware/planAccess.middleware');
 const domains = require('../../domains');
 const contextRoutes = require('../context.routes');
 const dal = require('../../db/dal.cjs');
 const v1Facades = require('../../services/v1Facades');
-const { forwardTo, sendFacadeError, e } = require('./forward');
+const { forwardTo, sendFacadeError, e, UUID } = require('./forward');
 
 const agentLoopRoutes = domains.agent.routes.agentLoopRoutes;
 const nodeRoutes = domains.node.routes.nodeRoutes;
@@ -30,7 +31,11 @@ const nodeRoutes = domains.node.routes.nodeRoutes;
 const resolvePlanFromNode = async (req, res, next) => {
   try {
     const node = await dal.nodesDal.findById(req.params.nodeId);
-    if (!node) return res.status(404).json({ error: 'Task not found', code: 'not_found' });
+    // No access is reported as 404 too, so callers can't distinguish
+    // "doesn't exist" from "exists but not yours" (existence oracle).
+    if (!node || !(await checkPlanAccess(node.planId, req.user.id))) {
+      return res.status(404).json({ error: 'Task not found', code: 'not_found' });
+    }
     req.resolvedPlanId = node.planId;
     next();
   } catch (err) {
@@ -59,7 +64,7 @@ router.get('/briefing', forwardTo(agentLoopRoutes, () => '/briefing'));
  *     tags: [v1]
  *     security: [{ bearerAuth: [] }, { apiKey: [] }]
  *     responses:
- *       201: { description: Work session started (session_id, task, claim, context) }
+ *       201: { description: "Work session started (session_id, task, claim, context)" }
  *       409: { description: Task is already claimed }
  */
 router.post('/tasks/claim-next', forwardTo(agentLoopRoutes, () => '/work-sessions'));
@@ -82,7 +87,7 @@ router.post('/tasks/claim-next', forwardTo(agentLoopRoutes, () => '/work-session
  *       200: { description: Assembled context }
  */
 router.get(
-  '/tasks/:nodeId/context',
+  `/tasks/:nodeId${UUID}/context`,
   forwardTo(contextRoutes, (req) => `/progressive?node_id=${e(req.params.nodeId)}`)
 );
 
@@ -98,7 +103,7 @@ router.get(
  *       200: { description: Applied steps and per-step failures }
  *       404: { description: Task not found }
  */
-router.post('/tasks/:nodeId/update', authenticate, async (req, res) => {
+router.post(`/tasks/:nodeId${UUID}/update`, authenticate, async (req, res) => {
   try {
     res.json(await v1Facades.updateTask(req.user, req.params.nodeId, req.body || {}));
   } catch (err) {
@@ -124,13 +129,13 @@ router.post('/tasks/:nodeId/update', authenticate, async (req, res) => {
  *       200: { description: Claim released }
  */
 router.post(
-  '/tasks/:nodeId/claim',
+  `/tasks/:nodeId${UUID}/claim`,
   authenticate,
   resolvePlanFromNode,
   forwardTo(nodeRoutes, (req) => `/${e(req.resolvedPlanId)}/nodes/${e(req.params.nodeId)}/claim`)
 );
 router.delete(
-  '/tasks/:nodeId/claim',
+  `/tasks/:nodeId${UUID}/claim`,
   authenticate,
   resolvePlanFromNode,
   forwardTo(nodeRoutes, (req) => `/${e(req.resolvedPlanId)}/nodes/${e(req.params.nodeId)}/claim`)

@@ -6,6 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../../middleware/auth.middleware');
+const { checkPlanAccess } = require('../../middleware/planAccess.middleware');
 const domains = require('../../domains');
 const dal = require('../../db/dal.cjs');
 const { forwardTo, e } = require('./forward');
@@ -45,7 +46,11 @@ router.delete(
       const dep = await dal.dependenciesDal.findById(req.params.id);
       if (!dep) return res.status(404).json({ error: 'Dependency not found', code: 'not_found' });
       const sourceNode = await dal.nodesDal.findById(dep.sourceNodeId);
-      if (!sourceNode) return res.status(404).json({ error: 'Dependency source node not found', code: 'not_found' });
+      // No access is reported as 404 too, so callers can't distinguish
+      // "doesn't exist" from "exists but not yours" (existence oracle).
+      if (!sourceNode || !(await checkPlanAccess(sourceNode.planId, req.user.id))) {
+        return res.status(404).json({ error: 'Dependency not found', code: 'not_found' });
+      }
       req.resolvedPlanId = sourceNode.planId;
       next();
     } catch (err) {

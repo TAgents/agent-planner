@@ -381,3 +381,15 @@ Consumer legend: `ui` = agent-planner-ui, `mcp` = agent-planner-mcp, `devops`, `
 - `GET /plans/:id/decomposition-alerts` — no UI/MCP/devops/skills reference
 
 Deletion gate: zero hits in `tool_calls` telemetry over a 30-day production window.
+
+## Follow-ups
+
+- **v1 response schemas are stubs** — v1 Swagger operations document status
+  codes and one-line descriptions only (no `content`/`schema`). Good enough
+  for discovery, not for client SDK generation. Flesh out response schemas
+  (or generate them from Zod) before publishing the spec for codegen.
+- **v1-layer `authenticate` on plain forwarded routes** — forwards currently
+  rely on the internal route's own middleware; facades and resolver routes
+  carry their own. Consider adding it everywhere for defence-in-depth.
+- **`requireGoalAccess` export hardening** — re-export from the goal domain
+  barrel instead of hanging it off the goals router export.

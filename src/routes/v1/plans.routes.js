@@ -177,9 +177,9 @@ router.post(`/plans/:id${UUID}/nodes`, forwardTo(nodeRoutes, (req) => `/${e(req.
  *     responses:
  *       200: { description: Node deleted }
  */
-router.get(`/plans/:id${UUID}/nodes/:nodeId`, forwardTo(nodeRoutes, (req) => `/${e(req.params.id)}/nodes/${e(req.params.nodeId)}`));
-router.patch(`/plans/:id${UUID}/nodes/:nodeId`, forwardTo(nodeRoutes, (req) => `/${e(req.params.id)}/nodes/${e(req.params.nodeId)}`, { method: 'PUT' }));
-router.delete(`/plans/:id${UUID}/nodes/:nodeId`, forwardTo(nodeRoutes, (req) => `/${e(req.params.id)}/nodes/${e(req.params.nodeId)}`));
+router.get(`/plans/:id${UUID}/nodes/:nodeId${UUID}`, forwardTo(nodeRoutes, (req) => `/${e(req.params.id)}/nodes/${e(req.params.nodeId)}`));
+router.patch(`/plans/:id${UUID}/nodes/:nodeId${UUID}`, forwardTo(nodeRoutes, (req) => `/${e(req.params.id)}/nodes/${e(req.params.nodeId)}`, { method: 'PUT' }));
+router.delete(`/plans/:id${UUID}/nodes/:nodeId${UUID}`, forwardTo(nodeRoutes, (req) => `/${e(req.params.id)}/nodes/${e(req.params.nodeId)}`));
 
 /**
  * @swagger
@@ -191,7 +191,7 @@ router.delete(`/plans/:id${UUID}/nodes/:nodeId`, forwardTo(nodeRoutes, (req) => 
  *     responses:
  *       200: { description: Node moved }
  */
-router.post(`/plans/:id${UUID}/nodes/:nodeId/move`, forwardTo(nodeRoutes, (req) => `/${e(req.params.id)}/nodes/${e(req.params.nodeId)}/move`));
+router.post(`/plans/:id${UUID}/nodes/:nodeId${UUID}/move`, forwardTo(nodeRoutes, (req) => `/${e(req.params.id)}/nodes/${e(req.params.nodeId)}/move`));
 
 /**
  * @swagger
@@ -204,7 +204,7 @@ router.post(`/plans/:id${UUID}/nodes/:nodeId/move`, forwardTo(nodeRoutes, (req) 
  *       200: { description: Dependency edges for the node }
  */
 router.get(
-  `/plans/:id${UUID}/nodes/:nodeId/dependencies`,
+  `/plans/:id${UUID}/nodes/:nodeId${UUID}/dependencies`,
   forwardTo(dependencyRoutes, (req) => `/${e(req.params.id)}/nodes/${e(req.params.nodeId)}/dependencies`)
 );
 

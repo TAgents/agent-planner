@@ -19,6 +19,12 @@ const e = encodeURIComponent;
  *   request's query string is appended either way.
  * @param {{ method?: string }} [opts] - optional method override (e.g.
  *   v1 PATCH forwarding to an internal PUT handler).
+ *
+ * Trade-off: re-dispatch mutates req.url/req.method in place, so logs and
+ * error traces emitted inside the forwarded handler show the INTERNAL path
+ * (e.g. /plans/:id/nodes), not the originating /v1/... path. The original
+ * URL is still available as req.originalUrl (which is what the request
+ * logger and tool-call telemetry record).
  */
 function forwardTo(targetRouter, buildPath, { method } = {}) {
   return (req, res, next) => {
@@ -28,6 +34,16 @@ function forwardTo(targetRouter, buildPath, { method } = {}) {
     if (originalQuery) url += (url.includes('?') ? '&' : '?') + originalQuery;
     req.url = url;
     if (method) req.method = method;
+    // Express parses req.query eagerly from the ORIGINAL url, so query params
+    // introduced by buildPath (e.g. ?node_id=... on the tasks/context alias)
+    // would be invisible to the forwarded handler. Rebuild from the rewritten
+    // url — it contains both the built and the original params.
+    const newQIdx = url.indexOf('?');
+    if (newQIdx !== -1) {
+      const merged = {};
+      for (const [k, v] of new URLSearchParams(url.slice(newQIdx + 1))) merged[k] = v;
+      req.query = merged;
+    }
     targetRouter(req, res, next);
   };
 }

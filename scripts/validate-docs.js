@@ -26,6 +26,19 @@ function collectIssues(spec) {
       if (!details.responses || Object.keys(details.responses).length === 0) {
         issues.push(`${method.toUpperCase()} ${route}: No responses defined`);
       }
+      // Catch YAML artefacts: an unquoted description containing commas in a
+      // flow mapping parses as extra keys (e.g. "agent requests": null).
+      const RESPONSE_FIELDS = ['description', 'content', 'headers', 'links', '$ref'];
+      Object.entries(details.responses || {}).forEach(([code, resp]) => {
+        if (!resp || typeof resp !== 'object') {
+          issues.push(`${method.toUpperCase()} ${route} ${code}: response is not an object`);
+          return;
+        }
+        const stray = Object.keys(resp).filter(k => !RESPONSE_FIELDS.includes(k));
+        if (stray.length > 0) {
+          issues.push(`${method.toUpperCase()} ${route} ${code}: malformed response keys (${stray.join(', ')}) — quote descriptions containing commas`);
+        }
+      });
     });
   });
 

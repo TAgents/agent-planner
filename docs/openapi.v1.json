@@ -692,9 +692,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Pending decisions",
-            "agent requests": null,
-            "and drafts": null
+            "description": "Pending decisions, agent requests, and drafts"
           }
         }
       }
@@ -1782,10 +1780,7 @@
         ],
         "responses": {
           "201": {
-            "description": "Work session started (session_id",
-            "task": null,
-            "claim": null,
-            "context)": null
+            "description": "Work session started (session_id, task, claim, context)"
           },
           "409": {
             "description": "Task is already claimed"

@@ -6,6 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../../middleware/auth.middleware');
+const { checkPlanAccess } = require('../../middleware/planAccess.middleware');
 const domains = require('../../domains');
 const dashboardRoutes = require('../dashboard.routes');
 const dal = require('../../db/dal.cjs');
@@ -23,7 +24,11 @@ const decisionRoutes = domains.decision.routes.decisionRoutes;
 const resolvePlanFromDecision = async (req, res, next) => {
   try {
     const decision = await dal.decisionsDal.findById(req.params.id);
-    if (!decision) return res.status(404).json({ error: 'Decision not found', code: 'not_found' });
+    // No access is reported as 404 too, so callers can't distinguish
+    // "doesn't exist" from "exists but not yours" (existence oracle).
+    if (!decision || !(await checkPlanAccess(decision.planId, req.user.id))) {
+      return res.status(404).json({ error: 'Decision not found', code: 'not_found' });
+    }
     req.resolvedPlanId = decision.planId;
     next();
   } catch (err) {
@@ -39,7 +44,7 @@ const resolvePlanFromDecision = async (req, res, next) => {
  *     tags: [v1]
  *     security: [{ bearerAuth: [] }, { apiKey: [] }]
  *     responses:
- *       200: { description: Pending decisions, agent requests, and drafts }
+ *       200: { description: "Pending decisions, agent requests, and drafts" }
  */
 router.get('/decisions', forwardTo(dashboardRoutes, () => '/pending'));
 
