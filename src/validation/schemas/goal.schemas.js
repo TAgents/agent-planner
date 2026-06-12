@@ -9,6 +9,9 @@ const goalType = z.enum(['outcome', 'constraint', 'metric', 'principle'], {
   errorMap: () => ({ message: 'type must be one of: outcome, constraint, metric, principle' })
 });
 
+// Deprecated input — accepted for backward compatibility and translated to
+// promoted_at by the DAL ('intention' → set, 'desire' → clear). Canonical
+// commitment signal is the derived `committed` boolean / promoted_at.
 const goalKind = z.enum(['desire', 'intention'], {
   errorMap: () => ({ message: 'goalType must be one of: desire, intention' })
 });
@@ -28,7 +31,7 @@ const createGoal = z.object({
   title: nonEmptyString(255).describe('Goal title'),
   description: optionalString(10000),
   type: goalType.optional().default('outcome'),
-  goalType: goalKind.optional().default('desire'),
+  goalType: goalKind.optional(),  // deprecated; do not default — commitment derives from promoted_at
   status: goalStatus.optional().default('active'),
   successCriteria: successCriteria,
   priority: z.number().int().min(0).max(10).optional().default(0),
