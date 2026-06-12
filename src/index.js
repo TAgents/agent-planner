@@ -53,7 +53,6 @@ const agentLoopRoutes = domains.agent.routes.agentLoopRoutes;
 
 // Non-domain routes (cross-cutting, infra, integrations)
 const authRoutes = require('./routes/auth.routes');
-const tokenRoutes = require('./routes/token.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const statsRoutes = require('./routes/stats.routes');
 const githubRoutes = require('./routes/github.routes');
@@ -73,11 +72,10 @@ const { setCollaborationServer } = require('./websocket/broadcast');
 
 // Import middlewares
 const { debugRequest } = require('./middleware/debug.middleware');
-const { 
-  generalLimiter, 
-  authLimiter, 
-  searchLimiter, 
-  tokenLimiter
+const {
+  generalLimiter,
+  authLimiter,
+  searchLimiter
 } = require('./middleware/rateLimit.middleware');
 
 // Create Express app
@@ -141,9 +139,7 @@ app.use('/auth', authLimiter, authRoutes);
 // Search routes - moderate rate limiting for expensive operations
 app.use('/search', searchLimiter, searchRoutes);
 
-// Token routes - strict rate limiting to prevent token abuse
-app.use('/tokens', tokenLimiter, tokenRoutes);
-
+// Removed: /tokens routes (deprecated; token management lives at /auth/token)
 // Removed: webhook routes (pre-v2 cleanup)
 
 // General routes with standard rate limiting
@@ -273,6 +269,8 @@ const startServer = async () => {
       initCoherenceEngine(messageBus);
       initStatusPropagation(messageBus);
       initCompactionListener(messageBus);
+      const { initContextCacheInvalidation } = require('./services/contextEngine');
+      initContextCacheInvalidation(messageBus);
     }
 
     await logger.api(`Starting agent-planner API server...`);
@@ -334,6 +332,11 @@ const startServer = async () => {
       // disable entirely with TOOL_CALLS_RETENTION_DISABLED=true.
       const { startRetentionJob } = require('./services/toolCallsRetention');
       startRetentionJob();
+
+      // Expired plan-invite cleanup — daily, non-fatal on failure.
+      const { cleanupExpiredInvites } = require('./services/invites');
+      cleanupExpiredInvites();
+      setInterval(cleanupExpiredInvites, 24 * 60 * 60 * 1000).unref();
     });
   } catch (error) {
     await logger.error(`Failed to start server`, error);

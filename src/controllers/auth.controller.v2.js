@@ -77,8 +77,13 @@ const register = async (req, res, next) => {
     // Generate tokens
     const session = generateTokens(user);
 
-    // Convert pending invites
-    // TODO: migrate convertPendingInvites to use DAL
+    // Convert pending plan invites for this email into collaborator rows.
+    // Non-fatal: the service catches internally and returns { converted: 0 } on error.
+    const { convertPendingInvites } = require('../services/invites');
+    const inviteResult = await convertPendingInvites(user.id, user.email, user.name);
+    if (inviteResult.converted > 0) {
+      await logger.auth(`Converted ${inviteResult.converted} pending invite(s) for ${email}`);
+    }
 
     // Include org memberships in response (now includes the personal org)
     const orgs = await dal.organizationsDal.listForUser(user.id);

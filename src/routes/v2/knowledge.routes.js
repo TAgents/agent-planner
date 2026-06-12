@@ -12,6 +12,8 @@ const logger = require('../../utils/logger');
 const graphitiBridge = require('../../services/graphitiBridge');
 const messageBus = require('../../services/messageBus');
 const { checkCoherence } = require('../../services/coherenceEngine');
+const dal = require('../../db/dal.cjs');
+const { checkPlanAccess } = require('../../middleware/planAccess.middleware');
 
 // ─── GRAPHITI STATUS ────────────────────────────────────────────
 /**
@@ -218,6 +220,23 @@ router.post('/episodes', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'content is required' });
     }
 
+    // If the episode targets a plan/node, the caller must have access to
+    // that plan — episode links and coherence checks write to it.
+    let effectivePlanId = plan_id || null;
+    if (node_id) {
+      const node = await dal.nodesDal.findById(node_id);
+      if (!node) {
+        return res.status(404).json({ error: 'Node not found' });
+      }
+      if (plan_id && node.planId !== plan_id) {
+        return res.status(400).json({ error: 'node_id does not belong to plan_id' });
+      }
+      effectivePlanId = node.planId;
+    }
+    if (effectivePlanId && !(await checkPlanAccess(effectivePlanId, req.user.id))) {
+      return res.status(403).json({ error: 'You do not have access to this plan' });
+    }
+
     const group_id = graphitiBridge.getGroupId(req.user);
 
     const result = await graphitiBridge.addEpisode({
@@ -243,13 +262,11 @@ router.post('/episodes', authenticate, async (req, res) => {
       try {
         let targetNodeId = node_id;
         if (!targetNodeId && plan_id) {
-          const dalRef = require('../../db/dal.cjs');
-          const root = await dalRef.nodesDal.getRoot(plan_id);
+          const root = await dal.nodesDal.getRoot(plan_id);
           targetNodeId = root?.id || null;
         }
         if (targetNodeId) {
-          const dalRef = require('../../db/dal.cjs');
-          await dalRef.episodeLinksDal.link(episodeId, targetNodeId, 'informs');
+          await dal.episodeLinksDal.link(episodeId, targetNodeId, 'informs');
         }
       } catch (err) {
         await logger.warn('episode_node_link create failed:', err.message);
@@ -326,6 +343,22 @@ router.delete('/episodes/:episodeId', authenticate, async (req, res) => {
     }
 
     const { episodeId } = req.params;
+
+    // Graphiti's delete_episode is UUID-only (no group filter), so authorize
+    // here: if the episode is linked to plan nodes, the caller must have
+    // access to at least one linked plan. Unlinked episodes can't be
+    // ownership-checked through the bridge — they rely on UUID unguessability.
+    const links = await dal.episodeLinksDal.listByEpisodeIdsWithTitles([episodeId]);
+    if (links.length > 0) {
+      let canDelete = false;
+      for (const link of links) {
+        if (await checkPlanAccess(link.plan_id, req.user.id)) { canDelete = true; break; }
+      }
+      if (!canDelete) {
+        return res.status(403).json({ error: 'You do not have access to this episode' });
+      }
+    }
+
     await logger.info('Knowledge episode delete', {
       episodeId,
       userId: req.user.id,
@@ -567,8 +600,18 @@ router.post('/episode-task-links', authenticate, async (req, res) => {
     if (episode_ids.length === 0) {
       return res.json({ links: [] });
     }
-    const dal = require('../../db/dal.cjs');
-    const links = await dal.episodeLinksDal.listByEpisodeIdsWithTitles(episode_ids);
+    const allLinks = await dal.episodeLinksDal.listByEpisodeIdsWithTitles(episode_ids);
+
+    // Only return links into plans the caller can access — node/plan titles
+    // would otherwise leak across organizations via guessed episode IDs.
+    const accessByPlan = new Map();
+    const links = [];
+    for (const link of allLinks) {
+      if (!accessByPlan.has(link.plan_id)) {
+        accessByPlan.set(link.plan_id, await checkPlanAccess(link.plan_id, req.user.id));
+      }
+      if (accessByPlan.get(link.plan_id)) links.push(link);
+    }
     res.json({ links });
   } catch (err) {
     await logger.error('episode-task-links failed', err);
