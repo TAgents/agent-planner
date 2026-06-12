@@ -8,7 +8,7 @@ const domains = require('../../domains');
 const { forwardTo, e } = require('./forward');
 
 const searchRoutes = domains.search.routes.searchRoutes;
-const shareRoutes = domains.collaboration.routes.shareRoutes;
+const inviteRoutes = domains.collaboration.routes.shareRoutes.inviteRoutes;
 
 /**
  * @swagger
@@ -36,6 +36,6 @@ router.get('/search', searchLimiter, forwardTo(searchRoutes, () => '/'));
  *     responses:
  *       200: { description: Invite accepted }
  */
-router.post('/invites/accept/:token', forwardTo(shareRoutes, (req) => `/accept/${e(req.params.token)}`));
+router.post('/invites/accept/:token', forwardTo(inviteRoutes, (req) => `/accept/${e(req.params.token)}`));
 
 module.exports = router;

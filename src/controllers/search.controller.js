@@ -1,25 +1,7 @@
-const { plansDal, nodesDal, searchDal, collaboratorsDal } = require('../db/dal.cjs');
+const { plansDal, searchDal, collaboratorsDal } = require('../db/dal.cjs');
 
-/**
- * Search for nodes in a plan
- */
-const searchNodes = async (req, res, next) => {
-  try {
-    const { id: planId } = req.params;
-    const { query, status, node_type: nodeType, date_from: dateFrom, date_to: dateTo } = req.query;
-    const userId = req.user.id;
-
-    const { hasAccess } = await plansDal.userHasAccess(planId, userId);
-    if (!hasAccess) {
-      return res.status(403).json({ error: 'You do not have access to this plan' });
-    }
-
-    const nodes = await nodesDal.search(planId, { query, status, nodeType, dateFrom, dateTo });
-    res.json(nodes);
-  } catch (error) {
-    next(error);
-  }
-};
+// searchNodes removed (API v1 consolidation Phase 5 — its route
+// /search/plans/:id/nodes/search had no consumers).
 
 /**
  * Search for artifacts (deprecated - returns empty array)
@@ -120,7 +102,6 @@ const searchPlan = async (req, res, next) => {
 };
 
 module.exports = {
-  searchNodes,
   searchArtifacts,
   globalSearch,
   searchPlan

@@ -1,6 +1,6 @@
 # API v1 Consolidation Plan — 231 endpoints → ~55 public
 
-**Status:** Phase 4 complete — MCP 1.2.0 calls the /v1 facades (fallback kept); next: Phase 5 deletions (gated on 30-day `tool_calls` telemetry on prod)
+**Status:** ALL PHASES COMPLETE (Phase 5 telemetry gate waived — no external users at time of cleanup)
 **Branch:** `api-v1-consolidation` (phases may split into separate PRs)
 **Origin:** Architecture review (2026-06-12) — the REST surface accumulated through
 four pivots and now exposes ~231 endpoints, while the MCP layer proves the same
@@ -186,11 +186,21 @@ API; this plan makes a v1 public surface shaped like it.
   behavior gain (identical handlers), only telemetry value; do alongside
   Phase 5 deprecation headers. npm publish of 1.2.0 not yet done.
 
-### Phase 5 — Deletions & deprecation headers
+### Phase 5 — Deletions & deprecation headers *(DONE — telemetry gate waived: no external users)*
 - Endpoints classified `remove` in Phase 1 get deleted after a telemetry check
   (`tool_calls` table, 30-day window on prod).
 - Internal endpoints that duplicate v1 exactly get `Deprecation` response
   headers pointing at the v1 path.
+- **Shipped:** deleted POST /context/compact, GET+POST /goals/:id/evaluations,
+  GET /plans/:id/decisions/pending-count, GET /plans/:id/schedule,
+  GET /plans/:id/decomposition-alerts, GET /search/plans/:id/nodes/search,
+  and the whole /v2/agent group (routes/v2/agent.routes.js + src/mcp/tools.js).
+  GET /goals/:id/path was **reclassified internal** — the Phase 1 grep missed
+  the UI's template-literal `useGoalPath` call. The 5 phantom paths are gone:
+  share.routes.js now exports separate plan-scoped and invite-scoped routers
+  instead of one router double-mounted at /plans + /invites.
+  Deprecation headers skipped — with no external users there is nobody to
+  signal; internal duplicates stay as the UI's contract.
 
 ## Verification per phase
 - Unit + integration tests green after each phase.

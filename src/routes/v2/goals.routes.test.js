@@ -35,11 +35,19 @@ const mockGoalsDal = {
 };
 
 const mockWorkspacesDal = {
-  findDefault: jest.fn().mockResolvedValue(null),
+  findDefault: jest.fn(),
+};
+
+const mockOrganizationsDal = {
+  listForUser: jest.fn(),
 };
 
 // Mock DAL via CJS bridge
-jest.mock('../../db/dal.cjs', () => ({ goalsDal: mockGoalsDal, workspacesDal: mockWorkspacesDal }));
+jest.mock('../../db/dal.cjs', () => ({
+  goalsDal: mockGoalsDal,
+  workspacesDal: mockWorkspacesDal,
+  organizationsDal: mockOrganizationsDal,
+}));
 
 const goalsRoutes = require('./goals.routes');
 
@@ -56,6 +64,10 @@ describe('Goals v2 Routes', () => {
   beforeEach(() => {
     app = createApp();
     jest.clearAllMocks();
+    // workspace_id is NOT NULL since migration 0021 — create paths resolve
+    // the org's default workspace, so give the fallback chain something.
+    mockOrganizationsDal.listForUser.mockResolvedValue([{ id: 'org-1', isPersonal: true }]);
+    mockWorkspacesDal.findDefault.mockResolvedValue({ id: 'ws-1', organizationId: 'org-1' });
   });
 
   describe('GET /api/goals', () => {
@@ -147,26 +159,15 @@ describe('Goals v2 Routes', () => {
     });
   });
 
-  describe('POST /api/goals/:id/evaluations', () => {
-    it('creates an evaluation', async () => {
-      mockGoalsDal.addEvaluation.mockResolvedValue({ id: 'e1', goalId: 'g1', score: 80 });
-      const res = await request(app).post('/api/goals/g1/evaluations').send({ evaluatedBy: 'human', score: 80 });
-      expect(res.status).toBe(201);
-    });
-
-    it('defaults evaluatedBy to req.user.id when omitted', async () => {
-      mockGoalsDal.addEvaluation.mockResolvedValue({ id: 'e2', goalId: 'g1', score: 80 });
+  describe('removed endpoints (API v1 consolidation Phase 5)', () => {
+    it('POST /api/goals/:id/evaluations is gone', async () => {
       const res = await request(app).post('/api/goals/g1/evaluations').send({ score: 80 });
-      expect(res.status).toBe(201);
-      const lastCall = mockGoalsDal.addEvaluation.mock.calls.at(-1);
-      // Authenticated test user is mocked via setUser middleware; evaluatedBy
-      // should fall through to that id rather than 400.
-      expect(lastCall?.[1]?.evaluatedBy).toBeTruthy();
+      expect(res.status).toBe(404);
     });
 
-    it('validates score range', async () => {
-      const res = await request(app).post('/api/goals/g1/evaluations').send({ evaluatedBy: 'human', score: 150 });
-      expect(res.status).toBe(400);
+    it('GET /api/goals/:id/evaluations is gone', async () => {
+      const res = await request(app).get('/api/goals/g1/evaluations');
+      expect(res.status).toBe(404);
     });
   });
 });

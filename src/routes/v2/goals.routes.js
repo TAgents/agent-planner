@@ -521,47 +521,14 @@ router.delete('/:id/links/:linkId', authenticate, async (req, res) => {
   }
 });
 
-// POST /api/goals/:id/evaluations
-router.post('/:id/evaluations', authenticate, async (req, res) => {
-  try {
-    const { score, reasoning, suggestedActions } = req.body;
-    // Default evaluatedBy to the authenticated user; allow override only
-    // when the caller is service-token-authenticated (admin scope checks
-    // belong upstream in middleware).
-    const evaluatedBy = req.body.evaluatedBy || req.user.id;
-    if (score !== undefined && score !== null && (score < 0 || score > 100)) {
-      return res.status(400).json({ error: 'score must be between 0 and 100' });
-    }
-
-    const dal = goalsDal;
-    const evaluation = await dal.addEvaluation(req.params.id, {
-      evaluatedBy,
-      score: score ?? null,
-      reasoning: reasoning || null,
-      suggestedActions: suggestedActions || null,
-    });
-    res.status(201).json(evaluation);
-  } catch (err) {
-    await logger.error('Add evaluation error:', err);
-    res.status(500).json({ error: 'Failed to add evaluation' });
-  }
-});
-
-// GET /api/goals/:id/evaluations
-router.get('/:id/evaluations', authenticate, async (req, res) => {
-  try {
-    const dal = goalsDal;
-    const evaluations = await dal.getEvaluations(req.params.id);
-    res.json({ evaluations });
-  } catch (err) {
-    await logger.error('Get evaluations error:', err);
-    res.status(500).json({ error: 'Failed to get evaluations' });
-  }
-});
+// GET/POST /goals/:id/evaluations removed (API v1 consolidation Phase 5 —
+// the UI reads evaluations embedded in the goal object; evaluations are
+// still written internally by the quality assessment in goalState.service.js).
 
 // ─── Goal dependency traversal ────────────────────────────────
 
 // GET /api/goals/:id/path — traverse backward from goal through achieves→blocks edges
+// (kept internal: consumed by the UI's useGoalPath hook on the goal detail page)
 router.get('/:id/path', authenticate, async (req, res) => {
   try {
     const goal = await requireGoalAccess(req, res);

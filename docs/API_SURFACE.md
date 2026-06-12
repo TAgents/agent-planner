@@ -97,7 +97,7 @@ Consumer legend: `ui` = agent-planner-ui, `mcp` = agent-planner-mcp, `devops`, `
 | Method | Path | Class | v1 alias | Consumers | Note |
 |---|---|---|---|---|---|
 | GET | `/context` | internal |  | ui, mcp |  |
-| POST | `/context/compact` | remove |  |  |  |
+| POST | `/context/compact` | remove |  |  | **deleted in Phase 5** |
 | GET | `/context/plan` | internal |  | mcp |  |
 | GET | `/context/progressive` | v1 | GET /v1/tasks/:nodeId/context | mcp |  |
 | GET | `/context/suggest` | internal |  | ui, mcp |  |
@@ -147,12 +147,12 @@ Consumer legend: `ui` = agent-planner-ui, `mcp` = agent-planner-mcp, `devops`, `
 | DELETE | `/goals/:id/achievers/:depId` | internal |  | mcp |  |
 | GET | `/goals/:id/coherence` | internal |  | ui |  |
 | GET | `/goals/:id/coverage` | internal |  | ui |  |
-| GET | `/goals/:id/evaluations` | remove |  |  |  |
-| POST | `/goals/:id/evaluations` | remove |  |  |  |
+| GET | `/goals/:id/evaluations` | remove |  |  | **deleted in Phase 5** |
+| POST | `/goals/:id/evaluations` | remove |  |  | **deleted in Phase 5** |
 | GET | `/goals/:id/knowledge-gaps` | v1 | GET /v1/goals/:id/state (facade input) | ui, mcp |  |
 | POST | `/goals/:id/links` | internal |  | mcp |  |
 | DELETE | `/goals/:id/links/:linkId` | internal |  | mcp |  |
-| GET | `/goals/:id/path` | remove |  |  |  |
+| GET | `/goals/:id/path` | internal |  | ui |  | reclassified in Phase 5: consumed by the UI's `useGoalPath` (template-literal URL missed by the Phase 1 grep) |
 | GET | `/goals/:id/portfolio` | internal |  | ui |  |
 | GET | `/goals/:id/progress` | v1 | GET /v1/goals/:id/state (facade input) | mcp |  |
 | POST | `/goals/:id/promote-to-intention` | v1 | POST /v1/goals/:id/promote | ui |  |
@@ -176,9 +176,9 @@ Consumer legend: `ui` = agent-planner-ui, `mcp` = agent-planner-mcp, `devops`, `
 
 | Method | Path | Class | v1 alias | Consumers | Note |
 |---|---|---|---|---|---|
-| GET | `/invites/:id/invites` | phantom |  |  | double-mount artifact (shareRoutes mounted at /plans + /invites) |
-| POST | `/invites/:id/share` | phantom |  |  | double-mount artifact (shareRoutes mounted at /plans + /invites) |
-| DELETE | `/invites/:planId/invites/:inviteId` | phantom |  |  | double-mount artifact (shareRoutes mounted at /plans + /invites) |
+| GET | `/invites/:id/invites` | phantom |  |  | double-mount artifact — **fixed in Phase 5** (invite routes split into their own router) |
+| POST | `/invites/:id/share` | phantom |  |  | double-mount artifact — **fixed in Phase 5** (invite routes split into their own router) |
+| DELETE | `/invites/:planId/invites/:inviteId` | phantom |  |  | double-mount artifact — **fixed in Phase 5** (invite routes split into their own router) |
 | POST | `/invites/accept/:token` | v1 | POST /v1/invites/accept/:token |  |  |
 | GET | `/invites/info/:token` | internal |  |  | no consumer reference found — verify with telemetry before any future removal |
 
@@ -253,8 +253,8 @@ Consumer legend: `ui` = agent-planner-ui, `mcp` = agent-planner-mcp, `devops`, `
 | PUT | `/plans/:id/decisions/:decisionId` | internal |  | ui, mcp |  |
 | POST | `/plans/:id/decisions/:decisionId/cancel` | v1 | POST /v1/decisions/:id/cancel | ui |  |
 | POST | `/plans/:id/decisions/:decisionId/resolve` | v1 | POST /v1/decisions/:id/resolve | ui, mcp |  |
-| GET | `/plans/:id/decisions/pending-count` | remove |  |  |  |
-| GET | `/plans/:id/decomposition-alerts` | remove |  |  |  |
+| GET | `/plans/:id/decisions/pending-count` | remove |  |  | **deleted in Phase 5** |
+| GET | `/plans/:id/decomposition-alerts` | remove |  |  | **deleted in Phase 5** |
 | GET | `/plans/:id/dependencies` | internal |  | ui, mcp |  |
 | POST | `/plans/:id/dependencies` | v1 | POST /v1/dependencies | ui, mcp |  |
 | DELETE | `/plans/:id/dependencies/:depId` | v1 | DELETE /v1/dependencies/:id | ui, mcp |  |
@@ -304,13 +304,13 @@ Consumer legend: `ui` = agent-planner-ui, `mcp` = agent-planner-mcp, `devops`, `
 | GET | `/plans/:id/progress` | internal |  | ui |  |
 | GET | `/plans/:id/public` | internal |  | mcp |  |
 | GET | `/plans/:id/rpi-chains` | internal |  |  | no consumer reference found — verify with telemetry before any future removal |
-| GET | `/plans/:id/schedule` | remove |  |  |  |
+| GET | `/plans/:id/schedule` | remove |  |  | **deleted in Phase 5** |
 | POST | `/plans/:id/share` | internal |  | ui |  |
 | POST | `/plans/:id/view` | internal |  |  | no consumer reference found — verify with telemetry before any future removal |
 | PUT | `/plans/:id/visibility` | v1 | POST /v1/plans/:id/share (facade input) | ui, mcp |  |
 | DELETE | `/plans/:planId/invites/:inviteId` | internal |  |  | no consumer reference found — verify with telemetry before any future removal |
-| POST | `/plans/accept/:token` | phantom |  |  | double-mount artifact (shareRoutes mounted at /plans + /invites) |
-| GET | `/plans/info/:token` | phantom |  |  | double-mount artifact (shareRoutes mounted at /plans + /invites) |
+| POST | `/plans/accept/:token` | phantom |  |  | double-mount artifact — **fixed in Phase 5** (invite routes split into their own router) |
+| GET | `/plans/info/:token` | phantom |  |  | double-mount artifact — **fixed in Phase 5** (invite routes split into their own router) |
 | GET | `/plans/public` | internal |  | ui |  |
 | GET | `/plans/public/:id` | internal |  | ui |  |
 | GET | `/plans/public/:id/knowledge-digest` | internal |  | ui |  |
@@ -323,7 +323,7 @@ Consumer legend: `ui` = agent-planner-ui, `mcp` = agent-planner-mcp, `devops`, `
 |---|---|---|---|---|---|
 | GET | `/search` | v1 | GET /v1/search | ui, mcp |  |
 | GET | `/search/plan/:plan_id` | internal |  | ui, mcp |  |
-| GET | `/search/plans/:id/nodes/search` | remove |  |  |  |
+| GET | `/search/plans/:id/nodes/search` | remove |  |  | **deleted in Phase 5** |
 
 ## /stats
 
@@ -350,9 +350,9 @@ Consumer legend: `ui` = agent-planner-ui, `mcp` = agent-planner-mcp, `devops`, `
 
 | Method | Path | Class | v1 alias | Consumers | Note |
 |---|---|---|---|---|---|
-| POST | `/v2/agent/callback` | remove |  |  |  |
-| GET | `/v2/agent/tools` | remove |  |  |  |
-| POST | `/v2/agent/tools/:toolName` | remove |  |  |  |
+| POST | `/v2/agent/callback` | remove |  |  | **deleted in Phase 5** |
+| GET | `/v2/agent/tools` | remove |  |  | **deleted in Phase 5** |
+| POST | `/v2/agent/tools/:toolName` | remove |  |  | **deleted in Phase 5** |
 
 ## /workspaces
 

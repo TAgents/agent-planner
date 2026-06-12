@@ -56,7 +56,6 @@ const authRoutes = require('./routes/auth.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const statsRoutes = require('./routes/stats.routes');
 const githubRoutes = require('./routes/github.routes');
-const agentV2Routes = require('./routes/v2/agent.routes');
 const contextRoutes = require('./routes/context.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const onboardingRoutes = require('./routes/onboarding.routes');
@@ -160,9 +159,11 @@ app.use('/stats', generalLimiter, statsRoutes);
 app.use('/github', generalLimiter, githubRoutes);
 // Removed: ai routes (pre-v2 cleanup)
 
-// Share routes (plan sharing by email)
+// Share routes (plan sharing by email) — plan-scoped sharing and
+// token-scoped invite acceptance are separate routers so neither mount
+// exposes the other's paths.
 app.use('/plans', generalLimiter, shareRoutes);
-app.use('/invites', generalLimiter, shareRoutes);
+app.use('/invites', generalLimiter, shareRoutes.inviteRoutes);
 
 // Organization routes
 app.use('/organizations', generalLimiter, organizationRoutes);
@@ -177,7 +178,6 @@ app.use('/goals', generalLimiter, goalsV2Routes);
 
 app.use('/knowledge', generalLimiter, knowledgeV2Routes);
 app.use('/knowledge/search', searchLimiter);  // stricter limit for semantic search
-app.use('/v2/agent', generalLimiter, agentV2Routes);
 app.use('/agent', generalLimiter, agentLoopRoutes);
 // Agent context routes (leaf-up context loading)
 app.use('/context', generalLimiter, contextRoutes);

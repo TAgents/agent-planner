@@ -136,37 +136,8 @@ router.get('/:id/decisions',
   decisionController.listDecisionRequests
 );
 
-/**
- * @swagger
- * /plans/{id}/decisions/pending-count:
- *   get:
- *     summary: Get count of pending decisions for a plan
- *     tags: [Decisions]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: Pending count
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 pending_count:
- *                   type: integer
- */
-router.get('/:id/decisions/pending-count',
-  authenticate,
-  ...validate({ params: schemas.decision.planIdParam }),
-  decisionController.getPendingDecisionCount
-);
+// GET /plans/:id/decisions/pending-count removed (API v1 consolidation
+// Phase 5 — no consumers; the dashboard pending bundle covers counts).
 
 /**
  * @swagger

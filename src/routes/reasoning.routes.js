@@ -8,8 +8,6 @@ const { plansDal } = require('../db/dal.cjs');
 const {
   detectBottlenecks,
   detectRpiChains,
-  topologicalSort,
-  detectDecompositionCandidates,
 } = require('../services/reasoning');
 
 const checkAccess = async (planId, userId) => {
@@ -142,124 +140,9 @@ router.get('/:id/rpi-chains', authenticate, async (req, res, next) => {
   }
 });
 
-/**
- * @swagger
- * /api/plans/{id}/schedule:
- *   get:
- *     summary: Get topological execution schedule
- *     description: >
- *       Returns tasks in topological (dependency-respecting) execution order,
- *       grouped into parallelizable layers.
- *     tags: [Reasoning]
- *     security:
- *       - bearerAuth: []
- *       - apiKey: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *         description: The plan ID
- *     responses:
- *       200:
- *         description: Topologically sorted schedule with layer grouping
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 schedule:
- *                   type: array
- *                   items:
- *                     type: object
- *                 layers:
- *                   type: object
- *                   additionalProperties:
- *                     type: array
- *                     items:
- *                       type: object
- *                 total:
- *                   type: integer
- *       403:
- *         description: No access to this plan
- *       500:
- *         description: Internal server error
- */
-router.get('/:id/schedule', authenticate, async (req, res, next) => {
-  try {
-    const { id: planId } = req.params;
-
-    if (!(await checkAccess(planId, req.user.id))) {
-      return res.status(403).json({ error: 'No access to this plan' });
-    }
-
-    const schedule = await topologicalSort(planId);
-    const layers = {};
-    for (const task of schedule) {
-      layers[task.layer] = layers[task.layer] || [];
-      layers[task.layer].push(task);
-    }
-
-    res.json({ schedule, layers, total: schedule.length });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /api/plans/{id}/decomposition-alerts:
- *   get:
- *     summary: Detect decomposition candidates
- *     description: >
- *       Flags tasks that may be too large or complex and should be
- *       decomposed into smaller subtasks.
- *     tags: [Reasoning]
- *     security:
- *       - bearerAuth: []
- *       - apiKey: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *         description: The plan ID
- *     responses:
- *       200:
- *         description: List of tasks that may need decomposition
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 alerts:
- *                   type: array
- *                   items:
- *                     type: object
- *                 count:
- *                   type: integer
- *       403:
- *         description: No access to this plan
- *       500:
- *         description: Internal server error
- */
-router.get('/:id/decomposition-alerts', authenticate, async (req, res, next) => {
-  try {
-    const { id: planId } = req.params;
-
-    if (!(await checkAccess(planId, req.user.id))) {
-      return res.status(403).json({ error: 'No access to this plan' });
-    }
-
-    const alerts = await detectDecompositionCandidates(planId);
-    res.json({ alerts, count: alerts.length });
-  } catch (error) {
-    next(error);
-  }
-});
+// GET /plans/:id/schedule and /plans/:id/decomposition-alerts removed
+// (API v1 consolidation Phase 5 — no consumers). The reasoning service
+// functions (topologicalSort, detectDecompositionCandidates) remain available
+// to internal services.
 
 module.exports = router;

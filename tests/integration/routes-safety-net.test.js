@@ -428,6 +428,10 @@ describe('Routes Safety Net', () => {
     jest.clearAllMocks();
     // Reset common DAL responses
     dal.plansDal.userHasAccess.mockResolvedValue({ hasAccess: true, role: 'owner' });
+    // workspace_id is NOT NULL since migration 0021 — plan/goal create paths
+    // resolve a default workspace, so give the fallback chain something.
+    dal.organizationsDal.listForUser.mockResolvedValue([{ id: ORG_ID, isPersonal: true }]);
+    dal.workspacesDal.findDefault.mockResolvedValue({ id: uuidv4(), organizationId: ORG_ID });
   });
 
   // ════════════════════════════════════════════════════════════════════
