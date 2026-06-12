@@ -24,7 +24,8 @@ export const plansDal = {
    *
    * Returns the newly-created plan row. Throws on missing source.
    */
-  async fork(sourcePlanId, { ownerId, organizationId = null, title = null }) {
+  async fork(sourcePlanId, { ownerId, organizationId = null, workspaceId, title = null }) {
+    if (!workspaceId) throw new Error('fork: workspaceId is required (plans.workspace_id is NOT NULL)');
     const { planNodes } = await import('../schema/plans.mjs');
     const { nodeDependencies } = await import('../schema/dependencies.mjs');
 
@@ -36,6 +37,7 @@ export const plansDal = {
       description: source.description,
       ownerId,
       organizationId,
+      workspaceId,
       status: 'draft',
       visibility: 'private',
       metadata: {

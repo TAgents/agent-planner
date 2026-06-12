@@ -421,11 +421,24 @@ async function createIntention(user, { goal_id, title, description, rationale, s
     throw new AgentLoopError('Access denied to goal', 403, 'forbidden');
   }
 
+  // Plans require a workspace (NOT NULL since migration 0021). Inherit the
+  // goal's workspace; fall back to the org's default workspace.
+  const organizationId = goal.organizationId || user.organizationId || null;
+  let workspaceId = goal.workspaceId || null;
+  if (!workspaceId && organizationId) {
+    const defaultWs = await dal.workspacesDal.findDefault(organizationId);
+    workspaceId = defaultWs?.id || null;
+  }
+  if (!workspaceId) {
+    throw new AgentLoopError('No workspace available for this goal', 400, 'invalid_arg');
+  }
+
   const plan = await dal.plansDal.create({
     title,
     description: [rationale, description].filter(Boolean).join('\n\n'),
     ownerId: user.id,
-    organizationId: goal.organizationId || user.organizationId || null,
+    organizationId,
+    workspaceId,
     status,
     visibility,
     metadata: { source: 'agent_loop', goal_id },

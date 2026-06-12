@@ -287,6 +287,16 @@ router.delete('/:id', authenticate, async (req, res) => {
       return res.status(409).json({ error: 'Cannot delete the default workspace' });
     }
 
+    // workspace_id on plans/goals is NOT NULL with ON DELETE RESTRICT —
+    // a non-empty workspace can't be deleted. Surface that as a 409
+    // instead of letting the FK violation become a 500.
+    const counts = await workspacesDal.getCounts(ws.id);
+    if (counts.planCount > 0 || counts.goalCount > 0) {
+      return res.status(409).json({
+        error: `Workspace still contains ${counts.planCount} plan(s) and ${counts.goalCount} goal(s) — move or archive them first`,
+      });
+    }
+
     await workspacesDal.delete(ws.id);
     return res.status(204).send();
   } catch (error) {

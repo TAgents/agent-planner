@@ -43,6 +43,20 @@ const latestLogTimestampsByPlanIds = (planIds) =>
 const findDefaultWorkspace = (organizationId) =>
   dal.workspacesDal.findDefault(organizationId);
 
+// Last-resort workspace resolution when the caller supplied neither a
+// workspace nor an org: the default workspace of the user's first org
+// (personal org first — keeps unscoped creations private).
+const findFallbackWorkspaceForUser = async (userId) => {
+  const orgs = await dal.organizationsDal.listForUser(userId);
+  if (!orgs || orgs.length === 0) return null;
+  const ordered = [...orgs].sort((a, b) => (b.isPersonal === true) - (a.isPersonal === true));
+  for (const org of ordered) {
+    const ws = await dal.workspacesDal.findDefault(org.id);
+    if (ws) return { workspace: ws, organizationId: org.id };
+  }
+  return null;
+};
+
 module.exports = {
   // Plan CRUD
   findById,
@@ -68,4 +82,5 @@ module.exports = {
   latestLogTimestampsByPlanIds,
   // Workspace fallback
   findDefaultWorkspace,
+  findFallbackWorkspaceForUser,
 };
