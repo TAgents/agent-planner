@@ -14,6 +14,54 @@
 const dal = require('../db/dal.cjs');
 const graphitiBridge = require('./graphitiBridge');
 
+// ---- read-through TTL cache ----
+// Agents poll context endpoints; assembly at depth 4 fires 10+ queries.
+// Entries expire after CONTEXT_CACHE_TTL_MS (default 30s) and the whole
+// plan's entries are dropped on node.status.changed via the message bus.
+// Disable with CONTEXT_CACHE_DISABLED=true.
+const CACHE_TTL_MS = Number(process.env.CONTEXT_CACHE_TTL_MS) > 0
+  ? Number(process.env.CONTEXT_CACHE_TTL_MS)
+  : 30 * 1000;
+const CACHE_MAX_ENTRIES = 500;
+const cacheDisabled = String(process.env.CONTEXT_CACHE_DISABLED).toLowerCase() === 'true';
+const contextCache = new Map(); // key → { planId, expiresAt, value }
+
+function cacheGet(key) {
+  const entry = contextCache.get(key);
+  if (!entry) return undefined;
+  if (Date.now() > entry.expiresAt) {
+    contextCache.delete(key);
+    return undefined;
+  }
+  return entry.value;
+}
+
+function cacheSet(key, planId, value) {
+  if (contextCache.size >= CACHE_MAX_ENTRIES) {
+    // Evict oldest insertion (Map preserves insertion order)
+    const oldest = contextCache.keys().next().value;
+    contextCache.delete(oldest);
+  }
+  contextCache.set(key, { planId, expiresAt: Date.now() + CACHE_TTL_MS, value });
+}
+
+function invalidatePlanContext(planId) {
+  for (const [key, entry] of contextCache) {
+    if (entry.planId === planId) contextCache.delete(key);
+  }
+}
+
+/**
+ * Subscribe cache invalidation to the message bus. Called from index.js
+ * alongside the other listeners after messageBus.init().
+ */
+function initContextCacheInvalidation(messageBus) {
+  messageBus.subscribe('node.status.changed', (data) => {
+    if (data?.planId) invalidatePlanContext(data.planId);
+    else contextCache.clear(); // no plan info — drop everything, stay correct
+  });
+}
+
 // ---- token estimation helpers ----
 const CHARS_PER_TOKEN = 4; // rough heuristic for English/JSON
 
@@ -136,8 +184,20 @@ async function assembleContext(nodeId, opts = {}) {
   const includeResearch = opts.include_research !== false;
   const orgId = opts.orgId;
 
+  const cacheKey = `${nodeId}:${depth}:${tokenBudget}:${logLimit}:${includeResearch}:${orgId ?? ''}`;
+  if (!cacheDisabled) {
+    const cached = cacheGet(cacheKey);
+    if (cached !== undefined) return cached;
+  }
+
   const node = await dal.nodesDal.findById(nodeId);
   if (!node) return null;
+
+  const finish = (ctx) => {
+    const result = trimToTokenBudget(ctx, tokenBudget);
+    if (!cacheDisabled) cacheSet(cacheKey, node.planId, result);
+    return result;
+  };
 
   const context = {
     meta: { node_id: nodeId, depth, requested_at: new Date().toISOString() },
@@ -159,7 +219,7 @@ async function assembleContext(nodeId, opts = {}) {
 
   if (depth < 2) {
     context.meta.layers_included = ['task_focus'];
-    return trimToTokenBudget(context, tokenBudget);
+    return finish(context);
   }
 
   // ── Layer 2: Local Neighborhood ──
@@ -190,7 +250,7 @@ async function assembleContext(nodeId, opts = {}) {
 
   if (depth < 3) {
     context.meta.layers_included = ['task_focus', 'local_neighborhood'];
-    return trimToTokenBudget(context, tokenBudget);
+    return finish(context);
   }
 
   // ── Layer 3: Knowledge (Graphiti temporal graph) ──
@@ -208,7 +268,7 @@ async function assembleContext(nodeId, opts = {}) {
 
   if (depth < 4) {
     context.meta.layers_included = ['task_focus', 'local_neighborhood', 'knowledge'];
-    return trimToTokenBudget(context, tokenBudget);
+    return finish(context);
   }
 
   // ── Layer 4: Extended Context ──
@@ -268,7 +328,7 @@ async function assembleContext(nodeId, opts = {}) {
   }
 
   context.meta.layers_included = ['task_focus', 'local_neighborhood', 'knowledge', 'extended'];
-  return trimToTokenBudget(context, tokenBudget);
+  return finish(context);
 }
 
 /**
@@ -424,4 +484,4 @@ async function suggestNextTasks(planId, { limit = 5, orgId } = {}) {
   return suggestions.slice(0, limit);
 }
 
-module.exports = { assembleContext, suggestNextTasks, estimateTokens };
+module.exports = { assembleContext, suggestNextTasks, estimateTokens, initContextCacheInvalidation };

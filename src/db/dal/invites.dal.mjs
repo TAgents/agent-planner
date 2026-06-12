@@ -1,4 +1,4 @@
-import { eq, and, gt, desc } from 'drizzle-orm';
+import { eq, and, gt, lt, desc } from 'drizzle-orm';
 import { db } from '../connection.mjs';
 import { pendingInvites } from '../schema/auth.mjs';
 
@@ -58,7 +58,7 @@ export const invitesDal = {
 
   async deleteExpired() {
     const deleted = await db.delete(pendingInvites)
-      .where(gt(new Date(), pendingInvites.expiresAt))
+      .where(lt(pendingInvites.expiresAt, new Date()))
       .returning();
     return deleted.length;
   },
