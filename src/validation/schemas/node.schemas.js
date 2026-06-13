@@ -55,7 +55,7 @@ const updateNode = z.object({
   agent_instructions: optionalString(50000),
   metadata: metadata,
   task_mode: z.enum(['research', 'plan', 'implement', 'free']).optional().describe('RPI workflow mode'),
-  coherence_status: coherenceStatus.optional().describe('BDI coherence status'),
+  coherence_status: coherenceStatus.optional().describe('Coherence state (engine-managed; advanced override)'),
   quality_score: z.number().min(0).max(1).optional().nullable().describe('Task quality score (0.0-1.0)'),
   quality_assessed_at: z.string().datetime().optional().nullable().describe('When quality was last assessed'),
   quality_rationale: z.string().max(5000).optional().nullable().describe('Explanation of quality score'),

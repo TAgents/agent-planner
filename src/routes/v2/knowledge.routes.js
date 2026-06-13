@@ -191,7 +191,7 @@ router.get('/episodes', authenticate, async (req, res) => {
  *                   description: Organization-scoped group identifier
  *                 coherence_warnings:
  *                   type: array
- *                   description: Tasks whose beliefs may be affected by this new knowledge (BDI coherence check)
+ *                   description: Tasks whose context may be affected by this new knowledge (coherence check)
  *                   items:
  *                     type: object
  *                     properties:
@@ -202,7 +202,7 @@ router.get('/episodes', authenticate, async (req, res) => {
  *                         type: string
  *                       conflict_type:
  *                         type: string
- *                         enum: [contradiction_detected, stale_beliefs]
+ *                         enum: [contradicted, outdated]
  *       400:
  *         description: Missing required field (content)
  *       503:

@@ -76,7 +76,7 @@ router.get(`/goals/:id${UUID}/state`, async (req, res) => {
  * @swagger
  * /v1/goals/{id}/promote:
  *   post:
- *     summary: Promote a desire goal to an intention (readiness-checked)
+ *     summary: Promote a goal to committed (readiness-checked)
  *     tags: [v1]
  *     security: [{ bearerAuth: [] }, { apiKey: [] }]
  *     responses:

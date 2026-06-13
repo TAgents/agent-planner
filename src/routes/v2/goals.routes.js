@@ -21,6 +21,7 @@ const organizationsDal = require('../../db/dal.cjs').organizationsDal;
 const graphitiBridge = require('../../services/graphitiBridge');
 const reasoning = require('../../services/reasoning');
 const goalStateService = require('../../domains/goal/services/goalState.service');
+const { toPublicCoherence } = require('../../domains/node/coherenceVocab');
 
 const VALID_LINK_TYPES = ['plan', 'task', 'agent'];
 
@@ -221,7 +222,7 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
         title: row.title,
         description: row.description,
         type: row.type,
-        goal_type: row.goal_type || 'desire',
+        committed: Boolean(row.committed),
         status: row.status,
         health,
         owner_name: row.owner_name || null,
@@ -1154,8 +1155,8 @@ function calculateHealth(progress, bottlenecks, nodes) {
  * @swagger
  * /goals/{id}/portfolio:
  *   get:
- *     summary: Get goal portfolio (desire→intention graph)
- *     description: Returns the full desire→intention graph for a goal subtree including all descendant goals and their linked plans with progress. Enables the Portfolio UI to render the strategic view in a single request.
+ *     summary: Get goal portfolio (goal hierarchy + linked plans)
+ *     description: Returns the full goal hierarchy for a subtree including all descendant goals and their linked plans with progress. Enables the Portfolio UI to render the strategic view in a single request.
  *     tags: [Goals]
  *     security:
  *       - bearerAuth: []
@@ -1219,8 +1220,8 @@ router.get('/:id/portfolio', authenticate, async (req, res) => {
       .filter(Boolean);
 
     // Stats
-    const desires = allGoals.filter(g => (g.goalType || 'desire') === 'desire').length;
-    const intentions = allGoals.filter(g => g.goalType === 'intention').length;
+    const committedCount = allGoals.filter(g => g.committed).length;
+    const aspirationalCount = allGoals.length - committedCount;
     const goalsWithPlans = new Set(allLinks.map(l => l.goalId));
     const orphanGoals = allGoals.filter(g => !goalsWithPlans.has(g.id) && g.id !== goal.id).length;
 
@@ -1229,7 +1230,7 @@ router.get('/:id/portfolio', authenticate, async (req, res) => {
         id: goal.id,
         title: goal.title,
         type: goal.type,
-        goal_type: goal.goalType || 'desire',
+        committed: Boolean(goal.committed),
         status: goal.status,
         description: goal.description,
       },
@@ -1237,15 +1238,15 @@ router.get('/:id/portfolio', authenticate, async (req, res) => {
         id: d.id,
         title: d.title,
         type: d.type,
-        goal_type: d.goalType || 'desire',
+        committed: Boolean(d.committed),
         status: d.status,
         parent_goal_id: d.parentGoalId,
       })),
       linked_plans: linkedPlans,
       stats: {
         total_goals: allGoals.length,
-        desires,
-        intentions,
+        committed: committedCount,
+        aspirational: aspirationalCount,
         orphan_goals: orphanGoals,
         linked_plan_count: uniquePlanIds.length,
       },
@@ -1342,7 +1343,8 @@ router.get('/:id/coverage', authenticate, async (req, res) => {
               node_type: task.nodeType,
               fact_count: factCount,
               has_knowledge: factCount > 0,
-              coherence_status: task.coherenceStatus || 'unchecked',
+              coherence_status: toPublicCoherence(task.coherenceStatus).status,
+              coherence_message: toPublicCoherence(task.coherenceStatus).message,
               top_facts: topFacts,
             };
           })
@@ -1372,7 +1374,7 @@ router.get('/:id/coverage', authenticate, async (req, res) => {
       goal: {
         id: goal.id,
         title: goal.title,
-        goal_type: goal.goalType || 'desire',
+        committed: Boolean(goal.committed),
       },
       overall_coverage: {
         total: totalTasks,

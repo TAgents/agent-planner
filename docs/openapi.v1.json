@@ -881,7 +881,7 @@
     },
     "/v1/goals/{id}/promote": {
       "post": {
-        "summary": "Promote a desire goal to an intention (readiness-checked)",
+        "summary": "Promote a goal to committed (readiness-checked)",
         "tags": [
           "v1"
         ],

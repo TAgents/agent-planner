@@ -91,8 +91,8 @@ const { validate, schemas } = require('../validation');
  *         required: false
  *         schema:
  *           type: string
- *           enum: [coherent, stale_beliefs, contradiction_detected, unchecked]
- *         description: Filter nodes by BDI coherence status. Supports comma-separated values.
+ *           enum: [ok, outdated, contradicted, unchecked]
+ *         description: Filter nodes by coherence status (plain-language values; legacy internal values also accepted). Supports comma-separated values.
  *     responses:
  *       200:
  *         description: Hierarchical tree of plan nodes
@@ -1142,7 +1142,7 @@ const claimsController = require('../controllers/claims.controller.v2');
  *                 type: array
  *                 items:
  *                   type: string
- *                 description: Episode IDs (Graphiti UUIDs) that justified this commitment. Enables BDI coherence checking.
+ *                 description: Episode IDs (Graphiti UUIDs) that justified this commitment. Enables coherence checking.
  *     responses:
  *       201:
  *         description: Task claimed successfully
@@ -1282,7 +1282,7 @@ const episodeLinksController = require('../controllers/episodeLinks.controller.v
  * /plans/{id}/nodes/{nodeId}/episode-links:
  *   post:
  *     summary: Link a Graphiti episode to a task node
- *     description: Creates a link between a Graphiti knowledge episode and a plan node. Used by the BDI coherence system to track which beliefs (episodes) support, contradict, or inform task intentions.
+ *     description: Creates a link between a Graphiti knowledge episode and a plan node. Used by the coherence engine to track which episodes support, contradict, or inform a task's context.
  *     tags: [Nodes]
  *     security:
  *       - bearerAuth: []
