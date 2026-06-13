@@ -464,6 +464,9 @@ router.post('/:id/promote-to-intention', authenticate, promoteGoalHandler);
 // separate /achievers call. Already-existing achievers are preserved.
 router.post('/:id/links', authenticate, async (req, res) => {
   try {
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
+
     const { linkedType, linkedId } = req.body;
     if (!linkedType || !linkedId) {
       return res.status(400).json({ error: 'linkedType and linkedId are required' });
@@ -514,8 +517,15 @@ router.post('/:id/links', authenticate, async (req, res) => {
 // DELETE /api/goals/:id/links/:linkId
 router.delete('/:id/links/:linkId', authenticate, async (req, res) => {
   try {
-    const dal = goalsDal;
-    const link = await dal.removeLink(req.params.linkId);
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
+
+    // Only remove the link if it actually belongs to this goal — the linkId
+    // alone must not be a global handle to any goal's links.
+    const ownLink = (goal.links || []).some(l => l.id === req.params.linkId);
+    if (!ownLink) return res.status(404).json({ error: 'Link not found' });
+
+    const link = await goalsDal.removeLink(req.params.linkId);
     if (!link) return res.status(404).json({ error: 'Link not found' });
     res.json({ success: true });
   } catch (err) {
