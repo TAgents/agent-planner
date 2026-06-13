@@ -5,7 +5,6 @@
  */
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../../middleware/auth.middleware');
 const { searchLimiter } = require('../../middleware/rateLimit.middleware');
 const domains = require('../../domains');
 const v1Facades = require('../../services/v1Facades');
@@ -67,7 +66,7 @@ router.delete('/knowledge/episodes/:id', forwardTo(knowledgeRoutes, (req) => `/e
  *     responses:
  *       200: { description: Combined knowledge results }
  */
-router.post('/knowledge/search', searchLimiter, authenticate, async (req, res) => {
+router.post('/knowledge/search', searchLimiter, async (req, res) => {
   try {
     res.json(await v1Facades.knowledgeSearch(req.user, req.body || {}));
   } catch (err) {

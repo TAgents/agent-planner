@@ -5,7 +5,6 @@
  */
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../../middleware/auth.middleware');
 const { checkPlanAccess } = require('../../middleware/planAccess.middleware');
 const domains = require('../../domains');
 const dal = require('../../db/dal.cjs');
@@ -40,7 +39,6 @@ router.post('/dependencies', forwardTo(crossPlanDepsRoutes, () => '/cross-plan')
  */
 router.delete(
   '/dependencies/:id',
-  authenticate,
   async (req, res, next) => {
     try {
       const dep = await dal.dependenciesDal.findById(req.params.id);

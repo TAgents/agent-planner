@@ -37,11 +37,17 @@ function forwardTo(targetRouter, buildPath, { method } = {}) {
     // Express parses req.query eagerly from the ORIGINAL url, so query params
     // introduced by buildPath (e.g. ?node_id=... on the tasks/context alias)
     // would be invisible to the forwarded handler. Rebuild from the rewritten
-    // url — it contains both the built and the original params.
+    // url — it contains both the built and the original params. Preserve
+    // repeated keys as arrays (?ids=a&ids=b → ['a','b']) to match how `qs`
+    // models req.query for handlers that read array-form params.
     const newQIdx = url.indexOf('?');
     if (newQIdx !== -1) {
+      const sp = new URLSearchParams(url.slice(newQIdx + 1));
       const merged = {};
-      for (const [k, v] of new URLSearchParams(url.slice(newQIdx + 1))) merged[k] = v;
+      for (const key of new Set(sp.keys())) {
+        const vals = sp.getAll(key);
+        merged[key] = vals.length === 1 ? vals[0] : vals;
+      }
       req.query = merged;
     }
     targetRouter(req, res, next);

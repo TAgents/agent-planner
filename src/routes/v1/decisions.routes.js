@@ -5,7 +5,6 @@
  */
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../../middleware/auth.middleware');
 const { checkPlanAccess } = require('../../middleware/planAccess.middleware');
 const domains = require('../../domains');
 const dashboardRoutes = require('../dashboard.routes');
@@ -15,11 +14,10 @@ const { forwardTo, e } = require('./forward');
 const decisionRoutes = domains.decision.routes.decisionRoutes;
 
 /**
- * Resolve the owning plan for /v1/decisions/:id/* routes.
- *
- * The explicit `authenticate` before this resolver is intentional (despite
- * the forwarded route authenticating again): the resolver hits the DB and
- * its 404 would otherwise leak decision existence to unauthenticated callers.
+ * Resolve the owning plan for /v1/decisions/:id/* routes. Runs after the
+ * v1-layer `authenticate` blanket (see routes/v1/index.js), so req.user is
+ * always populated. Returns 404 for both "not found" and "no access" so
+ * decision existence isn't disclosed.
  */
 const resolvePlanFromDecision = async (req, res, next) => {
   try {
@@ -61,7 +59,6 @@ router.get('/decisions', forwardTo(dashboardRoutes, () => '/pending'));
  */
 router.post(
   '/decisions/:id/resolve',
-  authenticate,
   resolvePlanFromDecision,
   forwardTo(decisionRoutes, (req) => `/${e(req.resolvedPlanId)}/decisions/${e(req.params.id)}/resolve`)
 );
@@ -79,7 +76,6 @@ router.post(
  */
 router.post(
   '/decisions/:id/cancel',
-  authenticate,
   resolvePlanFromDecision,
   forwardTo(decisionRoutes, (req) => `/${e(req.resolvedPlanId)}/decisions/${e(req.params.id)}/cancel`)
 );

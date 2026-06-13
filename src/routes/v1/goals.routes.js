@@ -4,14 +4,18 @@
  */
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../../middleware/auth.middleware');
 const domains = require('../../domains');
 const goalStateService = require('../../domains/goal/services/goalState.service');
 const logger = require('../../utils/logger');
 const { forwardTo, e, UUID } = require('./forward');
 
 const goalsRoutes = domains.goal.routes.goalRoutes;
-const { requireGoalAccess } = goalsRoutes;
+const { requireGoalAccess } = domains.goal.services;
+// Fail fast at boot if the guard ever stops being exported, rather than
+// crashing on the first /v1/goals/:id/state request.
+if (typeof requireGoalAccess !== 'function') {
+  throw new Error('goal domain did not export requireGoalAccess — cannot mount /v1 goal-state facade');
+}
 
 /**
  * @swagger
@@ -56,7 +60,7 @@ router.post('/goals', forwardTo(goalsRoutes, () => '/'));
  *       200: { description: Composed goal state }
  *       404: { description: Goal not found }
  */
-router.get(`/goals/:id${UUID}/state`, authenticate, async (req, res) => {
+router.get(`/goals/:id${UUID}/state`, async (req, res) => {
   try {
     const goal = await requireGoalAccess(req, res);
     if (!goal) return;

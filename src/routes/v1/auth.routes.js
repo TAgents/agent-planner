@@ -1,8 +1,15 @@
 /**
  * v1 — Auth & identity. Aliases onto routes/auth.routes.js handlers.
+ *
+ * Two routers: `router` holds the PUBLIC bootstrap endpoints (register,
+ * login, refresh) that must be reachable without a token; `authedRoutes`
+ * holds the authenticated `/me` endpoints. index.js mounts `router` before
+ * the v1-layer `authenticate` blanket and `authedRoutes` after it, so the
+ * whole v1 surface is auth-enforced except the three bootstrap calls.
  */
 const express = require('express');
 const router = express.Router();
+const authedRoutes = express.Router();
 const { authLimiter } = require('../../middleware/rateLimit.middleware');
 const authRoutes = require('../auth.routes');
 const { forwardTo, e } = require('./forward');
@@ -56,8 +63,8 @@ router.post('/auth/refresh', authLimiter, forwardTo(authRoutes, () => '/refresh'
  *     responses:
  *       200: { description: Updated profile }
  */
-router.get('/me', forwardTo(authRoutes, () => '/profile'));
-router.patch('/me', forwardTo(authRoutes, () => '/profile', { method: 'PUT' }));
+authedRoutes.get('/me', forwardTo(authRoutes, () => '/profile'));
+authedRoutes.patch('/me', forwardTo(authRoutes, () => '/profile', { method: 'PUT' }));
 
 /**
  * @swagger
@@ -75,8 +82,8 @@ router.patch('/me', forwardTo(authRoutes, () => '/profile', { method: 'PUT' }));
  *     responses:
  *       201: { description: Token created (value shown once) }
  */
-router.get('/me/tokens', forwardTo(authRoutes, () => '/token'));
-router.post('/me/tokens', forwardTo(authRoutes, () => '/token'));
+authedRoutes.get('/me/tokens', forwardTo(authRoutes, () => '/token'));
+authedRoutes.post('/me/tokens', forwardTo(authRoutes, () => '/token'));
 
 /**
  * @swagger
@@ -88,6 +95,7 @@ router.post('/me/tokens', forwardTo(authRoutes, () => '/token'));
  *     responses:
  *       200: { description: Token revoked }
  */
-router.delete('/me/tokens/:id', forwardTo(authRoutes, (req) => `/token/${e(req.params.id)}`));
+authedRoutes.delete('/me/tokens/:id', forwardTo(authRoutes, (req) => `/token/${e(req.params.id)}`));
 
 module.exports = router;
+module.exports.authedRoutes = authedRoutes;

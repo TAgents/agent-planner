@@ -20,9 +20,22 @@
  *   misc          — global search, invite acceptance
  */
 const express = require('express');
+const { authenticate } = require('../../middleware/auth.middleware');
 const router = express.Router();
 
-router.use(require('./auth.routes'));
+// Public bootstrap routes (no token required): register, login, refresh.
+const authV1 = require('./auth.routes');
+router.use(authV1);
+
+// v1-layer authentication for EVERY route below. The internal handlers
+// authenticate again (defense in depth), but enforcing it here means a v1
+// route can never silently become unauthenticated if an internal route's
+// middleware is changed. The cost is a second token verification per
+// request, which is acceptable for the public surface. Individual groups
+// still apply their own stricter limiters (auth/search) per-route.
+router.use(authenticate);
+
+router.use(authV1.authedRoutes);
 router.use(require('./orgs.routes'));
 router.use(require('./goals.routes'));
 router.use(require('./plans.routes'));

@@ -38,6 +38,9 @@ class FacadeError extends Error {
 const COHERENCE_ISSUES_LIMIT = 50;
 
 async function coherenceIssues(planId) {
+  // nodesDal.listByPlan splits coherenceStatus on commas and matches with
+  // inArray(...), so this comma-separated string selects nodes in EITHER
+  // state (not an exact-string match). See nodes.dal.mjs#listByPlan.
   const allFlagged = await dal.nodesDal.listByPlan(planId, {
     coherenceStatus: 'stale_beliefs,contradiction_detected',
   });

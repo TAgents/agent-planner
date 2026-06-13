@@ -13,7 +13,10 @@ const dal = require('../../../db/dal.cjs');
 const graphitiBridge = require('../../../services/graphitiBridge');
 const logger = require('../../../utils/logger');
 
-const KNOWLEDGE_QUERY_CONCURRENCY = 10;
+// Bound the number of incomplete tasks we probe Graphiti for per call. This
+// caps the slice size (and hence the Promise.all fan-out), not in-flight
+// concurrency — the sidecar tolerates this many parallel searches.
+const MAX_TASKS_TO_QUERY = 10;
 const asOf = () => new Date().toISOString();
 
 /**
@@ -146,9 +149,9 @@ async function detectKnowledgeGaps(goal, user, pathPromise = null) {
     };
   }
 
-  // Query Graphiti for incomplete tasks — cap concurrency to avoid overwhelming sidecar
+  // Probe Graphiti for the first N incomplete tasks (bounded fan-out).
   const groupId = graphitiBridge.getGroupId(user);
-  const incompleteTasks = nodes.filter(n => n.status !== 'completed').slice(0, KNOWLEDGE_QUERY_CONCURRENCY);
+  const incompleteTasks = nodes.filter(n => n.status !== 'completed').slice(0, MAX_TASKS_TO_QUERY);
 
   const queryTaskKnowledge = async (task) => {
     const query = [task.title, task.description].filter(Boolean).join(' ');

@@ -450,6 +450,25 @@ describe('v1 Routes', () => {
       const res = await request(app)[method](path);
       expect(res.status).toBe(401);
     });
+
+    // The auth blanket lives at the v1 router level, NOT on the internal
+    // routes these forward to. Forwarded routes (no own authenticate) must
+    // still 401 without a token.
+    it('forwarded routes are protected by the v1-layer auth blanket', async () => {
+      for (const path of ['/v1/blueprints', '/v1/orgs', '/v1/goals/dashboard']) {
+        const res = await request(app).get(path);
+        expect(res.status).toBe(401);
+      }
+    });
+
+    // Public bootstrap routes must remain reachable WITHOUT a token.
+    it('register/login/refresh bypass the auth blanket', async () => {
+      dal.usersDal.findByEmail.mockResolvedValue(null);
+      for (const path of ['/v1/auth/login', '/v1/auth/register', '/v1/auth/refresh']) {
+        const res = await request(app).post(path).send({});
+        expect(res.status).not.toBe(401);
+      }
+    });
   });
 
   // ══════════════════════════════════════════════════════════════════
@@ -871,6 +890,37 @@ describe('v1 Routes', () => {
       const indexSrc = fs.readFileSync(path.join(__dirname, '../../src/index.js'), 'utf8');
       expect(indexSrc).toMatch(/require\('\.\/routes\/v1'\)/);
       expect(indexSrc).toMatch(/app\.use\('\/v1',\s*generalLimiter,\s*v1Routes\)/);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // forwardTo query handling — built params merge with caller params, and
+  // repeated keys survive as arrays (qs-style), not last-value-wins.
+  // ══════════════════════════════════════════════════════════════════
+  describe('forwardTo query handling', () => {
+    const express = require('express');
+    const { forwardTo } = require('../../src/routes/v1/forward');
+
+    function echoApp() {
+      const target = express.Router();
+      target.get('/echo', (req, res) => res.json({ query: req.query }));
+      const v1 = express.Router();
+      v1.get('/proxy', forwardTo(target, () => '/echo?injected=1'));
+      const a = express.Router();
+      a.use(v1);
+      const app = express();
+      app.use('/x', a);
+      return app;
+    }
+
+    it('merges injected and caller params', async () => {
+      const res = await request(echoApp()).get('/x/proxy?caller=2');
+      expect(res.body.query).toEqual({ injected: '1', caller: '2' });
+    });
+
+    it('preserves repeated keys as arrays', async () => {
+      const res = await request(echoApp()).get('/x/proxy?ids=a&ids=b');
+      expect(res.body.query.ids).toEqual(['a', 'b']);
     });
   });
 

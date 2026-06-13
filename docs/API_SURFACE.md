@@ -388,8 +388,16 @@ Deletion gate: zero hits in `tool_calls` telemetry over a 30-day production wind
   codes and one-line descriptions only (no `content`/`schema`). Good enough
   for discovery, not for client SDK generation. Flesh out response schemas
   (or generate them from Zod) before publishing the spec for codegen.
-- **v1-layer `authenticate` on plain forwarded routes** — forwards currently
-  rely on the internal route's own middleware; facades and resolver routes
-  carry their own. Consider adding it everywhere for defence-in-depth.
-- **`requireGoalAccess` export hardening** — re-export from the goal domain
-  barrel instead of hanging it off the goals router export.
+- **DELETE endpoints return 200, not 204** — forwarded DELETE aliases inherit
+  their internal handlers' 200 responses. RFC 9110 convention for a bodyless
+  successful DELETE is 204. Cosmetic; would require touching internal handlers
+  (a behavior change), so deferred to keep this PR alias-only.
+
+### Resolved in PR #53
+
+- ~~v1-layer `authenticate` on plain forwarded routes~~ — DONE: `routes/v1/index.js`
+  applies `authenticate` at the router level for every group except the public
+  bootstrap routes (register/login/refresh). Per-route auth removed as redundant.
+- ~~`requireGoalAccess` export hardening~~ — DONE: re-exported from the goal
+  domain barrel (`domains/goal/index.js` → `services.requireGoalAccess`) with a
+  boot-time assertion in the v1 goals router.

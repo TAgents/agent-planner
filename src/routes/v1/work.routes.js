@@ -9,7 +9,6 @@
  */
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../../middleware/auth.middleware');
 const { checkPlanAccess } = require('../../middleware/planAccess.middleware');
 const domains = require('../../domains');
 const contextRoutes = require('../context.routes');
@@ -21,12 +20,10 @@ const agentLoopRoutes = domains.agent.routes.agentLoopRoutes;
 const nodeRoutes = domains.node.routes.nodeRoutes;
 
 /**
- * Resolve the owning plan for /v1/tasks/:nodeId/* routes.
- *
- * Routes using this resolver carry an explicit `authenticate` BEFORE it even
- * though the forwarded internal route authenticates again — the resolver hits
- * the DB and its 404 would otherwise leak task existence to unauthenticated
- * callers. The double token verification is accepted overhead.
+ * Resolve the owning plan for /v1/tasks/:nodeId/* routes. Runs after the
+ * v1-layer `authenticate` blanket (see routes/v1/index.js), so req.user is
+ * always populated here. Returns 404 for both "not found" and "no access"
+ * so task existence isn't disclosed.
  */
 const resolvePlanFromNode = async (req, res, next) => {
   try {
@@ -103,7 +100,7 @@ router.get(
  *       200: { description: Applied steps and per-step failures }
  *       404: { description: Task not found }
  */
-router.post(`/tasks/:nodeId${UUID}/update`, authenticate, async (req, res) => {
+router.post(`/tasks/:nodeId${UUID}/update`, async (req, res) => {
   try {
     res.json(await v1Facades.updateTask(req.user, req.params.nodeId, req.body || {}));
   } catch (err) {
@@ -130,13 +127,11 @@ router.post(`/tasks/:nodeId${UUID}/update`, authenticate, async (req, res) => {
  */
 router.post(
   `/tasks/:nodeId${UUID}/claim`,
-  authenticate,
   resolvePlanFromNode,
   forwardTo(nodeRoutes, (req) => `/${e(req.resolvedPlanId)}/nodes/${e(req.params.nodeId)}/claim`)
 );
 router.delete(
   `/tasks/:nodeId${UUID}/claim`,
-  authenticate,
   resolvePlanFromNode,
   forwardTo(nodeRoutes, (req) => `/${e(req.resolvedPlanId)}/nodes/${e(req.params.nodeId)}/claim`)
 );

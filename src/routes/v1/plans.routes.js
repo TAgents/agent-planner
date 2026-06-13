@@ -6,7 +6,6 @@
  */
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../../middleware/auth.middleware');
 const domains = require('../../domains');
 const v1Facades = require('../../services/v1Facades');
 const { forwardTo, sendFacadeError, e, UUID } = require('./forward');
@@ -85,7 +84,7 @@ router.post(`/plans/:id${UUID}/fork`, forwardTo(planRoutes, (req) => `/${e(req.p
  *       200: { description: Composed plan analysis }
  *       403: { description: No access to this plan }
  */
-router.get(`/plans/:id${UUID}/analysis`, authenticate, async (req, res) => {
+router.get(`/plans/:id${UUID}/analysis`, async (req, res) => {
   try {
     res.json(await v1Facades.planAnalysis(req.params.id, req.user));
   } catch (err) {
@@ -104,7 +103,7 @@ router.get(`/plans/:id${UUID}/analysis`, authenticate, async (req, res) => {
  *     responses:
  *       200: { description: Applied changes and per-step failures }
  */
-router.post(`/plans/:id${UUID}/share`, authenticate, async (req, res) => {
+router.post(`/plans/:id${UUID}/share`, async (req, res) => {
   try {
     res.json(await v1Facades.sharePlan(req.user, req.params.id, req.body || {}));
   } catch (err) {
