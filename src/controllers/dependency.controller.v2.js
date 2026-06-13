@@ -3,6 +3,7 @@
  */
 const dal = require('../db/dal.cjs');
 const { checkPlanAccess } = require('../middleware/planAccess.middleware');
+const { normalizeNodeDependencyType } = require('../validation/dependencyTypes');
 
 function classifyPgError(err) {
   const pgError = err.cause || err;
@@ -55,8 +56,11 @@ const createDependency = async (req, res, next) => {
       return res.status(404).json({ error: 'Target node not found in this plan' });
     }
 
+    const typeResult = normalizeNodeDependencyType(dependency_type);
+    if (!typeResult.ok) return res.status(400).json({ error: typeResult.error });
+    const depType = typeResult.type;
+
     // Cycle detection
-    const depType = dependency_type || 'blocks';
     const { hasCycle, cyclePath } = await dal.dependenciesDal.wouldCreateCycle(
       source_node_id, target_node_id, [depType]
     );
@@ -299,7 +303,9 @@ const createCrossPlanDependency = async (req, res, next) => {
     if (!srcAccess) return res.status(403).json({ error: 'No editor access to source plan' });
     if (!tgtAccess) return res.status(403).json({ error: 'No editor access to target plan' });
 
-    const depType = dependency_type || 'blocks';
+    const typeResult = normalizeNodeDependencyType(dependency_type);
+    if (!typeResult.ok) return res.status(400).json({ error: typeResult.error });
+    const depType = typeResult.type;
 
     // Cycle detection works across plans already (recursive CTE is global)
     const { hasCycle, cyclePath } = await dal.dependenciesDal.wouldCreateCycle(
