@@ -1,0 +1,1899 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "AgentPlanner API",
+    "version": "1.0.0",
+    "description": "The public, versioned AgentPlanner API (~70 intent-shaped endpoints). This is the surface we commit to: stable shapes, deprecation policy, documented here. Hosted base URL: https://agentplanner.io/api/v1. The full internal spec (unversioned, subject to change without notice) is served at /api-docs/internal."
+  },
+  "servers": [
+    {
+      "url": "https://agentplanner.io/api",
+      "description": "Hosted (paths already include /v1)"
+    },
+    {
+      "url": "http://localhost:3000",
+      "description": "Local development"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "apiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization"
+      }
+    },
+    "schemas": {
+      "Activity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "log",
+              "comment"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "activity_type": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              }
+            }
+          },
+          "node": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "node_type": {
+                "type": "string"
+              }
+            }
+          },
+          "plan": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "DecisionOption": {
+        "type": "object",
+        "properties": {
+          "option": {
+            "type": "string",
+            "description": "The option being proposed"
+          },
+          "pros": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Advantages of this option"
+          },
+          "cons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Disadvantages of this option"
+          },
+          "recommendation": {
+            "type": "boolean",
+            "description": "Whether this is the recommended option"
+          }
+        }
+      },
+      "DecisionRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plan_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "node_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "title": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionOption"
+            }
+          },
+          "urgency": {
+            "type": "string",
+            "enum": [
+              "blocking",
+              "can_continue",
+              "informational"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "decided",
+              "expired",
+              "cancelled"
+            ]
+          },
+          "decision": {
+            "type": "string",
+            "nullable": true
+          },
+          "rationale": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decided_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "GitHubRepo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "GitHub repository ID"
+          },
+          "name": {
+            "type": "string",
+            "description": "Repository name"
+          },
+          "full_name": {
+            "type": "string",
+            "description": "Full repository name (owner/name)"
+          },
+          "owner": {
+            "type": "string",
+            "description": "Repository owner login"
+          },
+          "description": {
+            "type": "string",
+            "description": "Repository description"
+          },
+          "html_url": {
+            "type": "string",
+            "description": "GitHub URL"
+          },
+          "private": {
+            "type": "boolean",
+            "description": "Whether the repo is private"
+          },
+          "language": {
+            "type": "string",
+            "description": "Primary programming language"
+          },
+          "stargazers_count": {
+            "type": "integer",
+            "description": "Number of stars"
+          },
+          "forks_count": {
+            "type": "integer",
+            "description": "Number of forks"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last updated timestamp"
+          },
+          "default_branch": {
+            "type": "string",
+            "description": "Default branch name"
+          }
+        }
+      },
+      "GitHubRepoContent": {
+        "type": "object",
+        "properties": {
+          "readme": {
+            "type": "string",
+            "nullable": true,
+            "description": "README content (markdown)"
+          },
+          "file_structure": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "file",
+                    "dir"
+                  ]
+                },
+                "path": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "languages": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Languages used in the repo with byte counts"
+          }
+        }
+      },
+      "GitHubIssue": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "number": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "html_url": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "GitHubConnectionStatus": {
+        "type": "object",
+        "properties": {
+          "connected": {
+            "type": "boolean",
+            "description": "Whether GitHub is connected"
+          },
+          "github_username": {
+            "type": "string",
+            "nullable": true
+          },
+          "github_avatar_url": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "Node": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plan_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "node_type": {
+            "type": "string",
+            "enum": [
+              "root",
+              "phase",
+              "task",
+              "milestone"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "in_progress",
+              "completed",
+              "blocked"
+            ]
+          },
+          "order_index": {
+            "type": "integer"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "context": {
+            "type": "string"
+          },
+          "agent_instructions": {
+            "type": "string",
+            "nullable": true
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Node"
+            }
+          }
+        }
+      },
+      "Plan": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "active",
+              "completed",
+              "archived"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/v1/auth/register": {
+      "post": {
+        "summary": "Register a new user",
+        "tags": [
+          "v1"
+        ],
+        "responses": {
+          "201": {
+            "description": "User created with session tokens"
+          }
+        }
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "summary": "Log in with email and password",
+        "tags": [
+          "v1"
+        ],
+        "responses": {
+          "200": {
+            "description": "Session tokens"
+          }
+        }
+      }
+    },
+    "/v1/auth/refresh": {
+      "post": {
+        "summary": "Refresh an access token",
+        "tags": [
+          "v1"
+        ],
+        "responses": {
+          "200": {
+            "description": "New session tokens"
+          }
+        }
+      }
+    },
+    "/v1/me": {
+      "get": {
+        "summary": "Get the authenticated user's profile",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User profile"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update the authenticated user's profile",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated profile"
+          }
+        }
+      }
+    },
+    "/v1/me/tokens": {
+      "get": {
+        "summary": "List the authenticated user's API tokens",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Token list"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create an API token",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Token created (value shown once)"
+          }
+        }
+      }
+    },
+    "/v1/me/tokens/{id}": {
+      "delete": {
+        "summary": "Revoke an API token",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Token revoked"
+          }
+        }
+      }
+    },
+    "/v1/blueprints": {
+      "get": {
+        "summary": "List blueprints (own + public)",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Blueprint list"
+          }
+        }
+      }
+    },
+    "/v1/blueprints/from-plan/{planId}": {
+      "post": {
+        "summary": "Snapshot a plan as a reusable blueprint",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Blueprint created"
+          }
+        }
+      }
+    },
+    "/v1/blueprints/{id}/fork": {
+      "post": {
+        "summary": "Instantiate a blueprint into a workspace as a new plan",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Plan created from blueprint"
+          }
+        }
+      }
+    },
+    "/v1/blueprints/{id}": {
+      "get": {
+        "summary": "Get a blueprint",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Blueprint"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a blueprint",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Blueprint deleted"
+          }
+        }
+      }
+    },
+    "/v1/decisions": {
+      "get": {
+        "summary": "Pending items needing human review across accessible plans",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending decisions, agent requests, and drafts"
+          }
+        }
+      }
+    },
+    "/v1/decisions/{id}/resolve": {
+      "post": {
+        "summary": "Resolve a decision (approve/defer/reject, materialize subtasks)",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Decision resolved"
+          },
+          "404": {
+            "description": "Decision not found"
+          }
+        }
+      }
+    },
+    "/v1/decisions/{id}/cancel": {
+      "post": {
+        "summary": "Cancel a pending decision",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Decision cancelled"
+          },
+          "404": {
+            "description": "Decision not found"
+          }
+        }
+      }
+    },
+    "/v1/dependencies": {
+      "post": {
+        "summary": "Create a dependency edge between two nodes (intra- or cross-plan)",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Dependency created"
+          },
+          "409": {
+            "description": "Edge would create a cycle"
+          }
+        }
+      }
+    },
+    "/v1/dependencies/{id}": {
+      "delete": {
+        "summary": "Remove a dependency edge",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dependency removed"
+          },
+          "404": {
+            "description": "Dependency not found"
+          }
+        }
+      }
+    },
+    "/v1/goals/dashboard": {
+      "get": {
+        "summary": "Goal health dashboard (on_track / at_risk / stale rollup)",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Goal health rollup"
+          }
+        }
+      }
+    },
+    "/v1/goals": {
+      "get": {
+        "summary": "List goals",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Goal list"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a goal",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Goal created"
+          }
+        }
+      }
+    },
+    "/v1/goals/{id}/state": {
+      "get": {
+        "summary": "Comprehensive single-goal read — details, quality, progress, bottlenecks, knowledge gaps",
+        "description": "Composed facade mirroring the MCP `goal_state` tool. Partial backend failures are surfaced in meta.failures.",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Composed goal state"
+          },
+          "404": {
+            "description": "Goal not found"
+          }
+        }
+      }
+    },
+    "/v1/goals/{id}/promote": {
+      "post": {
+        "summary": "Promote a desire goal to an intention (readiness-checked)",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Promotion result with readiness gaps if not ready"
+          }
+        }
+      }
+    },
+    "/v1/goals/{id}": {
+      "get": {
+        "summary": "Get a goal",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Goal"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update a goal",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated goal"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a goal (soft delete)",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Goal deleted"
+          }
+        }
+      }
+    },
+    "/v1/knowledge/status": {
+      "get": {
+        "summary": "Knowledge graph availability",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Graphiti status"
+          }
+        }
+      }
+    },
+    "/v1/knowledge/episodes": {
+      "get": {
+        "summary": "List knowledge episodes (org-scoped)",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Episode list"
+          }
+        }
+      },
+      "post": {
+        "summary": "Add a knowledge episode",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Episode queued for processing"
+          }
+        }
+      }
+    },
+    "/v1/knowledge/episodes/{id}": {
+      "delete": {
+        "summary": "Delete a knowledge episode",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Episode deleted"
+          }
+        }
+      }
+    },
+    "/v1/knowledge/search": {
+      "post": {
+        "summary": "Universal knowledge query — facts, entities, episodes, contradictions in one call",
+        "description": "Composed facade mirroring the MCP `recall_knowledge` tool. Degrades to empty results when the knowledge graph is unavailable. Body — query, result_kind (facts|entities|episodes|all), since, entry_type, max_results, include_contradictions.",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Combined knowledge results"
+          }
+        }
+      }
+    },
+    "/v1/search": {
+      "get": {
+        "summary": "Global text search across plans, nodes, and content",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results"
+          }
+        }
+      }
+    },
+    "/v1/invites/accept/{token}": {
+      "post": {
+        "summary": "Accept a plan invite",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invite accepted"
+          }
+        }
+      }
+    },
+    "/v1/orgs": {
+      "get": {
+        "summary": "List organizations for the authenticated user",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Organization list"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create an organization",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Organization created"
+          }
+        }
+      }
+    },
+    "/v1/orgs/{id}": {
+      "get": {
+        "summary": "Get an organization",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Organization"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update an organization",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated organization"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an organization",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Organization deleted"
+          }
+        }
+      }
+    },
+    "/v1/orgs/{id}/members": {
+      "get": {
+        "summary": "List organization members",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Member list"
+          }
+        }
+      },
+      "post": {
+        "summary": "Add an organization member",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Member added"
+          }
+        }
+      }
+    },
+    "/v1/orgs/{id}/members/{userId}": {
+      "patch": {
+        "summary": "Update a member's role",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role updated"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove a member from the organization",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Member removed"
+          }
+        }
+      }
+    },
+    "/v1/workspaces": {
+      "get": {
+        "summary": "List workspaces in an organization",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace list"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a workspace",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Workspace created"
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{id}": {
+      "get": {
+        "summary": "Get a workspace",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update a workspace (set `archived` true/false to archive or restore)",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated workspace"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a workspace",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace deleted"
+          }
+        }
+      }
+    },
+    "/v1/plans": {
+      "get": {
+        "summary": "List plans accessible to the authenticated user",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Plan list"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a plan",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Plan created"
+          }
+        }
+      }
+    },
+    "/v1/plans/{id}": {
+      "get": {
+        "summary": "Get a plan",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Plan"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update a plan",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated plan"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a plan",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Plan deleted"
+          }
+        }
+      }
+    },
+    "/v1/plans/{id}/fork": {
+      "post": {
+        "summary": "Fork a plan",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Forked plan"
+          }
+        }
+      }
+    },
+    "/v1/plans/{id}/analysis": {
+      "get": {
+        "summary": "Bundled plan analysis — critical path, bottlenecks, RPI chains, coherence issues",
+        "description": "Composed facade mirroring the MCP `plan_analysis` tool. Partial backend failures are surfaced in meta.failures.",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Composed plan analysis"
+          },
+          "403": {
+            "description": "No access to this plan"
+          }
+        }
+      }
+    },
+    "/v1/plans/{id}/share": {
+      "post": {
+        "summary": "Atomically change visibility and add/remove collaborators",
+        "description": "Composed facade mirroring the MCP `share_plan` tool. Steps apply independently; per-step results are reported in applied_changes/failures.",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Applied changes and per-step failures"
+          }
+        }
+      }
+    },
+    "/v1/plans/{id}/collaborators": {
+      "get": {
+        "summary": "List plan collaborators",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Collaborator list"
+          }
+        }
+      }
+    },
+    "/v1/plans/{id}/decisions": {
+      "post": {
+        "summary": "Queue a decision for human review",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Decision queued"
+          }
+        }
+      }
+    },
+    "/v1/plans/{id}/nodes": {
+      "get": {
+        "summary": "List plan nodes (tree)",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Node tree"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a node",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Node created"
+          }
+        }
+      }
+    },
+    "/v1/plans/{id}/nodes/{nodeId}": {
+      "get": {
+        "summary": "Get a node",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Node"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update a node",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated node"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a node",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Node deleted"
+          }
+        }
+      }
+    },
+    "/v1/plans/{id}/nodes/{nodeId}/move": {
+      "post": {
+        "summary": "Move a node (new parent and/or order)",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Node moved"
+          }
+        }
+      }
+    },
+    "/v1/plans/{id}/nodes/{nodeId}/dependencies": {
+      "get": {
+        "summary": "List a node's dependencies (upstream + downstream)",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dependency edges for the node"
+          }
+        }
+      }
+    },
+    "/v1/briefing": {
+      "get": {
+        "summary": "Bundled mission-control state — goal health, pending decisions, active claims, recent activity, top recommendation",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent briefing"
+          }
+        }
+      }
+    },
+    "/v1/tasks/claim-next": {
+      "post": {
+        "summary": "Pick the next task in scope, claim it, and return its context in one call",
+        "description": "Alias of the agent-loop work-session start. Accepts plan_id/goal_id scope, ttl_minutes, depth, dry_run, fresh.",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Work session started (session_id, task, claim, context)"
+          },
+          "409": {
+            "description": "Task is already claimed"
+          }
+        }
+      }
+    },
+    "/v1/tasks/{nodeId}/context": {
+      "get": {
+        "summary": "Progressive task context (depth 1-4, token-budgeted)",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "depth",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4
+            }
+          },
+          {
+            "in": "query",
+            "name": "token_budget",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Assembled context"
+          }
+        }
+      }
+    },
+    "/v1/tasks/{nodeId}/update": {
+      "post": {
+        "summary": "Atomic task state transition — status + log + claim release + learning in one call",
+        "description": "Composed facade mirroring the MCP `update_task` tool. Steps apply independently; per-step results are reported in applied/failures. Claim release defaults to automatic when status is completed or blocked.",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Applied steps and per-step failures"
+          },
+          "404": {
+            "description": "Task not found"
+          }
+        }
+      }
+    },
+    "/v1/tasks/{nodeId}/claim": {
+      "post": {
+        "summary": "Explicitly claim a task (lease-based lock)",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Claim created"
+          },
+          "409": {
+            "description": "Task is already claimed"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Release a task claim",
+        "tags": [
+          "v1"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Claim released"
+          }
+        }
+      }
+    }
+  }
+}

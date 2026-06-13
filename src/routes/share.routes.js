@@ -1,9 +1,15 @@
 /**
  * Share Routes - using DAL layer
+ *
+ * Two routers: `router` holds plan-scoped sharing (mounted at /plans),
+ * `inviteRouter` holds token-scoped invite acceptance (mounted at /invites).
+ * They were previously one router double-mounted at both prefixes, which
+ * exposed phantom cross-product paths (e.g. POST /invites/:id/share).
  */
 
 const express = require('express');
 const router = express.Router();
+const inviteRouter = express.Router();
 const { authenticate } = require('../middleware/auth.middleware');
 const { plansDal, usersDal, collaboratorsDal, invitesDal } = require('../db/dal.cjs');
 const { sendPlanInviteEmail, sendCollaboratorAddedEmail } = require('../services/email');
@@ -126,7 +132,7 @@ router.delete('/:planId/invites/:inviteId', authenticate, async (req, res) => {
 });
 
 // ─── Accept invite ───────────────────────────────────────────────
-router.post('/accept/:token', authenticate, async (req, res) => {
+inviteRouter.post('/accept/:token', authenticate, async (req, res) => {
   try {
     const { token } = req.params;
     const userId = req.user.id;
@@ -159,7 +165,7 @@ router.post('/accept/:token', authenticate, async (req, res) => {
 });
 
 // ─── Get invite info ─────────────────────────────────────────────
-router.get('/info/:token', async (req, res) => {
+inviteRouter.get('/info/:token', async (req, res) => {
   try {
     const { token } = req.params;
     const invite = await invitesDal.findByToken(token);
@@ -182,3 +188,4 @@ router.get('/info/:token', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.inviteRoutes = inviteRouter;

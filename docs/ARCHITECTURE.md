@@ -236,7 +236,6 @@ When the target node has `task_mode = implement`, the engine automatically finds
 |--------|------|-------------|
 | GET | `/context/progressive` | Progressive context assembly |
 | GET | `/context/suggest` | Suggest next actionable tasks |
-| POST | `/context/compact` | Trigger research output compaction |
 | GET | `/context` | Legacy node context (leaf-up) |
 | GET | `/context/plan` | Legacy plan context |
 
@@ -411,7 +410,7 @@ Identifies nodes with the highest downstream dependency fan-out — tasks that b
 
 ### Topological Scheduling
 
-`GET /plans/:id/schedule`
+`topologicalSort(planId)` in `services/reasoning.js` (internal service — its standalone endpoint was removed in the API v1 consolidation)
 
 Returns incomplete tasks in dependency-respecting execution order using Kahn's algorithm. Tasks are grouped into **layers** — all tasks in a layer can execute in parallel (their dependencies are in earlier layers).
 
@@ -432,7 +431,7 @@ Returns incomplete tasks in dependency-respecting execution order using Kahn's a
 
 ### Decomposition Alerts
 
-`GET /plans/:id/decomposition-alerts`
+`detectDecompositionCandidates(planId)` in `services/reasoning.js` (internal service — its standalone endpoint was removed in the API v1 consolidation)
 
 Flags tasks that may be too complex for a single work unit. Heuristics:
 - Description longer than 500 characters
@@ -449,7 +448,7 @@ When a research or plan task is completed, its logs can be **compacted** into a 
 
 ### How It Works
 
-1. Triggered manually via `POST /context/compact` or automatically via message bus on status change
+1. Triggered automatically via message bus on status change
 2. Extracts high-signal logs: `decision` type first, then `reasoning`, then `challenge`
 3. Falls back to recent `progress` logs if no high-signal logs exist
 4. Stores the compacted summary in the node's JSONB metadata
@@ -633,6 +632,15 @@ src/
 
 ## API Endpoint Map
 
+> **Public v1 surface.** External integrations should use the versioned
+> `/v1` API (~70 operations aliasing the routes below, plus composed facades
+> like `/v1/goals/:id/state`, `/v1/plans/:id/analysis`, `/v1/knowledge/search`,
+> `/v1/tasks/:nodeId/update`). The unversioned routes in this map are the web
+> UI's internal contract and may change without notice. Specs:
+> `docs/openapi.v1.json` (strict) + `docs/openapi.json` (internal); Swagger UI
+> serves v1 at `/api-docs` and the internal spec at `/api-docs/internal`.
+> See `docs/API_V1_CONSOLIDATION_PLAN.md`.
+
 ### Plans
 | Method | Path | Description |
 |--------|------|-------------|
@@ -683,7 +691,6 @@ src/
 |--------|------|-------------|
 | GET | `/context/progressive` | Progressive context (depth 1-4) |
 | GET | `/context/suggest` | Suggest next tasks |
-| POST | `/context/compact` | Compact research output |
 
 ### Goal Health
 | Method | Path | Description |
@@ -696,8 +703,6 @@ src/
 |--------|------|-------------|
 | GET | `/plans/:id/bottlenecks` | Bottleneck detection |
 | GET | `/plans/:id/rpi-chains` | RPI chain detection |
-| GET | `/plans/:id/schedule` | Topological schedule |
-| GET | `/plans/:id/decomposition-alerts` | Decomposition alerts |
 
 ### System
 | Method | Path | Description |

@@ -9,7 +9,6 @@ const { plansDal, nodesDal, goalsDal } = require('../db/dal.cjs');
 const graphitiBridge = require('../services/graphitiBridge');
 const logger = require('../utils/logger');
 const { assembleContext, suggestNextTasks } = require('../services/contextEngine');
-const { compactResearchOutput } = require('../services/compaction');
 
 /**
  * Helper: Get node ancestry (leaf to root path)
@@ -260,33 +259,8 @@ router.get('/suggest', authenticate, async (req, res) => {
   }
 });
 
-/**
- * POST /context/compact
- * Trigger research output compaction for a completed research/plan node
- */
-router.post('/compact', authenticate, async (req, res) => {
-  try {
-    const { node_id } = req.body;
-    const userId = req.user.id;
-
-    if (!node_id) return res.status(400).json({ error: 'node_id is required' });
-
-    const node = await nodesDal.findById(node_id);
-    if (!node) return res.status(404).json({ error: 'Node not found' });
-
-    const { hasAccess } = await plansDal.userHasAccess(node.planId, userId);
-    if (!hasAccess) return res.status(403).json({ error: 'Access denied' });
-
-    const compacted = await compactResearchOutput(node_id);
-    if (!compacted) {
-      return res.status(400).json({ error: 'Nothing to compact (node must be research/plan mode with logs)' });
-    }
-
-    return res.json({ compacted });
-  } catch (error) {
-    await logger.error('Compaction error:', error);
-    return res.status(500).json({ error: 'Failed to compact research output' });
-  }
-});
+// POST /context/compact removed (API v1 consolidation Phase 5 — no consumers;
+// compaction runs automatically via the message-bus listener in
+// services/compaction.js).
 
 module.exports = router;

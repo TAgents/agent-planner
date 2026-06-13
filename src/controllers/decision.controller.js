@@ -312,26 +312,6 @@ const deleteDecisionRequest = async (req, res, next) => {
   }
 };
 
-/**
- * Get pending decision count for a plan
- */
-const getPendingDecisionCount = async (req, res, next) => {
-  try {
-    const { id: planId } = req.params;
-    const userId = req.user.id;
-
-    const { hasAccess } = await plansDal.userHasAccess(planId, userId);
-    if (!hasAccess) {
-      return res.status(403).json({ error: 'You do not have access to this plan' });
-    }
-
-    const count = await decisionsDal.countPending(planId);
-    res.json({ pending_count: count });
-  } catch (error) {
-    next(error);
-  }
-};
-
 module.exports = {
   listDecisionRequests,
   getDecisionRequest,
@@ -339,6 +319,5 @@ module.exports = {
   updateDecisionRequest,
   resolveDecisionRequest,
   cancelDecisionRequest,
-  deleteDecisionRequest,
-  getPendingDecisionCount
+  deleteDecisionRequest
 };

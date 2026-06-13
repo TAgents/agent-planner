@@ -20,6 +20,7 @@ const workspacesDal = require('../../db/dal.cjs').workspacesDal;
 const organizationsDal = require('../../db/dal.cjs').organizationsDal;
 const graphitiBridge = require('../../services/graphitiBridge');
 const reasoning = require('../../services/reasoning');
+const goalStateService = require('../../domains/goal/services/goalState.service');
 
 const VALID_LINK_TYPES = ['plan', 'task', 'agent'];
 
@@ -523,47 +524,14 @@ router.delete('/:id/links/:linkId', authenticate, async (req, res) => {
   }
 });
 
-// POST /api/goals/:id/evaluations
-router.post('/:id/evaluations', authenticate, async (req, res) => {
-  try {
-    const { score, reasoning, suggestedActions } = req.body;
-    // Default evaluatedBy to the authenticated user; allow override only
-    // when the caller is service-token-authenticated (admin scope checks
-    // belong upstream in middleware).
-    const evaluatedBy = req.body.evaluatedBy || req.user.id;
-    if (score !== undefined && score !== null && (score < 0 || score > 100)) {
-      return res.status(400).json({ error: 'score must be between 0 and 100' });
-    }
-
-    const dal = goalsDal;
-    const evaluation = await dal.addEvaluation(req.params.id, {
-      evaluatedBy,
-      score: score ?? null,
-      reasoning: reasoning || null,
-      suggestedActions: suggestedActions || null,
-    });
-    res.status(201).json(evaluation);
-  } catch (err) {
-    await logger.error('Add evaluation error:', err);
-    res.status(500).json({ error: 'Failed to add evaluation' });
-  }
-});
-
-// GET /api/goals/:id/evaluations
-router.get('/:id/evaluations', authenticate, async (req, res) => {
-  try {
-    const dal = goalsDal;
-    const evaluations = await dal.getEvaluations(req.params.id);
-    res.json({ evaluations });
-  } catch (err) {
-    await logger.error('Get evaluations error:', err);
-    res.status(500).json({ error: 'Failed to get evaluations' });
-  }
-});
+// GET/POST /goals/:id/evaluations removed (API v1 consolidation Phase 5 —
+// the UI reads evaluations embedded in the goal object; evaluations are
+// still written internally by the quality assessment in goalState.service.js).
 
 // ─── Goal dependency traversal ────────────────────────────────
 
 // GET /api/goals/:id/path — traverse backward from goal through achieves→blocks edges
+// (kept internal: consumed by the UI's useGoalPath hook on the goal detail page)
 router.get('/:id/path', authenticate, async (req, res) => {
   try {
     const goal = await requireGoalAccess(req, res);
@@ -584,19 +552,7 @@ router.get('/:id/progress', authenticate, async (req, res) => {
     const goal = await requireGoalAccess(req, res);
     if (!goal) return;
 
-    const { nodes, stats } = await dependenciesDal.getGoalPath(req.params.id);
-    const directAchievers = nodes.filter(n => n.depth === 1);
-    const directCompleted = directAchievers.filter(n => n.status === 'completed').length;
-    const directProgress = directAchievers.length > 0
-      ? Math.round((directCompleted / directAchievers.length) * 100)
-      : 0;
-
-    res.json({
-      goal_id: req.params.id,
-      progress: stats.completion_percentage,
-      direct_progress: directProgress,
-      stats,
-    });
+    res.json(await goalStateService.getGoalProgress(req.params.id));
   } catch (err) {
     await logger.error('Goal progress error:', err);
     res.status(500).json({ error: 'Failed to get goal progress' });
@@ -690,89 +646,7 @@ router.get('/:id/knowledge-gaps', authenticate, async (req, res) => {
     const goal = await requireGoalAccess(req, res);
     if (!goal) return;
 
-    if (!graphitiBridge.isAvailable()) {
-      return res.json({
-        available: false,
-        goal_type: goal.goalType || 'desire',
-        message: 'Knowledge graph not available',
-        tasks: [],
-        gaps: [],
-        coverage: { total: 0, covered: 0, percentage: 0 },
-      });
-    }
-
-    // Get all tasks on the goal path
-    const { nodes } = await dependenciesDal.getGoalPath(req.params.id);
-    if (nodes.length === 0) {
-      return res.json({
-        available: true,
-        goal_type: goal.goalType || 'desire',
-        tasks: [],
-        gaps: [],
-        coverage: { total: 0, covered: 0, percentage: 100 },
-      });
-    }
-
-    // Query Graphiti for incomplete tasks — cap concurrency to avoid overwhelming sidecar
-    const groupId = graphitiBridge.getGroupId(req.user);
-    const incompleteTasks = nodes.filter(n => n.status !== 'completed').slice(0, KNOWLEDGE_QUERY_CONCURRENCY);
-
-    const queryTaskKnowledge = async (task) => {
-      const query = [task.title, task.description].filter(Boolean).join(' ');
-      try {
-        const result = await graphitiBridge.searchMemory({ query, group_id: groupId, max_results: 3 });
-        const facts = Array.isArray(result) ? result : (result?.facts || []);
-        const factList = facts.map(f => f.fact || f.content || String(f));
-        return {
-          node_id: task.node_id, title: task.title, status: task.status, depth: task.depth,
-          fact_count: factList.length, has_knowledge: factList.length > 0,
-          top_facts: factList.slice(0, 2),
-        };
-      } catch {
-        return {
-          node_id: task.node_id, title: task.title, status: task.status, depth: task.depth,
-          fact_count: 0, has_knowledge: false, top_facts: [],
-        };
-      }
-    };
-
-    const rawResults = await Promise.all(incompleteTasks.map(queryTaskKnowledge));
-
-    // BDI Phase 3: Add gap_severity based on goal type
-    const gapSeverity = goal.goalType === 'intention' ? 'blocking' : 'informational';
-    const results = rawResults.map(r => ({ ...r, gap_severity: r.has_knowledge ? null : gapSeverity }));
-    const gaps = results.filter(r => !r.has_knowledge);
-    const covered = results.filter(r => r.has_knowledge).length;
-
-    // Check goal-level knowledge (success criteria) — batch with tasks
-    let goalKnowledge;
-    if (goal.successCriteria && Array.isArray(goal.successCriteria)) {
-      goalKnowledge = await Promise.all(
-        goal.successCriteria.slice(0, 5).map(async (criterion) => {
-          const query = typeof criterion === 'string' ? criterion : (criterion.metric || criterion.name || JSON.stringify(criterion));
-          try {
-            const result = await graphitiBridge.searchMemory({ query, group_id: groupId, max_results: 2 });
-            const facts = Array.isArray(result) ? result : (result?.facts || []);
-            return { criterion: query, has_knowledge: facts.length > 0, fact_count: facts.length };
-          } catch {
-            return { criterion: query, has_knowledge: false, fact_count: 0 };
-          }
-        })
-      );
-    }
-
-    res.json({
-      available: true,
-      goal_type: goal.goalType || 'desire',
-      tasks: results,
-      gaps,
-      coverage: {
-        total: results.length,
-        covered,
-        percentage: results.length > 0 ? Math.round((covered / results.length) * 100) : 100,
-      },
-      success_criteria_coverage: goalKnowledge?.length > 0 ? goalKnowledge : undefined,
-    });
+    res.json(await goalStateService.detectKnowledgeGaps(goal, req.user));
   } catch (err) {
     await logger.error('Knowledge gaps error:', err);
     res.status(500).json({ error: 'Failed to detect knowledge gaps' });
@@ -1395,97 +1269,7 @@ router.get('/:id/quality', authenticate, async (req, res) => {
     const goal = await requireGoalAccess(req, res);
     if (!goal) return;
 
-    const dimensions = {};
-    const suggestions = [];
-
-    // 1. Clarity — has title + description
-    const hasDesc = goal.description && goal.description.length > 10;
-    dimensions.clarity = {
-      score: hasDesc ? 1.0 : 0.5,
-      detail: hasDesc ? 'Has title and description' : 'Missing or very short description',
-    };
-    if (!hasDesc) suggestions.push('Add a detailed description explaining what this goal achieves and why it matters');
-
-    // 2. Measurability — has success criteria
-    const criteria = goal.successCriteria;
-    const hasCriteria = criteria && (
-      (Array.isArray(criteria) && criteria.length > 0) ||
-      (typeof criteria === 'object' && Object.keys(criteria).length > 0)
-    );
-    const criteriaCount = Array.isArray(criteria) ? criteria.length : (typeof criteria === 'object' ? Object.keys(criteria).length : 0);
-    dimensions.measurability = {
-      score: hasCriteria ? Math.min(criteriaCount / 2, 1.0) : 0,
-      detail: hasCriteria ? `${criteriaCount} success criteria defined` : 'No success criteria — goal is not measurable',
-    };
-    if (!hasCriteria) suggestions.push('Define success criteria with specific metrics and targets (e.g., "API latency < 100ms p99")');
-
-    // 3. Actionability — has linked plans
-    const planLinks = (goal.links || []).filter(l => l.linkedType === 'plan');
-    dimensions.actionability = {
-      score: planLinks.length > 0 ? Math.min(planLinks.length / 2, 1.0) : 0,
-      detail: planLinks.length > 0 ? `${planLinks.length} plan${planLinks.length > 1 ? 's' : ''} linked` : 'No plans linked — goal has no execution path',
-    };
-    if (planLinks.length === 0) suggestions.push('Link at least one plan that works toward this goal');
-
-    // 4. Knowledge grounding — knowledge exists for success criteria
-    let knowledgeScore = 0.5; // Neutral default
-    let knowledgeDetail = 'Knowledge graph not available';
-    if (graphitiBridge.isAvailable()) {
-      try {
-        const groupId = graphitiBridge.getGroupId(req.user);
-        const query = [goal.title, goal.description || ''].join(' ');
-        const result = await graphitiBridge.searchMemory({ query, group_id: groupId, max_results: 5 });
-        const facts = Array.isArray(result) ? result : (result?.facts || []);
-        knowledgeScore = facts.length >= 3 ? 1.0 : facts.length > 0 ? 0.6 : 0;
-        knowledgeDetail = facts.length > 0 ? `${facts.length} related facts in knowledge graph` : 'No related knowledge found';
-        if (facts.length === 0) suggestions.push('Add knowledge episodes related to this goal domain using add_learning');
-      } catch {
-        knowledgeScore = 0.5;
-        knowledgeDetail = 'Could not query knowledge graph';
-      }
-    }
-    dimensions.knowledge_grounding = { score: knowledgeScore, detail: knowledgeDetail };
-
-    // 5. Commitment — is the goal committed, with a deadline-like signal?
-    const isCommitted = Boolean(goal.committed);
-    const hasDeadline = goal.title.match(/by\s+(Q[1-4]|20\d{2}|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i);
-    const commitScore = isCommitted ? (hasDeadline ? 1.0 : 0.7) : (hasDeadline ? 0.5 : 0.2);
-    dimensions.commitment = {
-      score: commitScore,
-      detail: isCommitted
-        ? (hasDeadline ? 'Committed with time reference' : 'Committed but no deadline')
-        : 'Not committed yet — promote when ready',
-    };
-    if (!isCommitted) suggestions.push('Promote the goal when success criteria and plans are in place');
-    if (!hasDeadline && isCommitted) suggestions.push('Add a time-bound target to the goal title or description');
-
-    // Overall score
-    const scores = Object.values(dimensions).map(d => d.score);
-    const overall = scores.reduce((a, b) => a + b, 0) / scores.length;
-    const overallRounded = Math.round(overall * 100) / 100;
-    const assessedAt = new Date().toISOString();
-
-    // Persist to goal_evaluations for trending. Best-effort — failure here
-    // must not break the read endpoint.
-    try {
-      await goalsDal.addEvaluation(goal.id, {
-        evaluatedBy: 'goal_quality_endpoint',
-        score: Math.round(overall * 100),  // 0-100 integer for column type
-        reasoning: `Overall ${overallRounded}: clarity ${dimensions.clarity.score}, measurability ${dimensions.measurability.score}, actionability ${dimensions.actionability.score}, knowledge ${dimensions.knowledge_grounding.score}, commitment ${dimensions.commitment.score}`,
-        suggestedActions: suggestions,
-        dimensions,
-      });
-    } catch (persistErr) {
-      await logger.error('Goal quality persist failed:', persistErr);
-    }
-
-    res.json({
-      goal_id: goal.id,
-      score: overallRounded,
-      dimensions,
-      suggestions,
-      as_of: assessedAt,
-    });
+    res.json(await goalStateService.assessGoalQuality(goal, req.user));
   } catch (err) {
     await logger.error('Goal quality error:', err);
     res.status(500).json({ error: 'Failed to assess goal quality' });
@@ -1594,3 +1378,6 @@ router.get('/:id/coverage', authenticate, async (req, res) => {
 });
 
 module.exports = router;
+// Shared with the v1 router (GET /v1/goals/:id/state) so the facade applies
+// the exact same access rule as the internal goal routes.
+module.exports.requireGoalAccess = requireGoalAccess;

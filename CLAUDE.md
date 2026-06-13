@@ -96,7 +96,8 @@ HTTP request
 - **CJS/ESM bridge.** Backend mixes `.js` (CommonJS) and `.mjs` (ESM). DAL files are `.mjs` and reached from CJS via `db/dal.cjs` (lazy `import()` cache). When adding a new DAL, register it in `db/dal/index.mjs` so the bridge picks it up.
 - **All knowledge is Graphiti now.** The old flat `knowledge_entries` table, `knowledgeDal`, and `add_knowledge_entry`/`search_knowledge` MCP tools are removed. Don't reintroduce them — write through `graphitiBridge.js`. Multi-tenancy uses `group_id = org_{org_id}`.
 - **Migrations are append-only.** Drizzle generates files into `migrations/` with numeric prefixes. The custom runner `scripts/run-migrations.mjs` splits on `statement-breakpoint` markers. Never edit an applied migration — add a new one.
-- **Controllers are `.v2.js`.** v1 is deleted; the suffix is historical. All new controllers keep the suffix for now.
+- **Controllers are `.v2.js`.** The old v1 controllers are deleted; the suffix is historical. All new controllers keep the suffix for now. (Unrelated to the **public `/v1` API** below.)
+- **The public API is `/v1`** (`src/routes/v1/`) — ~70 operations that alias internal handlers via request re-dispatch (`forward.js`) plus composed facades (`src/services/v1Facades.js`, `domains/goal/services/goalState.service.js`). Internal unversioned routes stay mounted as the UI's contract. Every v1 route carries a `[v1]`-tagged Swagger block; `npm run docs:validate` FAILS if a v1 operation lacks summary/responses (internal spec is lenient). `:id` params on v1 routes are UUID-constrained so internal literal sibling paths (e.g. `/plans/public`) aren't reachable through them. Smoke test: `tests/integration/v1-routes.test.js` (DB-free).
 - **Workspaces + Blueprints.** Goals and plans hang off a `workspace_id` (organization-scoped container) — **NOT NULL with ON DELETE RESTRICT since migration 0021**; every create path must resolve a workspace (org default → user's personal-org default → 400). Blueprints are dehydrated reusable shapes (`scope: 'plan'` only in v1) that fork into a workspace via `POST /blueprints/:id/fork`. Run-state (claims, episodes, statuses, agent assignments) is excluded from blueprints. Schema: `migrations/0019_workspaces_and_blueprints.sql` + `0021_workspace_id_not_null.sql`. Sketch: `docs/WORKSPACE_BLUEPRINT_SKETCH.md`.
 - **Task claims have a partial unique index** — one active (non-expired) claim per node. See `claimsDal` + `node_claims` schema; don't bypass with raw inserts.
 - **`goal_type` is derived, not stored.** The desire/intention column was dropped in migration 0022; commitment = `promoted_at IS NOT NULL` (`committed` boolean on DAL rows). `goalsDal` still emits a derived `goalType` and accepts legacy `goalType` writes (translated to `promoted_at`) for API/UI/MCP compatibility. Don't reintroduce the column; new code should read `committed`.
@@ -107,8 +108,9 @@ HTTP request
 2. Thin controller; service for logic; repository/DAL for data.
 3. Zod validation schema in `src/validation/` and wire through the controller.
 4. If the endpoint emits an event, publish on the message bus so adapters can react.
-5. `npm run docs:all` to refresh OpenAPI.
-6. Add an integration test under `tests/integration/`. Update the MCP server (`../agent-planner-mcp/src/tools.js`) if agents need to call it.
+5. `npm run docs:all` to refresh OpenAPI (writes both `docs/openapi.json` and `docs/openapi.v1.json`).
+6. If the endpoint is part of the public surface, add a `/v1` alias in `src/routes/v1/` with a `[v1]`-tagged Swagger block — the v1 spec validation is strict.
+7. Add an integration test under `tests/integration/`. Update the MCP server (`../agent-planner-mcp/src/tools.js`) if agents need to call it.
 
 ## Environment
 

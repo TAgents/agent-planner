@@ -56,7 +56,6 @@ const authRoutes = require('./routes/auth.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const statsRoutes = require('./routes/stats.routes');
 const githubRoutes = require('./routes/github.routes');
-const agentV2Routes = require('./routes/v2/agent.routes');
 const contextRoutes = require('./routes/context.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const onboardingRoutes = require('./routes/onboarding.routes');
@@ -64,6 +63,11 @@ const slackRoutes = require('./routes/slack.routes');
 const adminRoutes = require('./routes/admin.routes');
 const workspaceRoutes = require('./routes/workspace.routes');
 const blueprintRoutes = require('./routes/blueprint.routes');
+
+// Public versioned API surface — aliases + facades over the routes above.
+// Internal routes stay mounted (the UI depends on them); /v1 is the
+// documented contract. See docs/API_V1_CONSOLIDATION_PLAN.md.
+const v1Routes = require('./routes/v1');
 
 // Import WebSocket collaboration server
 const CollaborationServer = require('./websocket/collaboration');
@@ -122,9 +126,14 @@ if (process.env.NODE_ENV === 'development') {
   logger.api('Debug middleware enabled - detailed request/response logging activated');
 }
 
-// Setup Swagger documentation
+// Setup Swagger documentation — public v1 spec by default, full internal
+// spec at /api-docs/internal. (Internal mount must come first so it isn't
+// shadowed by the /api-docs mount.)
+const { extractV1Spec } = require('./utils/v1Spec');
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
+const swaggerDocsV1 = extractV1Spec(swaggerDocs);
+app.use('/api-docs/internal', swaggerUi.serveFiles(swaggerDocs), swaggerUi.setup(swaggerDocs));
+app.use('/api-docs', swaggerUi.serveFiles(swaggerDocsV1), swaggerUi.setup(swaggerDocsV1));
 
 // Tool-call telemetry: records one row per authenticated request via
 // res.finish. Mounted globally; reads req.user lazily so route-level
@@ -134,6 +143,11 @@ app.use(recordToolCall);
 
 // Routes with rate limiting
 // Auth routes - strict rate limiting to prevent brute force
+// Public versioned API (v1) — mounted first so /v1/* never collides with
+// internal routes. Auth/search subgroups apply their stricter limiters
+// per-route inside the v1 router.
+app.use('/v1', generalLimiter, v1Routes);
+
 app.use('/auth', authLimiter, authRoutes);
 
 // Search routes - moderate rate limiting for expensive operations
@@ -155,9 +169,11 @@ app.use('/stats', generalLimiter, statsRoutes);
 app.use('/github', generalLimiter, githubRoutes);
 // Removed: ai routes (pre-v2 cleanup)
 
-// Share routes (plan sharing by email)
+// Share routes (plan sharing by email) — plan-scoped sharing and
+// token-scoped invite acceptance are separate routers so neither mount
+// exposes the other's paths.
 app.use('/plans', generalLimiter, shareRoutes);
-app.use('/invites', generalLimiter, shareRoutes);
+app.use('/invites', generalLimiter, shareRoutes.inviteRoutes);
 
 // Organization routes
 app.use('/organizations', generalLimiter, organizationRoutes);
@@ -172,7 +188,6 @@ app.use('/goals', generalLimiter, goalsV2Routes);
 
 app.use('/knowledge', generalLimiter, knowledgeV2Routes);
 app.use('/knowledge/search', searchLimiter);  // stricter limit for semantic search
-app.use('/v2/agent', generalLimiter, agentV2Routes);
 app.use('/agent', generalLimiter, agentLoopRoutes);
 // Agent context routes (leaf-up context loading)
 app.use('/context', generalLimiter, contextRoutes);

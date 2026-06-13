@@ -74,59 +74,8 @@ const { authenticate } = require('../middleware/auth.middleware');
  */
 router.get('/', authenticate, searchController.globalSearch);
 
-/**
- * @swagger
- * /plans/{id}/nodes/search:
- *   get:
- *     summary: Search for nodes in a specific plan with filtering
- *     tags: [Search]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: The plan ID
- *       - in: query
- *         name: query
- *         schema:
- *           type: string
- *         description: Search term (minimum 3 characters)
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *         description: Filter by status (comma-separated for multiple values)
- *       - in: query
- *         name: node_type
- *         schema:
- *           type: string
- *         description: Filter by node type (comma-separated for multiple values)
- *       - in: query
- *         name: date_from
- *         schema:
- *           type: string
- *           format: date
- *         description: Filter by creation date (from)
- *       - in: query
- *         name: date_to
- *         schema:
- *           type: string
- *           format: date
- *         description: Filter by creation date (to)
- *     responses:
- *       200:
- *         description: Search results for nodes in the plan
- *       401:
- *         description: Authentication required
- *       403:
- *         description: Access denied
- *       404:
- *         description: Plan not found
- */
-router.get('/plans/:id/nodes/search', authenticate, searchController.searchNodes);
+// GET /search/plans/:id/nodes/search removed (API v1 consolidation Phase 5 —
+// no consumers; global search and /search/plan/:plan_id cover node search).
 
 // Removed: /artifacts/search route (Phase 0 simplification)
 

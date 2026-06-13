@@ -1,41 +1,14 @@
 /**
- * Integration tests for MCP tools and memory sync
+ * Integration tests for memory sync.
+ *
+ * The MCP Tool Bridge tests were removed with src/mcp/tools.js and the
+ * /v2/agent routes (API v1 consolidation Phase 5) — agents talk to the API
+ * through agent-planner-mcp, not the in-process tool shim.
  */
-const { getToolDefinitions, executeTool } = require('../../src/mcp/tools');
 const { scanMemoryFiles, computeHash } = require('../../src/utils/memorySync');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-
-describe('MCP Tool Bridge', () => {
-  test('getToolDefinitions returns all tools with required fields', () => {
-    const tools = getToolDefinitions();
-    expect(tools.length).toBeGreaterThanOrEqual(4);
-
-    for (const tool of tools) {
-      expect(tool.name).toBeDefined();
-      expect(tool.name).toMatch(/^agentplanner_/);
-      expect(tool.description).toBeDefined();
-      expect(tool.inputSchema).toBeDefined();
-      expect(tool.inputSchema.type).toBe('object');
-    }
-  });
-
-  test('executeTool returns error for unknown tool', async () => {
-    const result = await executeTool('nonexistent_tool', {});
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('Unknown tool');
-  });
-
-  test('tool definitions include expected tools', () => {
-    const tools = getToolDefinitions();
-    const names = tools.map(t => t.name);
-    expect(names).toContain('agentplanner_complete_task');
-    expect(names).toContain('agentplanner_update_task');
-    expect(names).toContain('agentplanner_evaluate_goal');
-    expect(names).toContain('agentplanner_get_plan_status');
-  });
-});
 
 describe('Memory Sync', () => {
   test('computeHash produces consistent SHA-256', () => {

@@ -324,10 +324,17 @@ router.get('/:id/forks', authenticate, async (req, res) => {
 });
 
 // ─── Save a plan as a new blueprint ──────────────────────────────
+// /plans/{planId}/save_as_blueprint is the symmetric route — implemented
+// here under /blueprints/from_plan to avoid polluting the plans router.
 /**
  * @swagger
- * /plans/{planId}/save_as_blueprint is the symmetric route — implemented
- * here under /blueprints/from_plan to avoid polluting the plans router.
+ * /blueprints/from_plan/{planId}:
+ *   post:
+ *     summary: Snapshot a plan as a reusable blueprint
+ *     tags: [Blueprints]
+ *     security: [{ bearerAuth: [] }, { apiKey: [] }]
+ *     responses:
+ *       201: { description: Blueprint created }
  */
 router.post('/from_plan/:planId', authenticate, async (req, res) => {
   try {
