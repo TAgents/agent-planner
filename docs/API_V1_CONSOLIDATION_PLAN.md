@@ -1,7 +1,7 @@
 # API v1 Consolidation Plan — 231 endpoints → ~55 public
 
-**Status:** ALL PHASES COMPLETE (Phase 5 telemetry gate waived — no external users at time of cleanup)
-**Branch:** `api-v1-consolidation` (phases may split into separate PRs)
+**Status:** MERGED to main (PR #53, 3 review rounds). All 5 phases complete; Phase 5 telemetry gate waived (no external users). Remaining to ship: deploy main to the VM, publish agent-planner-mcp 1.2.0 to npm + rebuild .mcpb.
+**Branch:** `api-v1-consolidation` (merged, deleted)
 **Origin:** Architecture review (2026-06-12) — the REST surface accumulated through
 four pivots and now exposes ~231 endpoints, while the MCP layer proves the same
 product fits in 36 intent-shaped tools. The MCP facade is the better-designed
