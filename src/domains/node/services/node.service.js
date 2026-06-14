@@ -8,7 +8,7 @@
 const repo = require('../repositories/node.repository');
 const { checkPlanAccess } = require('../../../middleware/planAccess.middleware');
 const { broadcastPlanUpdate } = require('../../../websocket/broadcast');
-const { toPublicCoherence, toInternalCoherence } = require('../coherenceVocab');
+const { coherenceFields, toInternalCoherence } = require('../coherenceVocab');
 const {
   createNodeCreatedMessage,
   createNodeUpdatedMessage,
@@ -52,8 +52,7 @@ const snakeNode = (n) => ({
   assigned_agent_at: n.assignedAgentAt,
   assigned_agent_by: n.assignedAgentBy,
   task_mode: n.taskMode,
-  coherence_status: toPublicCoherence(n.coherenceStatus).status,
-  coherence_message: toPublicCoherence(n.coherenceStatus).message,
+  ...coherenceFields(n.coherenceStatus),
   quality_score: n.qualityScore,
   quality_assessed_at: n.qualityAssessedAt,
   quality_rationale: n.qualityRationale,
@@ -67,8 +66,7 @@ const snakeNodeMinimal = (n) => ({
   status: n.status,
   order_index: n.orderIndex,
   task_mode: n.taskMode,
-  coherence_status: toPublicCoherence(n.coherenceStatus).status,
-  coherence_message: toPublicCoherence(n.coherenceStatus).message,
+  ...coherenceFields(n.coherenceStatus),
   quality_score: n.qualityScore,
   quality_assessed_at: n.qualityAssessedAt,
   quality_rationale: n.qualityRationale,

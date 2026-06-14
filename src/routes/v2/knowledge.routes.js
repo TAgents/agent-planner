@@ -14,6 +14,7 @@ const messageBus = require('../../services/messageBus');
 const { checkCoherence } = require('../../services/coherenceEngine');
 const dal = require('../../db/dal.cjs');
 const { checkPlanAccess } = require('../../middleware/planAccess.middleware');
+const { toPublicCoherence } = require('../../domains/node/coherenceVocab');
 
 // ─── GRAPHITI STATUS ────────────────────────────────────────────
 /**
@@ -284,11 +285,10 @@ router.post('/episodes', authenticate, async (req, res) => {
           planId: plan_id,
           options: { maxTasks: 10, timeoutMs: 2000 },
         });
-        coherence_warnings = issues.map(i => ({
-          node_id: i.node_id,
-          title: i.title,
-          conflict_type: i.conflict_type,
-        }));
+        coherence_warnings = issues.map(i => {
+          const c = toPublicCoherence(i.conflict_type);
+          return { node_id: i.node_id, title: i.title, conflict_type: c.status, message: c.message };
+        });
       } catch (err) {
         await logger.warn('Sync coherence check failed:', err.message);
       }

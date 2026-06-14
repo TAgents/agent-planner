@@ -1,20 +1,6 @@
-/**
- * Public coherence vocabulary (ring-3 BDI demotion).
- *
- * The coherence engine stores BDI-flavoured states on `plan_nodes.coherence_status`
- * (`coherent` / `stale_beliefs` / `contradiction_detected` / `unchecked`). Those
- * are an internal MECHANIC and stay as-is. The public API, however, should not
- * make callers learn "beliefs" jargon — so every response maps the internal
- * value to plain language here.
- *
- *   internal                public status   message
- *   ----------------------  --------------  --------------------------------------
- *   coherent                ok              (none)
- *   stale_beliefs           outdated        "May be working from outdated information."
- *   contradiction_detected  contradicted    "New knowledge contradicts this task's context."
- *   unchecked / null        unchecked       (none)
- */
-
+// Public coherence vocabulary (ring-3): the coherence engine's internal
+// BDI-flavoured states are a mechanic; the API maps them to plain language so
+// callers never see "beliefs" jargon. internal value → { public status, human message }.
 const STATUS_MAP = {
   coherent: { status: 'ok', message: null },
   stale_beliefs: { status: 'outdated', message: 'May be working from outdated information.' },
@@ -27,12 +13,27 @@ const DEFAULT = { status: 'unchecked', message: null };
 /** Map an internal coherence_status to its public { status, message }. */
 function toPublicCoherence(internal) {
   if (!internal) return DEFAULT;
-  return STATUS_MAP[internal] || { status: internal, message: null };
+  // An unmapped value means the engine grew a state we haven't translated —
+  // warn so the drift is caught, but pass it through rather than break callers.
+  if (!STATUS_MAP[internal]) {
+    console.warn(`[coherenceVocab] Unknown internal coherence status: ${internal}`);
+    return { status: internal, message: null };
+  }
+  return STATUS_MAP[internal];
 }
 
 /** Public status string only (e.g. for a node's `coherence_status` field). */
 function publicCoherenceStatus(internal) {
   return toPublicCoherence(internal).status;
+}
+
+/**
+ * Response fields for a node's coherence, computed in one lookup. Spread into
+ * a response object: `{ ...coherenceFields(n.coherenceStatus) }`.
+ */
+function coherenceFields(internal) {
+  const { status, message } = toPublicCoherence(internal);
+  return { coherence_status: status, coherence_message: message };
 }
 
 const PUBLIC_TO_INTERNAL = Object.fromEntries(
@@ -58,6 +59,7 @@ function toInternalCoherence(publicStatus) {
 module.exports = {
   toPublicCoherence,
   publicCoherenceStatus,
+  coherenceFields,
   toInternalCoherence,
   STATUS_MAP,
   PUBLIC_STATUSES,

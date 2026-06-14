@@ -86,7 +86,7 @@ router.get('/pending', authenticate, async (req, res, next) => {
  *     summary: Workspace-wide coherence score (starter formula)
  *     description: |
  *       Composes a 0..1 coherence score from already-available signals
- *       so the BDI Coherence Dial can wire up before a more rigorous
+ *       so the Coherence Dial can wire up before a more rigorous
  *       definition lands. The response always includes the raw signal
  *       counts so a future spec session can re-tune weights without
  *       changing the API contract.

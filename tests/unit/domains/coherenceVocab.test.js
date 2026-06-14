@@ -32,3 +32,34 @@ describe('coherence vocabulary mapping', () => {
     }
   });
 });
+
+describe('toInternalCoherence (reverse map for the ?coherence_status= filter)', () => {
+  const { toInternalCoherence, coherenceFields } = require('../../../src/domains/node/coherenceVocab');
+
+  it('maps public values back to internal column values', () => {
+    expect(toInternalCoherence('ok')).toBe('coherent');
+    expect(toInternalCoherence('outdated')).toBe('stale_beliefs');
+    expect(toInternalCoherence('contradicted')).toBe('contradiction_detected');
+    expect(toInternalCoherence('unchecked')).toBe('unchecked');
+  });
+
+  it('maps comma-separated lists element-wise', () => {
+    expect(toInternalCoherence('outdated,contradicted')).toBe('stale_beliefs,contradiction_detected');
+    expect(toInternalCoherence('ok, outdated')).toBe('coherent,stale_beliefs');
+  });
+
+  it('passes internal values through unchanged (idempotent)', () => {
+    expect(toInternalCoherence('stale_beliefs')).toBe('stale_beliefs');
+  });
+
+  it('passes unknown values through as-is', () => {
+    expect(toInternalCoherence('whatever')).toBe('whatever');
+  });
+
+  it('coherenceFields returns the spreadable response shape', () => {
+    expect(coherenceFields('stale_beliefs')).toEqual({
+      coherence_status: 'outdated',
+      coherence_message: 'May be working from outdated information.',
+    });
+  });
+});

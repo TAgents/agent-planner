@@ -21,7 +21,7 @@ const organizationsDal = require('../../db/dal.cjs').organizationsDal;
 const graphitiBridge = require('../../services/graphitiBridge');
 const reasoning = require('../../services/reasoning');
 const goalStateService = require('../../domains/goal/services/goalState.service');
-const { toPublicCoherence } = require('../../domains/node/coherenceVocab');
+const { coherenceFields } = require('../../domains/node/coherenceVocab');
 
 const VALID_LINK_TYPES = ['plan', 'task', 'agent'];
 
@@ -1343,8 +1343,7 @@ router.get('/:id/coverage', authenticate, async (req, res) => {
               node_type: task.nodeType,
               fact_count: factCount,
               has_knowledge: factCount > 0,
-              coherence_status: toPublicCoherence(task.coherenceStatus).status,
-              coherence_message: toPublicCoherence(task.coherenceStatus).message,
+              ...coherenceFields(task.coherenceStatus),
               top_facts: topFacts,
             };
           })

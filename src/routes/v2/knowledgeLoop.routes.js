@@ -12,7 +12,7 @@ const { checkPlanAccess } = require('../../middleware/planAccess.middleware');
 const dal = require('../../db/dal.cjs');
 const { evaluatePlanQuality } = require('../../services/planQualityEvaluator');
 const graphitiBridge = require('../../services/graphitiBridge');
-const { toPublicCoherence } = require('../../domains/node/coherenceVocab');
+const { coherenceFields } = require('../../domains/node/coherenceVocab');
 
 const CONVERGENCE_THRESHOLD = 0.02;
 const CONVERGENCE_WINDOW = 3;
@@ -339,8 +339,7 @@ router.get('/:id/knowledge-loop/context', authenticate, async (req, res, next) =
     const coherenceIssues = flaggedNodes.map(n => ({
       node_id: n.id,
       title: n.title,
-      coherence_status: toPublicCoherence(n.coherenceStatus).status,
-      coherence_message: toPublicCoherence(n.coherenceStatus).message,
+      ...coherenceFields(n.coherenceStatus),
     }));
 
     res.json({

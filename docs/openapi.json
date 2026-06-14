@@ -9442,7 +9442,7 @@
     "/coherence/summary": {
       "get": {
         "summary": "Workspace-wide coherence score (starter formula)",
-        "description": "Composes a 0..1 coherence score from already-available signals\nso the BDI Coherence Dial can wire up before a more rigorous\ndefinition lands. The response always includes the raw signal\ncounts so a future spec session can re-tune weights without\nchanging the API contract.\n\nStarter formula (subject to change in future iterations):\n  start = 1.0\n  minus 0.10 per pending decision   (capped at -0.30)\n  minus 0.05 per stale plan         (capped at -0.30)\n  minus 0.50 × blocked-task ratio\n  minus 0.30 × unlinked-task ratio  (proxy: stale_plans / total_plans)\nclamped to [0, 1].\n"
+        "description": "Composes a 0..1 coherence score from already-available signals\nso the Coherence Dial can wire up before a more rigorous\ndefinition lands. The response always includes the raw signal\ncounts so a future spec session can re-tune weights without\nchanging the API contract.\n\nStarter formula (subject to change in future iterations):\n  start = 1.0\n  minus 0.10 per pending decision   (capped at -0.30)\n  minus 0.05 per stale plan         (capped at -0.30)\n  minus 0.50 × blocked-task ratio\n  minus 0.30 × unlinked-task ratio  (proxy: stale_plans / total_plans)\nclamped to [0, 1].\n"
       }
     },
     "/goals/dashboard": {

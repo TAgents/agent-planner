@@ -10,7 +10,7 @@ const { authenticate } = require('../../middleware/auth.middleware.v2');
 const { checkPlanAccess } = require('../../middleware/planAccess.middleware');
 const dal = require('../../db/dal.cjs');
 const { evaluatePlanQuality } = require('../../services/planQualityEvaluator');
-const { toPublicCoherence } = require('../../domains/node/coherenceVocab');
+const { coherenceFields } = require('../../domains/node/coherenceVocab');
 
 /**
  * @swagger
@@ -97,8 +97,7 @@ router.get('/:id/coherence', authenticate, async (req, res, next) => {
           title: node.title,
           status: node.status,
           node_type: node.nodeType,
-          coherence_status: toPublicCoherence(node.coherenceStatus).status,
-          coherence_message: toPublicCoherence(node.coherenceStatus).message,
+          ...coherenceFields(node.coherenceStatus),
           triggering_episodes: links.map(l => ({
             episode_id: l.episodeId,
             link_type: l.linkType,
