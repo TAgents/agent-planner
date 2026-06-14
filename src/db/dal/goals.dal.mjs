@@ -277,10 +277,14 @@ export const goalsDal = {
     return rows;
   },
 
-  async removeLink(linkId) {
-    const [link] = await db.delete(goalLinks)
-      .where(eq(goalLinks.id, linkId))
-      .returning();
+  async removeLink(linkId, goalId) {
+    // Scope the delete to the owning goal so the linkId alone is not a global
+    // handle (atomic ownership check — no TOCTOU window, no reliance on a
+    // pre-fetched links array).
+    const where = goalId
+      ? and(eq(goalLinks.id, linkId), eq(goalLinks.goalId, goalId))
+      : eq(goalLinks.id, linkId);
+    const [link] = await db.delete(goalLinks).where(where).returning();
     return link ?? null;
   },
 

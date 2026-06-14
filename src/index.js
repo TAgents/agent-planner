@@ -359,6 +359,11 @@ const startServer = async () => {
   }
 };
 
-startServer();
+// Only boot the server when run as the entrypoint; `require()` of this module
+// (e.g. the route-auth-coverage test) gets the fully-mounted app without
+// opening a DB connection or binding a port.
+if (require.main === module) {
+  startServer();
+}
 
 module.exports = app; // Export for testing

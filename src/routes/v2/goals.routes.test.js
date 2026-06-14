@@ -159,6 +159,60 @@ describe('Goals v2 Routes', () => {
     });
   });
 
+  describe('goal links — access control', () => {
+    it('POST /:id/links — 403 when the goal belongs to another user', async () => {
+      mockGoalsDal.findById.mockResolvedValue({ id: 'g1', ownerId: 'other-user', links: [] });
+      const res = await request(app)
+        .post('/api/goals/g1/links')
+        .send({ linkedType: 'plan', linkedId: 'p1' });
+      expect(res.status).toBe(403);
+      expect(mockGoalsDal.addLink).not.toHaveBeenCalled();
+    });
+
+    it('POST /:id/links — 403 for a user outside the goal\'s org', async () => {
+      // Test harness user is a member of TEST_USER.organizationId only.
+      mockGoalsDal.findById.mockResolvedValue({ id: 'g1', organizationId: 'other-org', links: [] });
+      const res = await request(app)
+        .post('/api/goals/g1/links')
+        .send({ linkedType: 'plan', linkedId: 'p1' });
+      expect(res.status).toBe(403);
+      expect(mockGoalsDal.addLink).not.toHaveBeenCalled();
+    });
+
+    it('POST /:id/links — succeeds for the goal owner', async () => {
+      mockGoalsDal.findById.mockResolvedValue({ id: 'g1', ownerId: 'test-user-id', links: [] });
+      mockGoalsDal.addLink.mockResolvedValue({ id: 'link-1', linkedType: 'task', linkedId: 't1' });
+      const res = await request(app)
+        .post('/api/goals/g1/links')
+        .send({ linkedType: 'task', linkedId: 't1' });
+      expect(res.status).toBe(201);
+      expect(mockGoalsDal.addLink).toHaveBeenCalledWith('g1', 'task', 't1');
+    });
+
+    it('DELETE /:id/links/:linkId — 403 when the goal belongs to another user', async () => {
+      mockGoalsDal.findById.mockResolvedValue({ id: 'g1', ownerId: 'other-user', links: [{ id: 'link-1' }] });
+      const res = await request(app).delete('/api/goals/g1/links/link-1');
+      expect(res.status).toBe(403);
+      expect(mockGoalsDal.removeLink).not.toHaveBeenCalled();
+    });
+
+    it('DELETE /:id/links/:linkId — 404 when the link is not on this goal (scoped delete returns null)', async () => {
+      mockGoalsDal.findById.mockResolvedValue({ id: 'g1', ownerId: 'test-user-id', links: [] });
+      mockGoalsDal.removeLink.mockResolvedValue(null); // goal-scoped delete matched nothing
+      const res = await request(app).delete('/api/goals/g1/links/link-1');
+      expect(res.status).toBe(404);
+      expect(mockGoalsDal.removeLink).toHaveBeenCalledWith('link-1', 'g1');
+    });
+
+    it('DELETE /:id/links/:linkId — removes a link owned by the goal', async () => {
+      mockGoalsDal.findById.mockResolvedValue({ id: 'g1', ownerId: 'test-user-id', links: [{ id: 'link-1' }] });
+      mockGoalsDal.removeLink.mockResolvedValue({ id: 'link-1' });
+      const res = await request(app).delete('/api/goals/g1/links/link-1');
+      expect(res.status).toBe(200);
+      expect(mockGoalsDal.removeLink).toHaveBeenCalledWith('link-1', 'g1');
+    });
+  });
+
   describe('removed endpoints (API v1 consolidation Phase 5)', () => {
     it('POST /api/goals/:id/evaluations is gone', async () => {
       const res = await request(app).post('/api/goals/g1/evaluations').send({ score: 80 });

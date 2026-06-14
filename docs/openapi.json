@@ -9607,6 +9607,113 @@
         }
       }
     },
+    "/goals/{id}/links": {
+      "post": {
+        "summary": "Link a plan, task, or agent to a goal",
+        "tags": [
+          "Goals"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "linkedType",
+                  "linkedId"
+                ],
+                "properties": {
+                  "linkedType": {
+                    "type": "string",
+                    "enum": [
+                      "plan",
+                      "task",
+                      "agent"
+                    ]
+                  },
+                  "linkedId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Link created (plan links cascade achievers)"
+          },
+          "400": {
+            "description": "Invalid linkedType or missing fields"
+          },
+          "403": {
+            "description": "Access denied"
+          }
+        }
+      }
+    },
+    "/goals/{id}/links/{linkId}": {
+      "delete": {
+        "summary": "Remove a link from a goal",
+        "tags": [
+          "Goals"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "linkId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Link removed"
+          },
+          "403": {
+            "description": "Access denied"
+          },
+          "404": {
+            "description": "Link not found on this goal"
+          }
+        }
+      }
+    },
     "/goals/{goalId}/briefing": {
       "get": {
         "summary": "Get a comprehensive goal briefing",
