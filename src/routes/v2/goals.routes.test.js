@@ -169,6 +169,16 @@ describe('Goals v2 Routes', () => {
       expect(mockGoalsDal.addLink).not.toHaveBeenCalled();
     });
 
+    it('POST /:id/links — 403 for a user outside the goal\'s org', async () => {
+      // Test harness user is a member of TEST_USER.organizationId only.
+      mockGoalsDal.findById.mockResolvedValue({ id: 'g1', organizationId: 'other-org', links: [] });
+      const res = await request(app)
+        .post('/api/goals/g1/links')
+        .send({ linkedType: 'plan', linkedId: 'p1' });
+      expect(res.status).toBe(403);
+      expect(mockGoalsDal.addLink).not.toHaveBeenCalled();
+    });
+
     it('POST /:id/links — succeeds for the goal owner', async () => {
       mockGoalsDal.findById.mockResolvedValue({ id: 'g1', ownerId: 'test-user-id', links: [] });
       mockGoalsDal.addLink.mockResolvedValue({ id: 'link-1', linkedType: 'task', linkedId: 't1' });
@@ -186,11 +196,12 @@ describe('Goals v2 Routes', () => {
       expect(mockGoalsDal.removeLink).not.toHaveBeenCalled();
     });
 
-    it('DELETE /:id/links/:linkId — 404 when the link is not on this goal', async () => {
-      mockGoalsDal.findById.mockResolvedValue({ id: 'g1', ownerId: 'test-user-id', links: [{ id: 'other-link' }] });
+    it('DELETE /:id/links/:linkId — 404 when the link is not on this goal (scoped delete returns null)', async () => {
+      mockGoalsDal.findById.mockResolvedValue({ id: 'g1', ownerId: 'test-user-id', links: [] });
+      mockGoalsDal.removeLink.mockResolvedValue(null); // goal-scoped delete matched nothing
       const res = await request(app).delete('/api/goals/g1/links/link-1');
       expect(res.status).toBe(404);
-      expect(mockGoalsDal.removeLink).not.toHaveBeenCalled();
+      expect(mockGoalsDal.removeLink).toHaveBeenCalledWith('link-1', 'g1');
     });
 
     it('DELETE /:id/links/:linkId — removes a link owned by the goal', async () => {
@@ -198,7 +209,7 @@ describe('Goals v2 Routes', () => {
       mockGoalsDal.removeLink.mockResolvedValue({ id: 'link-1' });
       const res = await request(app).delete('/api/goals/g1/links/link-1');
       expect(res.status).toBe(200);
-      expect(mockGoalsDal.removeLink).toHaveBeenCalledWith('link-1');
+      expect(mockGoalsDal.removeLink).toHaveBeenCalledWith('link-1', 'g1');
     });
   });
 
