@@ -71,8 +71,9 @@ const {
  *                 format: uuid
  *               dependency_type:
  *                 type: string
- *                 enum: [blocks, requires, relates_to]
+ *                 enum: [blocks, relates_to]
  *                 default: blocks
+ *                 description: "Node→node edge type. Legacy 'requires'/'informs'/'related_to' are accepted and mapped. 'achieves' (node→goal) is created via the goal achievers routes."
  *               weight:
  *                 type: integer
  *                 default: 1

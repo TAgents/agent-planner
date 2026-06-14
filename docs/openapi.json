@@ -2914,10 +2914,10 @@
                     "type": "string",
                     "enum": [
                       "blocks",
-                      "requires",
                       "relates_to"
                     ],
-                    "default": "blocks"
+                    "default": "blocks",
+                    "description": "Node→node edge type. Legacy 'requires'/'informs'/'related_to' are accepted and mapped. 'achieves' (node→goal) is created via the goal achievers routes."
                   },
                   "weight": {
                     "type": "integer",
