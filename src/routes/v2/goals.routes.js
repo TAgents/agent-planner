@@ -21,7 +21,7 @@ const organizationsDal = require('../../db/dal.cjs').organizationsDal;
 const graphitiBridge = require('../../services/graphitiBridge');
 const reasoning = require('../../services/reasoning');
 const goalStateService = require('../../domains/goal/services/goalState.service');
-const { coherenceFields } = require('../../domains/node/coherenceVocab');
+const { coherenceFields } = require('../../services/coherenceVocab');
 
 const VALID_LINK_TYPES = ['plan', 'task', 'agent'];
 

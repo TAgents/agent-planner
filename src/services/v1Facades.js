@@ -20,7 +20,7 @@ const graphitiBridge = require('./graphitiBridge');
 const { checkPlanAccess } = require('../middleware/planAccess.middleware');
 const nodeService = require('../domains/node/services/node.service');
 const planService = require('../domains/plan/services/plan.service');
-const { coherenceFields } = require('../domains/node/coherenceVocab');
+const { coherenceFields } = require('./coherenceVocab');
 
 const asOf = () => new Date().toISOString();
 

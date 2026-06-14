@@ -10,7 +10,7 @@ const { authenticate } = require('../../middleware/auth.middleware.v2');
 const { checkPlanAccess } = require('../../middleware/planAccess.middleware');
 const dal = require('../../db/dal.cjs');
 const { evaluatePlanQuality } = require('../../services/planQualityEvaluator');
-const { coherenceFields } = require('../../domains/node/coherenceVocab');
+const { coherenceFields } = require('../../services/coherenceVocab');
 
 /**
  * @swagger
@@ -54,6 +54,10 @@ const { coherenceFields } = require('../../domains/node/coherenceVocab');
  *                       coherence_status:
  *                         type: string
  *                         enum: [outdated, contradicted]
+ *                       coherence_message:
+ *                         type: string
+ *                         nullable: true
+ *                         description: Human-readable explanation, or null
  *                       triggering_episodes:
  *                         type: array
  *                         items:

@@ -14,7 +14,7 @@ const messageBus = require('../../services/messageBus');
 const { checkCoherence } = require('../../services/coherenceEngine');
 const dal = require('../../db/dal.cjs');
 const { checkPlanAccess } = require('../../middleware/planAccess.middleware');
-const { toPublicCoherence } = require('../../domains/node/coherenceVocab');
+const { toPublicCoherence } = require('../../services/coherenceVocab');
 
 // ─── GRAPHITI STATUS ────────────────────────────────────────────
 /**
@@ -204,6 +204,10 @@ router.get('/episodes', authenticate, async (req, res) => {
  *                       conflict_type:
  *                         type: string
  *                         enum: [contradicted, outdated]
+ *                       message:
+ *                         type: string
+ *                         nullable: true
+ *                         description: Human-readable explanation, or null
  *       400:
  *         description: Missing required field (content)
  *       503:

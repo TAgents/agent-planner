@@ -8,7 +8,7 @@
 const repo = require('../repositories/node.repository');
 const { checkPlanAccess } = require('../../../middleware/planAccess.middleware');
 const { broadcastPlanUpdate } = require('../../../websocket/broadcast');
-const { coherenceFields, toInternalCoherence } = require('../coherenceVocab');
+const { coherenceFields, toInternalCoherence } = require('../../../services/coherenceVocab');
 const {
   createNodeCreatedMessage,
   createNodeUpdatedMessage,

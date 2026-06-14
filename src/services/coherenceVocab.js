@@ -1,6 +1,8 @@
 // Public coherence vocabulary (ring-3): the coherence engine's internal
 // BDI-flavoured states are a mechanic; the API maps them to plain language so
 // callers never see "beliefs" jargon. internal value → { public status, human message }.
+const logger = require('../utils/logger');
+
 const STATUS_MAP = {
   coherent: { status: 'ok', message: null },
   stale_beliefs: { status: 'outdated', message: 'May be working from outdated information.' },
@@ -13,11 +15,12 @@ const DEFAULT = { status: 'unchecked', message: null };
 /** Map an internal coherence_status to its public { status, message }. */
 function toPublicCoherence(internal) {
   if (!internal) return DEFAULT;
-  // An unmapped value means the engine grew a state we haven't translated —
-  // warn so the drift is caught, but pass it through rather than break callers.
+  // An unmapped value means the engine grew a state we haven't translated.
+  // Warn to surface the drift, and fall back to `unchecked` rather than leak
+  // the raw internal jargon to consumers.
   if (!STATUS_MAP[internal]) {
-    console.warn(`[coherenceVocab] Unknown internal coherence status: ${internal}`);
-    return { status: internal, message: null };
+    logger.warn(`[coherenceVocab] Unknown internal coherence status: ${internal}`);
+    return DEFAULT;
   }
   return STATUS_MAP[internal];
 }
@@ -40,8 +43,6 @@ const PUBLIC_TO_INTERNAL = Object.fromEntries(
   Object.entries(STATUS_MAP).map(([internal, { status }]) => [status, internal])
 );
 
-const PUBLIC_STATUSES = Object.values(STATUS_MAP).map((v) => v.status);
-
 /**
  * Map a public status (e.g. a filter value) back to the internal column value.
  * Accepts internal values too (idempotent), so callers can pass either.
@@ -62,5 +63,4 @@ module.exports = {
   coherenceFields,
   toInternalCoherence,
   STATUS_MAP,
-  PUBLIC_STATUSES,
 };

@@ -3,7 +3,7 @@ const dal = require('../../db/dal.cjs');
 const { assembleContext, suggestNextTasks } = require('../../services/contextEngine');
 const reasoning = require('../../services/reasoning');
 const graphitiBridge = require('../../services/graphitiBridge');
-const { coherenceFields } = require('../node/coherenceVocab');
+const { coherenceFields } = require('../../services/coherenceVocab');
 
 class AgentLoopError extends Error {
   constructor(message, statusCode = 500, code = 'internal', details = undefined) {
@@ -42,6 +42,7 @@ const snakeClaim = (claim) => claim && ({
   expires_at: claim.expiresAt,
   released_at: claim.releasedAt,
   created_by: claim.createdBy,
+  // Read-only; the column is not client-settable, so the rename is response-side only.
   context_snapshot: claim.beliefSnapshot,
 });
 

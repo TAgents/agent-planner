@@ -12,7 +12,7 @@ const { checkPlanAccess } = require('../../middleware/planAccess.middleware');
 const dal = require('../../db/dal.cjs');
 const { evaluatePlanQuality } = require('../../services/planQualityEvaluator');
 const graphitiBridge = require('../../services/graphitiBridge');
-const { coherenceFields } = require('../../domains/node/coherenceVocab');
+const { coherenceFields } = require('../../services/coherenceVocab');
 
 const CONVERGENCE_THRESHOLD = 0.02;
 const CONVERGENCE_WINDOW = 3;

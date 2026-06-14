@@ -2,7 +2,12 @@
  * Ring-3: the public coherence vocabulary maps internal BDI-flavoured states
  * to plain language. Internal column/engine values are unchanged (mechanic).
  */
-const { toPublicCoherence, publicCoherenceStatus } = require('../../../src/domains/node/coherenceVocab');
+const {
+  toPublicCoherence,
+  publicCoherenceStatus,
+  toInternalCoherence,
+  coherenceFields,
+} = require('../../../src/services/coherenceVocab');
 
 describe('coherence vocabulary mapping', () => {
   it('maps internal states to plain-language public status', () => {
@@ -31,11 +36,14 @@ describe('coherence vocabulary mapping', () => {
       expect(blob).not.toMatch(/belief|desire|intention|stale_beliefs/);
     }
   });
+
+  it('falls back to unchecked (not the raw value) for an unmapped engine state', () => {
+    // A future internal state we haven't translated must not leak through.
+    expect(toPublicCoherence('goal_achieved')).toEqual({ status: 'unchecked', message: null });
+  });
 });
 
 describe('toInternalCoherence (reverse map for the ?coherence_status= filter)', () => {
-  const { toInternalCoherence, coherenceFields } = require('../../../src/domains/node/coherenceVocab');
-
   it('maps public values back to internal column values', () => {
     expect(toInternalCoherence('ok')).toBe('coherent');
     expect(toInternalCoherence('outdated')).toBe('stale_beliefs');

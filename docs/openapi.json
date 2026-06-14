@@ -9335,6 +9335,11 @@
                               "contradicted"
                             ]
                           },
+                          "coherence_message": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "Human-readable explanation, or null"
+                          },
                           "triggering_episodes": {
                             "type": "array",
                             "items": {
@@ -9944,6 +9949,11 @@
                               "contradicted",
                               "outdated"
                             ]
+                          },
+                          "message": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "Human-readable explanation, or null"
                           }
                         }
                       }
