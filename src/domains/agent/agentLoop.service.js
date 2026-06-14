@@ -3,6 +3,7 @@ const dal = require('../../db/dal.cjs');
 const { assembleContext, suggestNextTasks } = require('../../services/contextEngine');
 const reasoning = require('../../services/reasoning');
 const graphitiBridge = require('../../services/graphitiBridge');
+const { coherenceFields } = require('../../services/coherenceVocab');
 
 class AgentLoopError extends Error {
   constructor(message, statusCode = 500, code = 'internal', details = undefined) {
@@ -26,7 +27,7 @@ const snakeNode = (node) => node && ({
   order_index: node.orderIndex,
   task_mode: node.taskMode,
   agent_instructions: node.agentInstructions,
-  coherence_status: node.coherenceStatus,
+  ...coherenceFields(node.coherenceStatus),
   quality_score: node.qualityScore,
   updated_at: node.updatedAt,
   created_at: node.createdAt,
@@ -41,7 +42,8 @@ const snakeClaim = (claim) => claim && ({
   expires_at: claim.expiresAt,
   released_at: claim.releasedAt,
   created_by: claim.createdBy,
-  belief_snapshot: claim.beliefSnapshot,
+  // Read-only; the column is not client-settable, so the rename is response-side only.
+  context_snapshot: claim.beliefSnapshot,
 });
 
 async function accessiblePlanIds(userId, organizationId) {
@@ -89,7 +91,7 @@ async function goalDashboard(user) {
       title: row.title,
       description: row.description,
       type: row.type,
-      goal_type: row.goal_type || 'desire',
+      committed: Boolean(row.committed),
       status: row.status,
       health,
       priority: row.priority,

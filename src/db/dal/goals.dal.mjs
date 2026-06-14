@@ -5,18 +5,16 @@ import { goals, goalLinks, goalEvaluations } from '../schema/goals.mjs';
 import { users } from '../schema/users.mjs';
 import { dependenciesDal } from './dependencies.dal.mjs';
 
-// goal_type is derived since migration 0022: promoted_at IS NOT NULL means
-// the goal is committed ("intention"), otherwise aspirational ("desire").
-// The DB column is gone; rows keep the JS field so API/UI/MCP consumers
-// that read goalType / goal_type continue to work. `committed` is the
-// canonical boolean going forward.
-const withGoalType = (row) => {
+// Commitment is derived: promoted_at IS NOT NULL means the goal is committed
+// (migration 0022 dropped the BDI goal_type column). `committed` is the
+// canonical boolean; the desire/intention vocabulary is no longer emitted.
+const withCommitment = (row) => {
   if (!row) return row;
-  const committed = Boolean(row.promotedAt ?? row.promoted_at);
-  return { ...row, committed, goalType: committed ? 'intention' : 'desire' };
+  return { ...row, committed: Boolean(row.promotedAt ?? row.promoted_at) };
 };
 
-// Translate legacy goalType writes into promoted_at. Mutates a shallow copy.
+// Translate legacy goalType writes into promoted_at (lenient input — older
+// clients may still POST goalType; readers never see it). Mutates a copy.
 const translateGoalTypeWrite = (data) => {
   if (!data || data.goalType === undefined) return data;
   const { goalType, ...rest } = data;
@@ -65,7 +63,7 @@ export const goalsDal = {
       if (filters.type && r.type !== filters.type) return false;
       if (filters.workspaceId && r.workspaceId !== filters.workspaceId) return false;
       return true;
-    }).map(withGoalType);
+    }).map(withCommitment);
   },
 
   async findById(id) {
@@ -108,12 +106,12 @@ export const goalsDal = {
       .orderBy(desc(goalEvaluations.evaluatedAt))
       .limit(10);
 
-    return withGoalType({ ...mapped, links, evaluations: evals });
+    return withCommitment({ ...mapped, links, evaluations: evals });
   },
 
   async create(data) {
     const [goal] = await db.insert(goals).values(translateGoalTypeWrite(data)).returning();
-    return withGoalType(goal);
+    return withCommitment(goal);
   },
 
   async update(id, data) {
@@ -121,7 +119,7 @@ export const goalsDal = {
       .set({ ...translateGoalTypeWrite(data), updatedAt: new Date() })
       .where(eq(goals.id, id))
       .returning();
-    return withGoalType(goal ?? null);
+    return withCommitment(goal ?? null);
   },
 
   async softDelete(id) {
@@ -213,7 +211,7 @@ export const goalsDal = {
     const map = new Map();
     all.forEach(g =>
       map.set(g.id, {
-        ...withGoalType(g),
+        ...withCommitment(g),
         links: linksByGoal.get(g.id) || [],
         evaluations: evalsByGoal.get(g.id) || [],
         progress: statsByGoal.get(g.id) || { ...emptyStats },
@@ -296,7 +294,7 @@ export const goalsDal = {
     if (links.length === 0) return [];
     const goalIds = links.map(l => l.goalId);
     const rows = await db.select().from(goals).where(inArray(goals.id, goalIds));
-    return rows.map(withGoalType);
+    return rows.map(withCommitment);
   },
 
   // ─── Evaluations ──────────────────────────────────────────────
@@ -324,7 +322,7 @@ export const goalsDal = {
     const rows = await db.select().from(goals)
       .where(whereClause)
       .orderBy(desc(goals.priority));
-    return rows.map(withGoalType);
+    return rows.map(withCommitment);
   },
 
   // Keep old name as alias for backward compatibility
@@ -348,7 +346,6 @@ export const goalsDal = {
     const rows = await rawSql`
       WITH user_goals AS (
         SELECT g.id, g.title, g.description, g.type,
-               (CASE WHEN g.promoted_at IS NOT NULL THEN 'intention' ELSE 'desire' END) AS goal_type,
                (g.promoted_at IS NOT NULL) AS committed,
                g.status, g.priority,
                g.created_at, g.updated_at, g.owner_id,
@@ -403,7 +400,7 @@ export const goalsDal = {
         FROM plan_node_stats pns
         GROUP BY pns.goal_id
       )
-      SELECT ug.id, ug.title, ug.description, ug.type, ug.goal_type, ug.committed, ug.status, ug.priority,
+      SELECT ug.id, ug.title, ug.description, ug.type, ug.committed, ug.status, ug.priority,
              ug.created_at, ug.updated_at, ug.owner_name,
              COALESCE(ga.total_nodes, 0)::int AS total_nodes,
              COALESCE(ga.completed_nodes, 0)::int AS completed_nodes,
@@ -439,7 +436,7 @@ export const goalsDal = {
       )
       SELECT * FROM descendants ORDER BY priority DESC, created_at DESC
     `;
-    return rows.map(g => withGoalType({
+    return rows.map(g => withCommitment({
       id: g.id,
       title: g.title,
       description: g.description,

@@ -14,6 +14,7 @@ const messageBus = require('../../services/messageBus');
 const { checkCoherence } = require('../../services/coherenceEngine');
 const dal = require('../../db/dal.cjs');
 const { checkPlanAccess } = require('../../middleware/planAccess.middleware');
+const { toPublicCoherence } = require('../../services/coherenceVocab');
 
 // ─── GRAPHITI STATUS ────────────────────────────────────────────
 /**
@@ -191,7 +192,7 @@ router.get('/episodes', authenticate, async (req, res) => {
  *                   description: Organization-scoped group identifier
  *                 coherence_warnings:
  *                   type: array
- *                   description: Tasks whose beliefs may be affected by this new knowledge (BDI coherence check)
+ *                   description: Tasks whose context may be affected by this new knowledge (coherence check)
  *                   items:
  *                     type: object
  *                     properties:
@@ -202,7 +203,11 @@ router.get('/episodes', authenticate, async (req, res) => {
  *                         type: string
  *                       conflict_type:
  *                         type: string
- *                         enum: [contradiction_detected, stale_beliefs]
+ *                         enum: [contradicted, outdated]
+ *                       message:
+ *                         type: string
+ *                         nullable: true
+ *                         description: Human-readable explanation, or null
  *       400:
  *         description: Missing required field (content)
  *       503:
@@ -284,11 +289,10 @@ router.post('/episodes', authenticate, async (req, res) => {
           planId: plan_id,
           options: { maxTasks: 10, timeoutMs: 2000 },
         });
-        coherence_warnings = issues.map(i => ({
-          node_id: i.node_id,
-          title: i.title,
-          conflict_type: i.conflict_type,
-        }));
+        coherence_warnings = issues.map(i => {
+          const c = toPublicCoherence(i.conflict_type);
+          return { node_id: i.node_id, title: i.title, conflict_type: c.status, message: c.message };
+        });
       } catch (err) {
         await logger.warn('Sync coherence check failed:', err.message);
       }

@@ -8,6 +8,7 @@
 const repo = require('../repositories/node.repository');
 const { checkPlanAccess } = require('../../../middleware/planAccess.middleware');
 const { broadcastPlanUpdate } = require('../../../websocket/broadcast');
+const { coherenceFields, toInternalCoherence } = require('../../../services/coherenceVocab');
 const {
   createNodeCreatedMessage,
   createNodeUpdatedMessage,
@@ -51,7 +52,7 @@ const snakeNode = (n) => ({
   assigned_agent_at: n.assignedAgentAt,
   assigned_agent_by: n.assignedAgentBy,
   task_mode: n.taskMode,
-  coherence_status: n.coherenceStatus,
+  ...coherenceFields(n.coherenceStatus),
   quality_score: n.qualityScore,
   quality_assessed_at: n.qualityAssessedAt,
   quality_rationale: n.qualityRationale,
@@ -65,7 +66,7 @@ const snakeNodeMinimal = (n) => ({
   status: n.status,
   order_index: n.orderIndex,
   task_mode: n.taskMode,
-  coherence_status: n.coherenceStatus,
+  ...coherenceFields(n.coherenceStatus),
   quality_score: n.qualityScore,
   quality_assessed_at: n.qualityAssessedAt,
   quality_rationale: n.qualityRationale,
@@ -101,7 +102,9 @@ async function listNodes(planId, userId, { includeDetails = false, coherenceStat
   await requireAccess(planId, userId);
 
   const filters = {};
-  if (coherenceStatus) filters.coherenceStatus = coherenceStatus;
+  // Accept the public coherence vocabulary on the filter (reads emit it),
+  // mapping back to the internal column values the DAL matches on.
+  if (coherenceStatus) filters.coherenceStatus = toInternalCoherence(coherenceStatus);
   const nodes = await repo.listByPlan(planId, filters);
   const mapper = includeDetails ? snakeNode : snakeNodeMinimal;
   const mapped = nodes.map(n => ({ ...mapper(n) }));

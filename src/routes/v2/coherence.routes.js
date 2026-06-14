@@ -10,13 +10,14 @@ const { authenticate } = require('../../middleware/auth.middleware.v2');
 const { checkPlanAccess } = require('../../middleware/planAccess.middleware');
 const dal = require('../../db/dal.cjs');
 const { evaluatePlanQuality } = require('../../services/planQualityEvaluator');
+const { coherenceFields } = require('../../services/coherenceVocab');
 
 /**
  * @swagger
  * /plans/{id}/coherence:
  *   get:
  *     summary: Get coherence issues for a plan
- *     description: Returns all tasks in the plan that have stale or contradicted beliefs, with the episodes that triggered each flag. Part of the BDI Architecture coherence engine.
+ *     description: Returns all tasks flagged as having outdated or contradicted context, with the episodes that triggered each flag.
  *     tags: [Plans]
  *     security:
  *       - bearerAuth: []
@@ -52,7 +53,11 @@ const { evaluatePlanQuality } = require('../../services/planQualityEvaluator');
  *                         type: string
  *                       coherence_status:
  *                         type: string
- *                         enum: [stale_beliefs, contradiction_detected]
+ *                         enum: [outdated, contradicted]
+ *                       coherence_message:
+ *                         type: string
+ *                         nullable: true
+ *                         description: Human-readable explanation, or null
  *                       triggering_episodes:
  *                         type: array
  *                         items:
@@ -96,7 +101,7 @@ router.get('/:id/coherence', authenticate, async (req, res, next) => {
           title: node.title,
           status: node.status,
           node_type: node.nodeType,
-          coherence_status: node.coherenceStatus,
+          ...coherenceFields(node.coherenceStatus),
           triggering_episodes: links.map(l => ({
             episode_id: l.episodeId,
             link_type: l.linkType,

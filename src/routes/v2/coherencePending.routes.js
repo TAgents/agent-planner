@@ -58,7 +58,7 @@ router.get('/pending', authenticate, async (req, res, next) => {
     }).map(g => ({
       id: g.id,
       title: g.title,
-      goal_type: g.goalType,
+      committed: Boolean(g.committed),
       updated_at: g.updatedAt,
       coherence_checked_at: g.coherenceCheckedAt,
     }));
@@ -83,10 +83,10 @@ router.get('/pending', authenticate, async (req, res, next) => {
  * @swagger
  * /coherence/summary:
  *   get:
- *     summary: Workspace-wide BDI coherence score (Phase 4 starter formula)
+ *     summary: Workspace-wide coherence score (starter formula)
  *     description: |
  *       Composes a 0..1 coherence score from already-available signals
- *       so the BDI Coherence Dial can wire up before a more rigorous
+ *       so the Coherence Dial can wire up before a more rigorous
  *       definition lands. The response always includes the raw signal
  *       counts so a future spec session can re-tune weights without
  *       changing the API contract.

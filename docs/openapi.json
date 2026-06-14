@@ -3837,13 +3837,13 @@
             "schema": {
               "type": "string",
               "enum": [
-                "coherent",
-                "stale_beliefs",
-                "contradiction_detected",
+                "ok",
+                "outdated",
+                "contradicted",
                 "unchecked"
               ]
             },
-            "description": "Filter nodes by BDI coherence status. Supports comma-separated values."
+            "description": "Filter nodes by coherence status (plain-language values; legacy internal values also accepted). Supports comma-separated values."
           }
         ],
         "responses": {
@@ -5368,7 +5368,7 @@
                     "items": {
                       "type": "string"
                     },
-                    "description": "Episode IDs (Graphiti UUIDs) that justified this commitment. Enables BDI coherence checking."
+                    "description": "Episode IDs (Graphiti UUIDs) that justified this commitment. Enables coherence checking."
                   }
                 }
               }
@@ -5556,7 +5556,7 @@
     "/plans/{id}/nodes/{nodeId}/episode-links": {
       "post": {
         "summary": "Link a Graphiti episode to a task node",
-        "description": "Creates a link between a Graphiti knowledge episode and a plan node. Used by the BDI coherence system to track which beliefs (episodes) support, contradict, or inform task intentions.",
+        "description": "Creates a link between a Graphiti knowledge episode and a plan node. Used by the coherence engine to track which episodes support, contradict, or inform a task's context.",
         "tags": [
           "Nodes"
         ],
@@ -8264,7 +8264,7 @@
     },
     "/v1/goals/{id}/promote": {
       "post": {
-        "summary": "Promote a desire goal to an intention (readiness-checked)",
+        "summary": "Promote a goal to committed (readiness-checked)",
         "tags": [
           "v1"
         ],
@@ -9281,7 +9281,7 @@
     "/plans/{id}/coherence": {
       "get": {
         "summary": "Get coherence issues for a plan",
-        "description": "Returns all tasks in the plan that have stale or contradicted beliefs, with the episodes that triggered each flag. Part of the BDI Architecture coherence engine.",
+        "description": "Returns all tasks flagged as having outdated or contradicted context, with the episodes that triggered each flag.",
         "tags": [
           "Plans"
         ],
@@ -9331,9 +9331,14 @@
                           "coherence_status": {
                             "type": "string",
                             "enum": [
-                              "stale_beliefs",
-                              "contradiction_detected"
+                              "outdated",
+                              "contradicted"
                             ]
+                          },
+                          "coherence_message": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "Human-readable explanation, or null"
                           },
                           "triggering_episodes": {
                             "type": "array",
@@ -9441,8 +9446,8 @@
     },
     "/coherence/summary": {
       "get": {
-        "summary": "Workspace-wide BDI coherence score (Phase 4 starter formula)",
-        "description": "Composes a 0..1 coherence score from already-available signals\nso the BDI Coherence Dial can wire up before a more rigorous\ndefinition lands. The response always includes the raw signal\ncounts so a future spec session can re-tune weights without\nchanging the API contract.\n\nStarter formula (subject to change in future iterations):\n  start = 1.0\n  minus 0.10 per pending decision   (capped at -0.30)\n  minus 0.05 per stale plan         (capped at -0.30)\n  minus 0.50 × blocked-task ratio\n  minus 0.30 × unlinked-task ratio  (proxy: stale_plans / total_plans)\nclamped to [0, 1].\n"
+        "summary": "Workspace-wide coherence score (starter formula)",
+        "description": "Composes a 0..1 coherence score from already-available signals\nso the Coherence Dial can wire up before a more rigorous\ndefinition lands. The response always includes the raw signal\ncounts so a future spec session can re-tune weights without\nchanging the API contract.\n\nStarter formula (subject to change in future iterations):\n  start = 1.0\n  minus 0.10 per pending decision   (capped at -0.30)\n  minus 0.05 per stale plan         (capped at -0.30)\n  minus 0.50 × blocked-task ratio\n  minus 0.30 × unlinked-task ratio  (proxy: stale_plans / total_plans)\nclamped to [0, 1].\n"
       }
     },
     "/goals/dashboard": {
@@ -9782,8 +9787,8 @@
     },
     "/goals/{id}/portfolio": {
       "get": {
-        "summary": "Get goal portfolio (desire→intention graph)",
-        "description": "Returns the full desire→intention graph for a goal subtree including all descendant goals and their linked plans with progress. Enables the Portfolio UI to render the strategic view in a single request.",
+        "summary": "Get goal portfolio (goal hierarchy + linked plans)",
+        "description": "Returns the full goal hierarchy for a subtree including all descendant goals and their linked plans with progress. Enables the Portfolio UI to render the strategic view in a single request.",
         "tags": [
           "Goals"
         ],
@@ -10034,7 +10039,7 @@
                     },
                     "coherence_warnings": {
                       "type": "array",
-                      "description": "Tasks whose beliefs may be affected by this new knowledge (BDI coherence check)",
+                      "description": "Tasks whose context may be affected by this new knowledge (coherence check)",
                       "items": {
                         "type": "object",
                         "properties": {
@@ -10048,9 +10053,14 @@
                           "conflict_type": {
                             "type": "string",
                             "enum": [
-                              "contradiction_detected",
-                              "stale_beliefs"
+                              "contradicted",
+                              "outdated"
                             ]
+                          },
+                          "message": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "Human-readable explanation, or null"
                           }
                         }
                       }

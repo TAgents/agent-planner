@@ -20,6 +20,7 @@ const graphitiBridge = require('./graphitiBridge');
 const { checkPlanAccess } = require('../middleware/planAccess.middleware');
 const nodeService = require('../domains/node/services/node.service');
 const planService = require('../domains/plan/services/plan.service');
+const { coherenceFields } = require('./coherenceVocab');
 
 const asOf = () => new Date().toISOString();
 
@@ -57,7 +58,7 @@ async function coherenceIssues(planId) {
     title: node.title,
     status: node.status,
     node_type: node.nodeType,
-    coherence_status: node.coherenceStatus,
+    ...coherenceFields(node.coherenceStatus),
     triggering_episodes: (linksByNode.get(node.id) || []).map(l => ({
       episode_id: l.episodeId,
       link_type: l.linkType,

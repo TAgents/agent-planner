@@ -128,7 +128,7 @@ async function detectKnowledgeGaps(goal, user, pathPromise = null) {
   if (!graphitiBridge.isAvailable()) {
     return {
       available: false,
-      goal_type: goal.goalType || 'desire',
+      committed: Boolean(goal.committed),
       message: 'Knowledge graph not available',
       tasks: [],
       gaps: [],
@@ -142,7 +142,7 @@ async function detectKnowledgeGaps(goal, user, pathPromise = null) {
   if (nodes.length === 0) {
     return {
       available: true,
-      goal_type: goal.goalType || 'desire',
+      committed: Boolean(goal.committed),
       tasks: [],
       gaps: [],
       coverage: { total: 0, covered: 0, percentage: 100 },
@@ -174,8 +174,8 @@ async function detectKnowledgeGaps(goal, user, pathPromise = null) {
 
   const rawResults = await Promise.all(incompleteTasks.map(queryTaskKnowledge));
 
-  // BDI Phase 3: Add gap_severity based on goal type
-  const gapSeverity = goal.goalType === 'intention' ? 'blocking' : 'informational';
+  // Committed goals treat knowledge gaps as blocking; aspirational ones as informational.
+  const gapSeverity = goal.committed ? 'blocking' : 'informational';
   const results = rawResults.map(r => ({ ...r, gap_severity: r.has_knowledge ? null : gapSeverity }));
   const gaps = results.filter(r => !r.has_knowledge);
   const covered = results.filter(r => r.has_knowledge).length;
@@ -199,7 +199,7 @@ async function detectKnowledgeGaps(goal, user, pathPromise = null) {
 
   return {
     available: true,
-    goal_type: goal.goalType || 'desire',
+    committed: Boolean(goal.committed),
     tasks: results,
     gaps,
     coverage: {
@@ -283,8 +283,6 @@ async function getGoalState(goal, user) {
       title: goal.title,
       description: goal.description,
       type: goal.type,
-      // goal_type is derived since migration 0022; `committed` is canonical.
-      goal_type: goal.goalType,
       committed: Boolean(goal.committed),
       status: goal.status,
       priority: goal.priority,
