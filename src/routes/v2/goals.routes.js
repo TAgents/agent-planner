@@ -463,6 +463,34 @@ router.post('/:id/promote-to-intention', authenticate, promoteGoalHandler);
 // from every existing task node in that plan to this goal — so the freshly
 // linked plan immediately contributes to /goals/:id/progress without a
 // separate /achievers call. Already-existing achievers are preserved.
+/**
+ * @swagger
+ * /goals/{id}/links:
+ *   post:
+ *     summary: Link a plan, task, or agent to a goal
+ *     tags: [Goals]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [linkedType, linkedId]
+ *             properties:
+ *               linkedType: { type: string, enum: [plan, task, agent] }
+ *               linkedId: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: Link created (plan links cascade achievers) }
+ *       400: { description: Invalid linkedType or missing fields }
+ *       403: { description: Access denied }
+ */
 router.post('/:id/links', authenticate, async (req, res) => {
   try {
     const goal = await requireGoalAccess(req, res);
@@ -515,18 +543,36 @@ router.post('/:id/links', authenticate, async (req, res) => {
   }
 });
 
-// DELETE /api/goals/:id/links/:linkId
+/**
+ * @swagger
+ * /goals/{id}/links/{linkId}:
+ *   delete:
+ *     summary: Remove a link from a goal
+ *     tags: [Goals]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: path
+ *         name: linkId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Link removed }
+ *       403: { description: Access denied }
+ *       404: { description: Link not found on this goal }
+ */
 router.delete('/:id/links/:linkId', authenticate, async (req, res) => {
   try {
     const goal = await requireGoalAccess(req, res);
     if (!goal) return;
 
-    // Only remove the link if it actually belongs to this goal — the linkId
-    // alone must not be a global handle to any goal's links.
-    const ownLink = (goal.links || []).some(l => l.id === req.params.linkId);
-    if (!ownLink) return res.status(404).json({ error: 'Link not found' });
-
-    const link = await goalsDal.removeLink(req.params.linkId);
+    // Atomic ownership check: the delete is scoped to this goal, so a linkId
+    // belonging to another goal removes nothing and returns 404.
+    const link = await goalsDal.removeLink(req.params.linkId, goal.id);
     if (!link) return res.status(404).json({ error: 'Link not found' });
     res.json({ success: true });
   } catch (err) {

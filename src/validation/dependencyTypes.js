@@ -35,9 +35,10 @@ function normalizeNodeDependencyType(input) {
   const raw = (input || 'blocks').toString();
   const mapped = LEGACY_ALIASES[raw] || raw;
   if (!NODE_DEPENDENCY_TYPES.includes(mapped)) {
+    const shown = raw.length > 64 ? `${raw.slice(0, 64)}…` : raw;
     return {
       ok: false,
-      error: `Invalid dependency_type "${raw}". Allowed: ${NODE_DEPENDENCY_TYPES.join(', ')} (node→goal 'achieves' edges are created via the goal achievers routes).`,
+      error: `Invalid dependency_type "${shown}". Allowed: ${NODE_DEPENDENCY_TYPES.join(', ')} (node→goal '${GOAL_DEPENDENCY_TYPES[0]}' edges are created via the goal achievers routes).`,
     };
   }
   return { ok: true, type: mapped };

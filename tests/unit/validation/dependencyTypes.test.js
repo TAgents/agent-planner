@@ -15,8 +15,9 @@ describe('normalizeNodeDependencyType', () => {
     }
   });
 
-  it('defaults an omitted type to blocks', () => {
+  it('defaults an omitted or null type to blocks', () => {
     expect(normalizeNodeDependencyType(undefined)).toEqual({ ok: true, type: 'blocks' });
+    expect(normalizeNodeDependencyType(null)).toEqual({ ok: true, type: 'blocks' });
   });
 
   it('maps legacy aliases onto the canonical pair', () => {

@@ -56,7 +56,12 @@ const PUBLIC_ALLOWLIST = new Set([
   'GET /integrations/slack/callback',
 ]);
 
-/** Recover a router mount prefix from its layer regexp (e.g. /v1, /plans). */
+/**
+ * Recover a router mount prefix from its layer regexp (e.g. /v1, /plans).
+ * Express 4.x compiles mount paths into regexps of the form `^\/prefix\/?(?=...)`.
+ * If that internal format ever changes, decodePrefix returns null and
+ * collectRoutes throws loudly (rather than silently skipping a sub-tree).
+ */
 function decodePrefix(layer) {
   if (layer.regexp && layer.regexp.fast_slash) return '';
   const m = layer.regexp && layer.regexp.source.match(/^\^\\\/(.*?)\\\/\?\(\?=/);
@@ -77,7 +82,9 @@ function collectRoutes(stack, prefix, inheritedAuth, out) {
       const sub = decodePrefix(layer);
       // null prefix = a mount-regexp shape we don't recognise; fail loudly
       // rather than silently skip a whole sub-tree.
-      expect(sub).not.toBeNull();
+      if (sub === null) {
+        throw new Error(`Unrecognised router mount regexp (check decodePrefix): ${layer.regexp?.source}`);
+      }
       collectRoutes(layer.handle.stack, prefix + sub, blanketAuth, out);
     } else if (layer.handle === authenticate) {
       blanketAuth = true; // router-level blanket applies to subsequent layers
