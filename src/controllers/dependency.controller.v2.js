@@ -60,15 +60,18 @@ const createDependency = async (req, res, next) => {
     if (!typeResult.ok) return res.status(400).json({ error: typeResult.error });
     const depType = typeResult.type;
 
-    // Cycle detection
-    const { hasCycle, cyclePath } = await dal.dependenciesDal.wouldCreateCycle(
-      source_node_id, target_node_id, [depType]
-    );
-    if (hasCycle) {
-      return res.status(409).json({
-        error: 'Adding this dependency would create a cycle',
-        cycle_path: cyclePath,
-      });
+    // Only `blocks` is an ordering edge; `relates_to` is a soft association
+    // where cycles are meaningless, so cycle-detect against blocks edges only.
+    if (depType === 'blocks') {
+      const { hasCycle, cyclePath } = await dal.dependenciesDal.wouldCreateCycle(
+        source_node_id, target_node_id, ['blocks']
+      );
+      if (hasCycle) {
+        return res.status(409).json({
+          error: 'Adding this dependency would create a cycle',
+          cycle_path: cyclePath,
+        });
+      }
     }
 
     const dep = await dal.dependenciesDal.create({
@@ -307,15 +310,18 @@ const createCrossPlanDependency = async (req, res, next) => {
     if (!typeResult.ok) return res.status(400).json({ error: typeResult.error });
     const depType = typeResult.type;
 
-    // Cycle detection works across plans already (recursive CTE is global)
-    const { hasCycle, cyclePath } = await dal.dependenciesDal.wouldCreateCycle(
-      source_node_id, target_node_id, [depType]
-    );
-    if (hasCycle) {
-      return res.status(409).json({
-        error: 'Adding this dependency would create a cycle',
-        cycle_path: cyclePath,
-      });
+    // Cycle detection works across plans (recursive CTE is global). Only
+    // ordering edges (`blocks`) are cycle-checked; `relates_to` is soft.
+    if (depType === 'blocks') {
+      const { hasCycle, cyclePath } = await dal.dependenciesDal.wouldCreateCycle(
+        source_node_id, target_node_id, ['blocks']
+      );
+      if (hasCycle) {
+        return res.status(409).json({
+          error: 'Adding this dependency would create a cycle',
+          cycle_path: cyclePath,
+        });
+      }
     }
 
     const dep = await dal.dependenciesDal.create({
