@@ -4,6 +4,12 @@ const { assembleContext, suggestNextTasks, buildDocumentOrder } = require('../..
 const reasoning = require('../../services/reasoning');
 const graphitiBridge = require('../../services/graphitiBridge');
 const { coherenceFields } = require('../../services/coherenceVocab');
+const { evaluatePlanQuality } = require('../../services/planQualityEvaluator');
+
+// A plan with this many actionable tasks and zero dependency edges is flagged
+// as weakly structured — agents can produce a valid-looking tree with no
+// executable ordering, which lets executors skip around. Soft signal only.
+const MIN_TASKS_FOR_DEP_WARNING = 2;
 
 class AgentLoopError extends Error {
   constructor(message, statusCode = 500, code = 'internal', details = undefined) {
@@ -422,7 +428,7 @@ async function finishWorkSession(user, sessionId, {
   };
 }
 
-async function createIntention(user, { goal_id, title, description, rationale, status = 'draft', visibility = 'private', tree = [] }) {
+async function createIntention(user, { goal_id, title, description, rationale, status = 'draft', visibility = 'private', tree = [], client_version = null }) {
   if (!goal_id) throw new AgentLoopError('goal_id is required', 400, 'invalid_arg');
   if (!title) throw new AgentLoopError('title is required', 400, 'invalid_arg');
 
@@ -455,7 +461,10 @@ async function createIntention(user, { goal_id, title, description, rationale, s
     workspaceId,
     status,
     visibility,
-    metadata: { source: 'agent_loop', goal_id },
+    // Stamp the creating runtime so a weak plan is debuggable later even if the
+    // agent's MCP build is stale (created_by survives; get_started only reports
+    // the live build). Falls back to a generic tag for older clients.
+    metadata: { source: 'agent_loop', goal_id, created_by: client_version || 'agent-planner-mcp' },
   });
   const root = await dal.nodesDal.create({
     planId: plan.id,
@@ -465,6 +474,13 @@ async function createIntention(user, { goal_id, title, description, rationale, s
     status: 'not_started',
     orderIndex: 0,
   });
+
+  // Maps for resolving inline `depends_on` references after the whole tree is
+  // built. A node may carry an explicit `ref` key; otherwise its title is used.
+  // Titles can collide, so titleMap holds a list and ambiguous refs are skipped.
+  const refMap = new Map();       // ref → nodeId
+  const titleMap = new Map();     // title → [nodeId, ...]
+  const edgeIntents = [];         // { dependsOn: [ref], targetId } — source blocks target
 
   async function createChildren(children, parentId) {
     const out = [];
@@ -482,6 +498,13 @@ async function createIntention(user, { goal_id, title, description, rationale, s
         orderIndex: i,
         metadata: child.metadata || {},
       });
+      if (child.ref) refMap.set(String(child.ref), node.id);
+      const titleList = titleMap.get(child.title) || [];
+      titleList.push(node.id);
+      titleMap.set(child.title, titleList);
+      if (Array.isArray(child.depends_on) && child.depends_on.length) {
+        edgeIntents.push({ dependsOn: child.depends_on.map(String), targetId: node.id });
+      }
       out.push({ ...snakeNode(node), children: await createChildren(child.children || [], node.id) });
     }
     return out;
@@ -490,7 +513,61 @@ async function createIntention(user, { goal_id, title, description, rationale, s
   const children = await createChildren(Array.isArray(tree) ? tree : [], root.id);
   await dal.goalsDal.addLink(goal_id, 'plan', plan.id);
 
-  return {
+  // Resolve inline dependency edges. depends_on:[X] on node N means "X blocks N"
+  // → edge source=X, target=N, type=blocks. Best-effort: unresolved refs and
+  // cycles are reported, never fatal — the plan still exists.
+  const resolveRef = (ref) => {
+    if (refMap.has(ref)) return refMap.get(ref);
+    const byTitle = titleMap.get(ref);
+    return byTitle && byTitle.length === 1 ? byTitle[0] : null;
+  };
+  const edges = [];
+  const dependencyWarnings = [];
+  for (const intent of edgeIntents) {
+    for (const ref of intent.dependsOn) {
+      const sourceId = resolveRef(ref);
+      if (!sourceId) {
+        dependencyWarnings.push(`Unresolved or ambiguous depends_on reference "${ref}"`);
+        continue;
+      }
+      if (sourceId === intent.targetId) {
+        dependencyWarnings.push(`Ignored self-dependency on "${ref}"`);
+        continue;
+      }
+      edges.push({ sourceNodeId: sourceId, targetNodeId: intent.targetId, dependencyType: 'blocks', createdBy: user.id });
+    }
+  }
+  let dependencyEdges = 0;
+  if (edges.length) {
+    try {
+      const created = await dal.dependenciesDal.bulkCreate(edges);
+      dependencyEdges = created.length;
+    } catch (err) {
+      dependencyWarnings.push(`Some dependency edges were rejected: ${err.message}`);
+    }
+  }
+
+  // Structural quality signal so the agent can't silently ship fake structure.
+  // Reuse the shared evaluator (persists qualityScore); fall back to a bare
+  // edge/task count if evaluation fails for any reason.
+  const taskCount = countTasks(children);
+  let quality = null;
+  try {
+    quality = await evaluatePlanQuality(plan.id, goal_id, { orgId: organizationId, userId: user.id });
+  } catch { /* non-fatal — structure summary below still computed */ }
+
+  const createdWithoutDependencies = taskCount >= MIN_TASKS_FOR_DEP_WARNING && dependencyEdges === 0;
+  const structure = {
+    task_count: taskCount,
+    dependency_edges: dependencyEdges,
+    created_without_dependencies: createdWithoutDependencies,
+    quality_score: quality?.score ?? null,
+    ordering: quality?.ordering ?? null,
+    created_by: client_version || 'agent-planner-mcp',
+  };
+  if (dependencyWarnings.length) structure.dependency_warnings = dependencyWarnings;
+
+  const response = {
     as_of: asOf(),
     plan: {
       id: plan.id,
@@ -501,8 +578,27 @@ async function createIntention(user, { goal_id, title, description, rationale, s
     },
     root: snakeNode(root),
     tree: children,
+    structure,
     idempotency_key: crypto.createHash('sha256').update(`${goal_id}:${plan.id}`).digest('hex').slice(0, 16),
   };
+  if (createdWithoutDependencies) {
+    response.warning =
+      `Plan has ${taskCount} tasks but no dependency edges — execution order is implicit only, ` +
+      `so executor agents may run tasks out of order.`;
+    response.next_required_action =
+      'Call link_intentions to add blocking edges, or confirm the tasks are genuinely order-independent.';
+  }
+  return response;
+}
+
+// Count actionable (task/milestone) nodes in a created subtree.
+function countTasks(children) {
+  let n = 0;
+  for (const c of children || []) {
+    if (c.node_type === 'task' || c.node_type === 'milestone') n += 1;
+    n += countTasks(c.children);
+  }
+  return n;
 }
 
 module.exports = {

@@ -15,6 +15,14 @@ jest.mock('../../../src/db/dal.cjs', () => ({
     findById: jest.fn(),
     updateStatus: jest.fn(),
     create: jest.fn(),
+    listByPlan: jest.fn(),
+  },
+  workspacesDal: {
+    findDefault: jest.fn(),
+  },
+  dependenciesDal: {
+    bulkCreate: jest.fn(),
+    listByPlan: jest.fn(),
   },
   decisionsDal: {
     listByPlan: jest.fn(),
@@ -46,6 +54,10 @@ jest.mock('../../../src/services/graphitiBridge', () => ({
   isAvailable: jest.fn(() => false),
   getGroupId: jest.fn(() => 'org_test'),
   addEpisode: jest.fn(),
+}));
+
+jest.mock('../../../src/services/planQualityEvaluator', () => ({
+  evaluatePlanQuality: jest.fn(),
 }));
 
 const dal = require('../../../src/db/dal.cjs');
@@ -154,5 +166,101 @@ describe('agentLoopService.finishWorkSession', () => {
     expect(dal.logsDal.create).toHaveBeenCalledWith(expect.objectContaining({ content: 'Done' }));
     expect(dal.claimsDal.release).toHaveBeenCalledWith('node-1', 'mcp-agent');
     expect(result.claim_released).toBe(true);
+  });
+});
+
+describe('agentLoopService.createIntention — dependency structure', () => {
+  const { evaluatePlanQuality } = require('../../../src/services/planQualityEvaluator');
+
+  beforeEach(() => {
+    let nc = 0;
+    dal.goalsDal.findById.mockResolvedValue({ id: 'goal-1', organizationId: 'org-1', workspaceId: 'ws-1' });
+    dal.plansDal.create.mockResolvedValue({ id: 'plan-1', title: 'P', status: 'active', visibility: 'private' });
+    dal.nodesDal.create.mockImplementation((data) => {
+      nc += 1;
+      return Promise.resolve({ id: `node-${nc}`, ...data });
+    });
+    dal.goalsDal.addLink.mockResolvedValue({});
+    dal.dependenciesDal.bulkCreate.mockImplementation((edges) => Promise.resolve(edges));
+    evaluatePlanQuality.mockResolvedValue({ score: 0.5, ordering: 0.5 });
+  });
+
+  it('creates blocks edges from inline depends_on (X blocks N)', async () => {
+    const result = await service.createIntention(user, {
+      goal_id: 'goal-1',
+      title: 'P',
+      rationale: 'r',
+      tree: [
+        { title: 'Design', ref: 'design', node_type: 'task' },
+        { title: 'Build', node_type: 'task', depends_on: ['design'] },
+      ],
+    });
+
+    // root=node-1, Design=node-2, Build=node-3 → edge design(node-2) blocks Build(node-3)
+    expect(dal.dependenciesDal.bulkCreate).toHaveBeenCalledWith([
+      expect.objectContaining({ sourceNodeId: 'node-2', targetNodeId: 'node-3', dependencyType: 'blocks' }),
+    ]);
+    expect(result.structure.dependency_edges).toBe(1);
+    expect(result.structure.created_without_dependencies).toBe(false);
+    expect(result.warning).toBeUndefined();
+  });
+
+  it('flags created_without_dependencies for a multi-task plan with no edges', async () => {
+    const result = await service.createIntention(user, {
+      goal_id: 'goal-1',
+      title: 'P',
+      rationale: 'r',
+      tree: [
+        { title: 'Task A', node_type: 'task' },
+        { title: 'Task B', node_type: 'task' },
+      ],
+    });
+
+    expect(dal.dependenciesDal.bulkCreate).not.toHaveBeenCalled();
+    expect(result.structure.task_count).toBe(2);
+    expect(result.structure.dependency_edges).toBe(0);
+    expect(result.structure.created_without_dependencies).toBe(true);
+    expect(result.warning).toMatch(/no dependency edges/i);
+    expect(result.next_required_action).toMatch(/link_intentions/);
+  });
+
+  it('stamps client_version into plan metadata.created_by and the structure', async () => {
+    const result = await service.createIntention(user, {
+      goal_id: 'goal-1',
+      title: 'P',
+      rationale: 'r',
+      client_version: 'agent-planner-mcp@1.5.0',
+      tree: [{ title: 'Task A', node_type: 'task' }],
+    });
+
+    expect(dal.plansDal.create).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ created_by: 'agent-planner-mcp@1.5.0' }) }),
+    );
+    expect(result.structure.created_by).toBe('agent-planner-mcp@1.5.0');
+  });
+
+  it('falls back to a generic created_by tag when no client_version is sent', async () => {
+    await service.createIntention(user, {
+      goal_id: 'goal-1', title: 'P', rationale: 'r', tree: [{ title: 'A', node_type: 'task' }],
+    });
+    expect(dal.plansDal.create).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ created_by: 'agent-planner-mcp' }) }),
+    );
+  });
+
+  it('reports unresolved depends_on refs without creating an edge or failing', async () => {
+    const result = await service.createIntention(user, {
+      goal_id: 'goal-1',
+      title: 'P',
+      rationale: 'r',
+      tree: [
+        { title: 'Task A', node_type: 'task' },
+        { title: 'Task B', node_type: 'task', depends_on: ['ghost'] },
+      ],
+    });
+
+    expect(dal.dependenciesDal.bulkCreate).not.toHaveBeenCalled();
+    expect(result.plan.id).toBe('plan-1'); // plan still created
+    expect(result.structure.dependency_warnings[0]).toMatch(/ghost/);
   });
 });
