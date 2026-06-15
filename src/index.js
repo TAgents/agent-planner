@@ -63,6 +63,7 @@ const slackRoutes = require('./routes/slack.routes');
 const adminRoutes = require('./routes/admin.routes');
 const workspaceRoutes = require('./routes/workspace.routes');
 const blueprintRoutes = require('./routes/blueprint.routes');
+const oauthStoreRoutes = require('./routes/oauthStore.routes');
 
 // Public versioned API surface — aliases + facades over the routes above.
 // Internal routes stay mounted (the UI depends on them); /v1 is the
@@ -197,6 +198,11 @@ app.use('/nodes', generalLimiter, nodeViewRoutes);
 
 // Decision request routes (human-in-the-loop)
 app.use('/plans', generalLimiter, decisionRoutes);
+
+// Internal OAuth store (server-to-server, secret-guarded) — the hosted MCP's
+// OAuth authorization server persists DCR clients + PKCE codes here. Should not
+// be exposed publicly via nginx.
+app.use('/internal/oauth', oauthStoreRoutes);
 
 // Dependency graph routes
 app.use('/plans', generalLimiter, dependencyRoutes);

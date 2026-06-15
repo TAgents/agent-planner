@@ -16,3 +16,4 @@ export * from './knowledgeLoop.mjs';
 export * from './toolCalls.mjs';
 export * from './workspaces.mjs';
 export * from './blueprints.mjs';
+export * from './oauth.mjs';
