@@ -10,10 +10,16 @@ const planStatus = z.enum(['draft', 'active', 'completed', 'archived'], {
   errorMap: () => ({ message: 'Status must be one of: draft, active, completed, archived' })
 });
 
-// Plan visibility enum
-const planVisibility = z.enum(['private', 'public'], {
-  errorMap: () => ({ message: 'Visibility must be either private or public' })
-});
+// Plan visibility enum. Canonical spelling is 'organization' (matches the org
+// tables/columns); the British 'organisation' is normalized to it so docs/UI
+// spelling can't reject a valid request. 'unlisted' is accepted here too so this
+// gate agrees with the service layer.
+const planVisibility = z.preprocess(
+  (v) => (v === 'organisation' ? 'organization' : v),
+  z.enum(['private', 'public', 'organization', 'unlisted'], {
+    errorMap: () => ({ message: 'Visibility must be one of: private, organization, public, unlisted' })
+  })
+);
 
 /**
  * Create plan request body
