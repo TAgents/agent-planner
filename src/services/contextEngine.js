@@ -386,8 +386,43 @@ async function getRpiChainResearch(node) {
  *
  * Returns tasks ordered by priority: RPI chains first, then by dependency count.
  */
+/**
+ * Build a global document-order rank for every node in a plan.
+ *
+ * `order_index` is only meaningful *within a parent's children* — a "task 0"
+ * in phase 3 shares order_index 0 with "task 0" in phase 1. To choose the
+ * earliest incomplete task across the whole plan we need a deterministic
+ * depth-first rank (root → phases by order_index → tasks by order_index).
+ * Returns Map<nodeId, number>; earlier in the plan = smaller number.
+ */
+function buildDocumentOrder(nodes) {
+  const childrenByParent = new Map();
+  for (const n of nodes) {
+    const key = n.parentId || '__root__';
+    if (!childrenByParent.has(key)) childrenByParent.set(key, []);
+    childrenByParent.get(key).push(n);
+  }
+  for (const list of childrenByParent.values()) {
+    list.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+  }
+  const order = new Map();
+  let i = 0;
+  const visit = (parentKey) => {
+    for (const node of childrenByParent.get(parentKey) || []) {
+      order.set(node.id, i++);
+      visit(node.id);
+    }
+  };
+  visit('__root__');
+  // Defensive: any node not reachable from a root (orphaned parent ref) still
+  // gets a stable rank so it can't be silently dropped from selection.
+  for (const n of nodes) if (!order.has(n.id)) order.set(n.id, i++);
+  return order;
+}
+
 async function suggestNextTasks(planId, { limit = 5, orgId } = {}) {
   const allNodes = await dal.nodesDal.listByPlan(planId);
+  const documentOrder = buildDocumentOrder(allNodes);
   const tasks = allNodes.filter(n =>
     (n.nodeType === 'task' || n.nodeType === 'milestone') &&
     (n.status === 'not_started' || n.status === 'plan_ready')
@@ -401,12 +436,15 @@ async function suggestNextTasks(planId, { limit = 5, orgId } = {}) {
     const depsResult = await dal.dependenciesDal.listByPlan(planId);
     allDeps = depsResult.map(r => r.dependency);
   } catch {
-    // If deps not available, just return tasks by order
-    return tasks.slice(0, limit).map(t => ({
-      ...snakeNodeMinimal(t),
-      reason: 'No dependency information available',
-      ready: true,
-    }));
+    // If deps not available, just return tasks in plan (document) order
+    return [...tasks]
+      .sort((a, b) => (documentOrder.get(a.id) ?? 0) - (documentOrder.get(b.id) ?? 0))
+      .slice(0, limit)
+      .map(t => ({
+        ...snakeNodeMinimal(t),
+        reason: 'No dependency information available',
+        ready: true,
+      }));
   }
 
   // Build a map of blocking dependencies per target
@@ -466,22 +504,24 @@ async function suggestNextTasks(planId, { limit = 5, orgId } = {}) {
       ready: true,
       unblocks_count: unblocks,
       knowledge_ready,
+      document_order: documentOrder.get(task.id) ?? Number.MAX_SAFE_INTEGER,
       reason: reason + (knowledge_ready ? ' (knowledge available)' : ''),
     });
   }
 
-  // Sort: RPI research first, then by unblocks_count desc, then order_index
+  // Sort by global plan (document) order so the EARLIEST incomplete actionable
+  // task wins — resuming a partial plan must not skip earlier unfinished work.
+  // unblocks_count / RPI-research only break ties at the same document position
+  // (which effectively never happens, since document_order is unique), so they
+  // no longer let a later-phase task jump ahead of an earlier actionable one.
   suggestions.sort((a, b) => {
-    // RPI research tasks first
+    if (a.document_order !== b.document_order) return a.document_order - b.document_order;
     if (a.task_mode === 'research' && b.task_mode !== 'research') return -1;
     if (b.task_mode === 'research' && a.task_mode !== 'research') return 1;
-    // Then by how many tasks this unblocks
-    if (b.unblocks_count !== a.unblocks_count) return b.unblocks_count - a.unblocks_count;
-    // Then by order
-    return (a.order_index ?? 0) - (b.order_index ?? 0);
+    return b.unblocks_count - a.unblocks_count;
   });
 
   return suggestions.slice(0, limit);
 }
 
-module.exports = { assembleContext, suggestNextTasks, estimateTokens, initContextCacheInvalidation };
+module.exports = { assembleContext, suggestNextTasks, buildDocumentOrder, estimateTokens, initContextCacheInvalidation };
