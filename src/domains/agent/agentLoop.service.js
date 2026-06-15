@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const dal = require('../../db/dal.cjs');
-const { assembleContext, suggestNextTasks } = require('../../services/contextEngine');
+const { assembleContext, suggestNextTasks, buildDocumentOrder } = require('../../services/contextEngine');
 const reasoning = require('../../services/reasoning');
 const graphitiBridge = require('../../services/graphitiBridge');
 const { coherenceFields } = require('../../services/coherenceVocab');
@@ -229,12 +229,24 @@ async function chooseTask(user, { plan_id, goal_id, fresh = false }) {
   const planIds = await resolvePlanIdsForScope(user, { plan_id, goal_id });
 
   if (!fresh) {
-    const inProgress = await dal.nodesDal.listByPlanIds(planIds, {
-      nodeType: 'task',
-      status: 'in_progress',
-      limit: 1,
-    });
-    if (inProgress[0]) return { node: inProgress[0], source: 'resume_in_progress' };
+    // Resume the EARLIEST in-progress task in plan (document) order, not the
+    // most recently touched one. listByPlanIds orders by updated_at DESC, so
+    // "limit 1" used to resume near the latest activity and silently skip
+    // earlier started-but-incomplete work. Walk plans in scope order; the
+    // first plan with in-progress work wins, and within it the task earliest
+    // in document order.
+    for (const planId of planIds) {
+      const inProgress = await dal.nodesDal.listByPlanIds([planId], {
+        nodeType: 'task',
+        status: 'in_progress',
+        limit: 200,
+      });
+      if (inProgress.length === 0) continue;
+      const order = buildDocumentOrder(await dal.nodesDal.listByPlan(planId));
+      inProgress.sort((a, b) =>
+        (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER));
+      return { node: inProgress[0], source: 'resume_in_progress' };
+    }
   }
 
   for (const planId of planIds) {

@@ -136,13 +136,14 @@ describe('suggestNextTasks — active claim exclusion', () => {
 });
 
 describe('suggestNextTasks — RPI chain ordering', () => {
-  it('research surfaces before plan before implement when all three are ready', async () => {
-    // No dependencies — all three are "ready" simultaneously.
-    // Ordering must come from task_mode priority, not dependency state.
+  it('research surfaces first when an RPI chain is authored in order', async () => {
+    // No dependencies — all three are "ready" simultaneously. Selection now
+    // follows plan (document) order, and a real RPI chain is authored
+    // research → plan → implement, so research (orderIndex 0) wins.
     dal.nodesDal.listByPlan.mockResolvedValue([
-      task('Implement', { taskMode: 'implement', orderIndex: 0 }),
+      task('Research', { taskMode: 'research', orderIndex: 0 }),
       task('Plan', { taskMode: 'plan', orderIndex: 1 }),
-      task('Research', { taskMode: 'research', orderIndex: 2 }),
+      task('Implement', { taskMode: 'implement', orderIndex: 2 }),
     ]);
     dal.dependenciesDal.listByPlan.mockResolvedValue([]);
 
@@ -181,5 +182,30 @@ describe('suggestNextTasks — RPI chain ordering', () => {
     const out = await suggestNextTasks(PLAN_ID, { limit: 10 });
 
     expect(out.map(t => t.id)).toEqual(['Plan']);
+  });
+});
+
+describe('suggestNextTasks — plan (document) order vs recency/leverage', () => {
+  // Regression for: "continuing a partial plan skips earlier unfinished tasks."
+  // An earlier-phase task must be selected before a later-phase task even when
+  // the later one unblocks more work — and even though both share order_index 0
+  // within their respective phases (order_index is per-parent, not global).
+  const root = { id: 'ROOT', planId: PLAN_ID, nodeType: 'root', status: 'in_progress', parentId: null, orderIndex: 0 };
+  const phase1 = { id: 'P1', planId: PLAN_ID, nodeType: 'phase', status: 'not_started', parentId: 'ROOT', orderIndex: 0 };
+  const phase2 = { id: 'P2', planId: PLAN_ID, nodeType: 'phase', status: 'not_started', parentId: 'ROOT', orderIndex: 1 };
+
+  it('earlier-phase task wins over a later-phase task with more unblocks', async () => {
+    dal.nodesDal.listByPlan.mockResolvedValue([
+      root, phase1, phase2,
+      task('A_phase1', { parentId: 'P1', orderIndex: 0 }),       // earlier phase, unblocks 0
+      task('B_phase2', { parentId: 'P2', orderIndex: 0 }),       // later phase, unblocks 1
+      task('C_phase2', { parentId: 'P2', orderIndex: 1 }),       // blocked by B
+    ]);
+    dal.dependenciesDal.listByPlan.mockResolvedValue([blocks('B_phase2', 'C_phase2')]);
+
+    const out = await suggestNextTasks(PLAN_ID, { limit: 10 });
+
+    // A and B are both ready; C is blocked. A must come first despite B's higher leverage.
+    expect(out.map(t => t.id)).toEqual(['A_phase1', 'B_phase2']);
   });
 });
