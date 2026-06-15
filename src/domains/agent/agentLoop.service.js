@@ -54,7 +54,7 @@ async function accessiblePlanIds(userId, organizationId) {
 
 async function goalDashboard(user) {
   const rows = await dal.goalsDal.getDashboardData({
-    organizationId: user.organizationId,
+    organizationIds: (user.organizations || []).map(o => o.id),
     userId: user.id,
   });
 

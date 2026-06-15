@@ -1,4 +1,4 @@
-import { eq, and, desc, inArray, isNull, sql } from 'drizzle-orm';
+import { eq, and, or, desc, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../connection.mjs';
 import { sql as rawSql } from '../connection.mjs';
 import { goals, goalLinks, goalEvaluations } from '../schema/goals.mjs';
@@ -29,10 +29,20 @@ const translateGoalTypeWrite = (data) => {
 export const goalsDal = {
   // ─── Core CRUD ─────────────────────────────────────────────────
 
-  async findAll({ organizationId, userId } = {}, filters = {}) {
-    const whereClause = organizationId
-      ? eq(goals.organizationId, organizationId)
-      : and(eq(goals.ownerId, userId), isNull(goals.organizationId));
+  async findAll({ organizationId, organizationIds, userId } = {}, filters = {}) {
+    // A user sees their personal goals (owned, no org) plus every goal in any
+    // organization they belong to — matching the goal-by-id access guard
+    // (requireGoalAccess), which grants access to any org member. Previously the
+    // list scoped to a single "current" org, so an API token whose org differed
+    // from (or was null vs) the goal's org returned an empty list even though
+    // the same user could see the goal in the UI and fetch it by id.
+    const orgIds = (organizationIds && organizationIds.length)
+      ? organizationIds
+      : (organizationId ? [organizationId] : []);
+    const personal = and(eq(goals.ownerId, userId), isNull(goals.organizationId));
+    const whereClause = orgIds.length
+      ? or(personal, inArray(goals.organizationId, orgIds))
+      : personal;
 
     const rows = await db
       .select({
@@ -128,10 +138,14 @@ export const goalsDal = {
 
   // ─── Hierarchy ─────────────────────────────────────────────────
 
-  async getTree({ organizationId, userId } = {}) {
-    const whereClause = organizationId
-      ? eq(goals.organizationId, organizationId)
-      : and(eq(goals.ownerId, userId), isNull(goals.organizationId));
+  async getTree({ organizationId, organizationIds, userId } = {}) {
+    const orgIds = (organizationIds && organizationIds.length)
+      ? organizationIds
+      : (organizationId ? [organizationId] : []);
+    const personal = and(eq(goals.ownerId, userId), isNull(goals.organizationId));
+    const whereClause = orgIds.length
+      ? or(personal, inArray(goals.organizationId, orgIds))
+      : personal;
 
     const all = await db
       .select({
@@ -314,10 +328,15 @@ export const goalsDal = {
 
   // ─── Helpers for agent injection ──────────────────────────────
 
-  async getActiveGoals({ organizationId, userId } = {}) {
-    const whereClause = organizationId
-      ? and(eq(goals.organizationId, organizationId), eq(goals.status, 'active'))
-      : and(eq(goals.ownerId, userId), isNull(goals.organizationId), eq(goals.status, 'active'));
+  async getActiveGoals({ organizationId, organizationIds, userId } = {}) {
+    const orgIds = (organizationIds && organizationIds.length)
+      ? organizationIds
+      : (organizationId ? [organizationId] : []);
+    const personal = and(eq(goals.ownerId, userId), isNull(goals.organizationId));
+    const scope = orgIds.length
+      ? or(personal, inArray(goals.organizationId, orgIds))
+      : personal;
+    const whereClause = and(scope, eq(goals.status, 'active'));
 
     const rows = await db.select().from(goals)
       .where(whereClause)
@@ -338,9 +357,12 @@ export const goalsDal = {
    * @param {{ organizationId?: string, userId: string }} params
    * @returns {Array} goals with plan_stats, last_activity, and owner_name
    */
-  async getDashboardData({ organizationId, userId } = {}) {
-    const filterClause = organizationId
-      ? rawSql`g.organization_id = ${organizationId}`
+  async getDashboardData({ organizationId, organizationIds, userId } = {}) {
+    const orgIds = (organizationIds && organizationIds.length)
+      ? organizationIds
+      : (organizationId ? [organizationId] : []);
+    const filterClause = orgIds.length
+      ? rawSql`((g.owner_id = ${userId} AND g.organization_id IS NULL) OR g.organization_id = ANY(${orgIds}))`
       : rawSql`g.owner_id = ${userId} AND g.organization_id IS NULL`;
 
     const rows = await rawSql`

@@ -153,7 +153,7 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
 
     // 1. Get all goal data with plan stats in a single SQL query
     const dashboardRows = await goalsDal.getDashboardData({
-      organizationId: req.user.organizationId,
+      organizationIds: (req.user.organizations || []).map(o => o.id),
       userId,
     });
 
@@ -253,7 +253,7 @@ router.get('/tree', authenticate, async (req, res) => {
   try {
     const dal = goalsDal;
     const tree = await dal.getTree({
-      organizationId: req.user.organizationId,
+      organizationIds: (req.user.organizations || []).map(o => o.id),
       userId: req.user.id,
     });
     res.json({ tree });
@@ -270,7 +270,9 @@ router.get('/', authenticate, async (req, res) => {
     const { status, type } = req.query;
     const workspaceId = req.query.workspace_id || undefined;
     const goals = await dal.findAll({
-      organizationId: req.user.organizationId,
+      // Scope by the user's full org membership, not a single "current" org, so
+      // the list matches what they can fetch by id (see requireGoalAccess).
+      organizationIds: (req.user.organizations || []).map(o => o.id),
       userId: req.user.id,
     }, { status, type, workspaceId });
     res.json({ goals });

@@ -205,9 +205,11 @@ router.get('/recent-plans', authenticate, async (req, res) => {
 router.get('/active-goals', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
-    const organizationId = req.user.organizationId;
     const limit = parseInt(req.query.limit) || 5;
-    const activeGoals = await goalsDal.getActiveGoals({ userId, organizationId });
+    const activeGoals = await goalsDal.getActiveGoals({
+      userId,
+      organizationIds: (req.user.organizations || []).map(o => o.id),
+    });
 
     // Calculate progress from linked plans
     const goalsWithProgress = await Promise.all(activeGoals.slice(0, limit).map(async (goal) => {
