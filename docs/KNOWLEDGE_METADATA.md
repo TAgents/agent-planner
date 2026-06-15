@@ -2,7 +2,9 @@
 
 How AgentPlanner stores knowledge so agents can use it as context.
 
-Knowledge lives in two places: **Graphiti** (temporal knowledge graph, backed by FalkorDB) holds episodes, entities, and facts; **PostgreSQL** holds a thin `episode_node_links` bridge plus the planning tree. The **context engine** joins them at read time and returns a single bundle to the agent.
+Knowledge lives in two places: **Graphiti** (temporal knowledge graph, backed by FalkorDB) holds episodes, entities, and facts; **PostgreSQL** holds thin bridge tables (`episode_node_links`, and for Strategy Memory `idea_knowledge_ref`) plus the planning tree. The **context engine** joins them at read time and returns a single bundle to the agent.
+
+The product contract: knowledge is not "docs for agents". Knowledge is **evidence in the planning graph**. Tasks use it as execution context; Ideas use it as strategic evidence before a plan exists.
 
 ## Architecture
 
@@ -28,8 +30,10 @@ graph TB
 
     subgraph LocalDB["PostgreSQL (local)"]
         LINKS[("episode_node_links<br/>───────────────<br/>episode_uuid (FK→Graphiti)<br/>node_id<br/>link_type: supports/<br/>contradicts/informs<br/>created_at")]
+        IDEA_LINKS[("idea_knowledge_ref<br/>───────────────<br/>episode_uuid (FK→Graphiti)<br/>idea_id<br/>link_type: supports/<br/>contradicts/informs/<br/>assumption<br/>note<br/>created_at")]
         NODES[("plan_nodes<br/>───────────────<br/>id, plan_id, parent_id<br/>task_mode, status<br/>coherence_checked_at")]
-        PLANS[("plans / goals<br/>───────────────<br/>org_id, workspace_id")]
+        IDEAS[("ideas<br/>───────────────<br/>workspace_id, goal_id?<br/>status, refined_prompt<br/>score, stale_at")]
+        PLANS[("plans / goals / workspaces<br/>───────────────<br/>org_id, workspace_id")]
     end
 
     subgraph Graphiti["Graphiti (FalkorDB)"]
@@ -51,6 +55,7 @@ graph TB
 
     KROUTES -->|write| EP
     KROUTES -->|bridge row| LINKS
+    KROUTES -.->|evidence bridge| IDEA_LINKS
     KROUTES -->|publish<br/>episodeId, groupId,<br/>planId, nodeId| BUS
     BUS -.->|async coherence<br/>check| KROUTES
 
@@ -62,6 +67,7 @@ graph TB
     CTX -->|read scope| NODES
     CTX -->|read scope| PLANS
     CTX -->|coverage map| LINKS
+    CTX -.->|strategy evidence| IDEA_LINKS
     CTX -->|queryForContext<br/>group_id + plan_id + query| FACT
     CTX --> OUT
     OUT --> AGENT
@@ -151,11 +157,29 @@ sequenceDiagram
 | Field | Where | Purpose |
 | --- | --- | --- |
 | `group_id` | Graphiti episode | Multi-tenant partition. Format `org_{org_id}` (also `user_{user_id}` / `default`). Every Graphiti call is namespaced by this. |
+| `workspace_id` | app tables, episode `metadata` when available | Product/workspace scope. Strategy Memory uses this before an Idea is tied to a goal or plan. |
+| `goal_id` | app tables, episode `metadata` when available | Strategic outcome scope. Used to recall knowledge before plan creation. |
+| `idea_id` | `idea_knowledge_ref` | Strategy Memory evidence scope. Links an Idea to the episodes that support, contradict, inform, or frame it as a hypothesis. |
 | `plan_id` | episode `metadata`, context query | Scopes retrieval to a planning tree. |
 | `node_id` | episode `metadata`, `episode_node_links` | Anchors a learning to a specific task. |
 | `org_id` | derived → `group_id` | Tenant isolation. |
 | `user_id` | episode `metadata` | Authorship. |
 | `episodeId` (uuid) | Graphiti-assigned | Primary key in the local `episode_node_links` bridge. |
+
+### Knowledge scopes
+
+Knowledge retrieval should be explicit about which product object is asking the question.
+
+| Scope | Use case | Primary filters |
+| --- | --- | --- |
+| `org` | Cross-workspace memory, company-wide lessons, reusable constraints | `group_id = org_{org_id}` |
+| `workspace` | Ideas that are not yet tied to a goal; workspace-level Strategy board | `group_id`, `workspace_id` |
+| `goal` | Generate or refine strategic directions before a plan exists | `group_id`, `workspace_id`, `goal_id` |
+| `idea` | Show evidence, assumptions, contradictions, and coverage for a strategic direction | `idea_knowledge_ref.idea_id` + Graphiti episode ids |
+| `plan` | Plan-level context and coherence | `group_id`, `plan_id` |
+| `node` / `task` | Execution context for a specific task | `episode_node_links.node_id`, `plan_id`, dependency neighborhood |
+
+Execution flows should prefer `node`/`plan` context. Strategy flows should prefer `workspace`/`goal` recall first, then bind selected evidence to an `idea`.
 
 ### Temporal (bi-temporal)
 
@@ -191,8 +215,72 @@ sequenceDiagram
 ### Linkage & contradictions
 
 - `episode_node_links.link_type` — `supports` | `contradicts` | `informs`. Local bridge table that survived the removal of the flat `knowledge_entries` table; powers fast coverage queries without round-tripping Graphiti.
+- `idea_knowledge_ref.link_type` — `supports` | `contradicts` | `informs` | `assumption`. Strategy Memory bridge table. It answers why an episode is attached to an Idea, not merely that it is attached.
 - `contradictions_found`, `current` vs `superseded` — returned by `detectContradictions`.
 - `fact.source_node_uuid` / `target_node_uuid` — Graphiti edge endpoints used to build coverage maps.
+
+## Knowledge as evidence for Strategy Memory
+
+Strategy Memory introduces Ideas: candidate directions between a Goal and a Plan. Ideas need knowledge before there is a task context, so they should not depend on `GET /context/progressive?nodeId=...`.
+
+The canonical bridge is:
+
+```sql
+idea_knowledge_ref {
+  idea_id
+  episode_uuid      -- Graphiti episode uuid
+  link_type         -- supports | contradicts | informs | assumption
+  note              -- why this evidence is attached
+  created_by
+  created_at
+}
+```
+
+`link_type` is product-critical:
+
+- `supports` — evidence that strengthens the Idea.
+- `contradicts` — evidence that challenges the Idea or its assumptions.
+- `informs` — useful background that shapes the Idea but is not direct proof.
+- `assumption` — a hypothesis explicitly recorded when no direct evidence exists.
+
+This prevents the Strategy board from becoming a tag wall. Evidence chips in the UI should show the relationship, not just the source title.
+
+### Strategy read model
+
+For a goal or workspace, agents should be able to ask:
+
+1. What relevant knowledge exists in this workspace/goal scope?
+2. What candidate Ideas does it support or contradict?
+3. Which Ideas have enough evidence to refine?
+4. Which Ideas are stale, speculative, or contradicted?
+5. Which committed Ideas produced useful Plans?
+
+The minimal read bundle for an Idea should include:
+
+- `idea` — title, body, status, rationale, refined prompt, score/source, stale state.
+- `evidence` — `idea_knowledge_ref` rows joined to Graphiti episode summaries.
+- `coverage` — counts by `supports`, `contradicts`, `informs`, `assumption`.
+- `open_questions` — generated from assumptions, contradictions, and missing coverage.
+- `outcome_feedback` — plan id/run id, plan quality, completion signal, human overrides, and whether the idea should influence future ideas or blueprints.
+
+### Strategy write path
+
+1. Agent or human proposes an Idea in workspace/goal scope.
+2. Agent recalls Graphiti knowledge for the workspace/goal and attaches selected episodes through `idea_knowledge_ref`.
+3. If no relevant knowledge exists, the agent may attach an explicit `assumption` note instead of pretending the Idea is evidenced.
+4. Refinement must cite evidence or assumptions before writing `refined_prompt`.
+5. `commit_idea` creates a Decision that references the Idea. Approval starts a planning run; it does not create a finished Plan immediately.
+6. Plan outcomes feed back into the Idea via `spawned_plan_id`/outcome metadata and future score/rationale updates.
+
+### Strategy UI implications
+
+The Strategy UI should treat knowledge as evidence provenance:
+
+- Evidence chips should be labelled by relationship: supports, contradicts, informs, assumption.
+- Contradictions should be visible before commit, not hidden in task context.
+- "Confidence" should be qualitative and evidence-based (for example: `thin evidence`, `mixed evidence`, `well supported`) rather than fake precision.
+- Empty evidence is allowed only when represented as an explicit hypothesis/assumption.
+- A committed Idea should remain traceable to the evidence that justified the planning run.
 
 ## What the agent actually sees
 
