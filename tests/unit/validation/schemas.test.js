@@ -121,6 +121,23 @@ describe('Validation Schemas', () => {
         expect(result.success).toBe(true);
       });
 
+      it('should accept organization visibility', () => {
+        const result = schema.safeParse({ visibility: 'organization' });
+        expect(result.success).toBe(true);
+        expect(result.data.visibility).toBe('organization');
+      });
+
+      it('should normalize the British "organisation" spelling', () => {
+        const result = schema.safeParse({ visibility: 'organisation' });
+        expect(result.success).toBe(true);
+        expect(result.data.visibility).toBe('organization');
+      });
+
+      it('should reject an unknown visibility value', () => {
+        const result = schema.safeParse({ visibility: 'everyone' });
+        expect(result.success).toBe(false);
+      });
+
       it('should require either visibility or is_public', () => {
         const result = schema.safeParse({
           github_repo_owner: 'test'

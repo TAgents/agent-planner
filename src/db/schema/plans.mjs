@@ -12,7 +12,7 @@ export const plans = pgTable('plans', {
   description: text('description'),
   ownerId: uuid('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   status: text('status').notNull().default('draft'),           // draft | active | completed | archived
-  visibility: varchar('visibility', { length: 20 }).notNull().default('private'), // private | public | unlisted
+  visibility: varchar('visibility', { length: 20 }).notNull().default('private'), // private | organization | public | unlisted
   isPublic: boolean('is_public').notNull().default(false),     // legacy compat
   organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'set null' }),
   workspaceId: uuid('workspace_id').notNull(),             // FK (ON DELETE RESTRICT) added via migrations 0019+0021

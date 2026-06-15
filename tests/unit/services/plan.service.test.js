@@ -305,6 +305,23 @@ describe('Plan Service', () => {
       expect(result.visibility).toBe('public');
     });
 
+    it('should accept organization visibility (non-public)', async () => {
+      repo.update.mockResolvedValue(makePlan({ visibility: 'organization', isPublic: false }));
+
+      const result = await planService.updatePlanVisibility(PLAN_ID, USER_ID, 'organization');
+
+      expect(repo.update).toHaveBeenCalledWith(PLAN_ID, { visibility: 'organization', isPublic: false });
+      expect(result.visibility).toBe('organization');
+    });
+
+    it('should normalize the British "organisation" spelling to "organization"', async () => {
+      repo.update.mockResolvedValue(makePlan({ visibility: 'organization', isPublic: false }));
+
+      await planService.updatePlanVisibility(PLAN_ID, USER_ID, 'organisation');
+
+      expect(repo.update).toHaveBeenCalledWith(PLAN_ID, { visibility: 'organization', isPublic: false });
+    });
+
     it('should reject invalid visibility', async () => {
       await expect(planService.updatePlanVisibility(PLAN_ID, USER_ID, 'invalid'))
         .rejects.toThrow('Invalid visibility');

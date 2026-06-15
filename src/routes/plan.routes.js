@@ -832,7 +832,7 @@ router.get('/:id/public', planController.getPublicPlan);
  *             properties:
  *               visibility:
  *                 type: string
- *                 enum: [public, private]
+ *                 enum: [private, organization, public, unlisted]
  *                 description: Plan visibility setting
  *               github_repo_owner:
  *                 type: string
@@ -852,7 +852,7 @@ router.get('/:id/public', planController.getPublicPlan);
  *                   type: string
  *                 visibility:
  *                   type: string
- *                   enum: [public, private]
+ *                   enum: [private, organization, public, unlisted]
  *                 is_public:
  *                   type: boolean
  *                   description: Deprecated - use visibility instead

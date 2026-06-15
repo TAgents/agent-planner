@@ -466,7 +466,11 @@ async function updatePlanVisibility(planId, userId, visibility) {
     throw new ServiceError('Only the plan owner can change visibility', 403);
   }
 
-  const validValues = ['private', 'public', 'unlisted'];
+  // Canonical spelling is 'organization' (matches the org tables/columns);
+  // accept the British 'organisation' as an alias so docs/UI spelling can't
+  // reject a valid request.
+  if (visibility === 'organisation') visibility = 'organization';
+  const validValues = ['private', 'public', 'unlisted', 'organization'];
   if (!validValues.includes(visibility)) {
     throw new ServiceError(`Invalid visibility. Valid: ${validValues.join(', ')}`, 400);
   }
