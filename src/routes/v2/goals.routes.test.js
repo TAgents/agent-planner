@@ -83,6 +83,18 @@ describe('Goals v2 Routes', () => {
       const res = await request(app).get('/api/goals');
       expect(res.status).toBe(500);
     });
+
+    it('scopes by full org membership (organizationIds), not a single current org', async () => {
+      // Regression: the list used to scope to one "current" org, so an API
+      // token whose org differed from the goal's org returned an empty list
+      // even though by-id access (any org member) allowed it.
+      mockGoalsDal.findAll.mockResolvedValue([]);
+      await request(app).get('/api/goals');
+      const arg = mockGoalsDal.findAll.mock.calls[0][0];
+      expect(arg).toHaveProperty('organizationIds');
+      expect(Array.isArray(arg.organizationIds)).toBe(true);
+      expect(arg).not.toHaveProperty('organizationId');
+    });
   });
 
   describe('GET /api/goals/tree', () => {
