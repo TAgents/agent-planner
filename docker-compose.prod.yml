@@ -63,6 +63,9 @@ services:
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:-}
+      # Shared secret guarding the internal OAuth store endpoints (same value
+      # on the mcp service). If unset, /internal/oauth returns 503 (fails closed).
+      MCP_INTERNAL_SECRET: ${MCP_INTERNAL_SECRET:-}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
       interval: 15s
@@ -164,6 +167,10 @@ services:
       PORT: "8080"
       HOST: 0.0.0.0
       NODE_ENV: production
+      # OAuth AS (claude.ai / Claude Design connectors). Issuer is the public
+      # origin; the shared secret authenticates the MCP→backend OAuth store calls.
+      OAUTH_ISSUER_URL: https://${DOMAIN}
+      MCP_INTERNAL_SECRET: ${MCP_INTERNAL_SECRET}
     deploy:
       resources:
         limits:
