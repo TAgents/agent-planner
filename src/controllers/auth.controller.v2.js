@@ -42,12 +42,17 @@ function generateTokens(user) {
 // Mint a standalone AP access JWT with a custom lifetime — same payload/secret
 // as login, so it validates identically. Used by the OAuth connector flow to
 // issue short-lived (e.g. 1h) access tokens decoupled from the 7-day website
-// session token.
-function generateAccessToken(user, expiresIn = JWT_EXPIRES_IN) {
+// session token. `options.audience` binds the token to the MCP resource (RFC
+// 8707 / OAuth-for-MCP): connectors like ChatGPT's Apps SDK expect the access
+// token's `aud` to match the resource identifier. AP's own JWT validation does
+// not check `aud`, so this is additive and inert for existing consumers.
+function generateAccessToken(user, expiresIn = JWT_EXPIRES_IN, options = {}) {
+  const signOpts = { expiresIn };
+  if (options.audience) signOpts.audience = options.audience;
   return jwt.sign(
     { sub: user.id, email: user.email, name: user.name },
     JWT_SECRET,
-    { expiresIn },
+    signOpts,
   );
 }
 

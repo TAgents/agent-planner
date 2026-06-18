@@ -20,6 +20,12 @@ const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex'
 const ACCESS_TTL_SEC = 60 * 60;                  // 1h access JWT
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30d opaque refresh
 
+// The MCP resource these tokens authorize. Bound into the access token's `aud`
+// so connectors that enforce RFC 8707 resource indicators (e.g. ChatGPT's Apps
+// SDK) see a token minted for the correct server. Single hosted MCP, so this is
+// a constant rather than threaded per-request from the OAuth `resource` param.
+const OAUTH_RESOURCE = process.env.OAUTH_RESOURCE || 'https://agentplanner.io/mcp';
+
 // Mint a token set for a user: a short-lived AP access JWT (validated
 // statelessly on /mcp) + an opaque, hashed, client-bound refresh token. No AP
 // credential is stored at rest — the access JWT is minted from user_id here.
@@ -35,7 +41,7 @@ async function issueTokenSet(userId, clientId, scopes) {
     expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
   });
   return {
-    access_token: generateAccessToken(user, '1h'),
+    access_token: generateAccessToken(user, '1h', { audience: OAUTH_RESOURCE }),
     token_type: 'Bearer',
     expires_in: ACCESS_TTL_SEC,
     refresh_token: refreshToken,

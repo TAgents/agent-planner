@@ -79,6 +79,10 @@ describe('consume → mint token set', () => {
     const res = await request(app()).post('/internal/oauth/codes/abc/consume').set(SECRET)
       .send({ client_id: 'c1', redirect_uri: 'https://claude.ai/cb' }).expect(200);
     expect(res.body.access_token.split('.')).toHaveLength(3); // a JWT
+    // bound to the MCP resource (RFC 8707) so connectors that enforce
+    // resource indicators (e.g. ChatGPT Apps SDK) accept it
+    const claims = JSON.parse(Buffer.from(res.body.access_token.split('.')[1], 'base64url').toString());
+    expect(claims.aud).toBe('https://agentplanner.io/mcp');
     expect(res.body.refresh_token).toMatch(/^apop_r_/);
     expect(res.body.expires_in).toBe(3600);
     expect(dal.oauthDal.createRefreshToken).toHaveBeenCalledWith(expect.objectContaining({ clientId: 'c1', userId: 'u1' }));
