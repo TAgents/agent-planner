@@ -64,6 +64,7 @@ const adminRoutes = require('./routes/admin.routes');
 const workspaceRoutes = require('./routes/workspace.routes');
 const blueprintRoutes = require('./routes/blueprint.routes');
 const oauthStoreRoutes = require('./routes/oauthStore.routes');
+const connectionsRoutes = require('./routes/connections.routes');
 
 // Public versioned API surface — aliases + facades over the routes above.
 // Internal routes stay mounted (the UI depends on them); /v1 is the
@@ -203,6 +204,9 @@ app.use('/plans', generalLimiter, decisionRoutes);
 // OAuth authorization server persists DCR clients + PKCE codes here. Should not
 // be exposed publicly via nginx.
 app.use('/internal/oauth', oauthStoreRoutes);
+
+// Connected apps (user-facing OAuth connector management).
+app.use('/connections', generalLimiter, connectionsRoutes);
 
 // Dependency graph routes
 app.use('/plans', generalLimiter, dependencyRoutes);
