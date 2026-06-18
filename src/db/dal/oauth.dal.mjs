@@ -1,6 +1,6 @@
-import { eq, lt } from 'drizzle-orm';
+import { eq, lt, and, isNull } from 'drizzle-orm';
 import { db } from '../connection.mjs';
-import { oauthClients, oauthAuthCodes } from '../schema/oauth.mjs';
+import { oauthClients, oauthAuthCodes, oauthRefreshTokens } from '../schema/oauth.mjs';
 
 // Data access for the hosted MCP OAuth authorization server. Reached only via
 // the secret-guarded /internal/oauth endpoints (the MCP server has no DB).
@@ -42,5 +42,38 @@ export const oauthDal = {
   // Housekeeping — drop expired codes (call periodically).
   async deleteExpiredCodes() {
     await db.delete(oauthAuthCodes).where(lt(oauthAuthCodes.expiresAt, new Date()));
+  },
+
+  // ── Refresh tokens (opaque, hashed, revocable) ─────────────────────────────
+  async createRefreshToken(record) {
+    const [row] = await db.insert(oauthRefreshTokens).values(record).returning();
+    return row;
+  },
+
+  // Valid = exists, not revoked, not expired.
+  async findValidRefreshToken(tokenHash) {
+    const [row] = await db.select().from(oauthRefreshTokens)
+      .where(and(eq(oauthRefreshTokens.tokenHash, tokenHash), isNull(oauthRefreshTokens.revokedAt)))
+      .limit(1);
+    if (!row) return null;
+    if (new Date(row.expiresAt) < new Date()) return null;
+    return row;
+  },
+
+  async revokeRefreshToken(tokenHash) {
+    const [row] = await db.update(oauthRefreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(oauthRefreshTokens.tokenHash, tokenHash), isNull(oauthRefreshTokens.revokedAt)))
+      .returning();
+    return row ?? null;
+  },
+
+  // Revoke every active refresh token for a user (optionally scoped to a client)
+  // — backs a "disconnect" action.
+  async revokeRefreshTokensForUser(userId, clientId = null) {
+    const cond = clientId
+      ? and(eq(oauthRefreshTokens.userId, userId), eq(oauthRefreshTokens.clientId, clientId), isNull(oauthRefreshTokens.revokedAt))
+      : and(eq(oauthRefreshTokens.userId, userId), isNull(oauthRefreshTokens.revokedAt));
+    await db.update(oauthRefreshTokens).set({ revokedAt: new Date() }).where(cond);
   },
 };

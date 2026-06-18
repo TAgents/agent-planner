@@ -39,6 +39,18 @@ function generateTokens(user) {
   };
 }
 
+// Mint a standalone AP access JWT with a custom lifetime — same payload/secret
+// as login, so it validates identically. Used by the OAuth connector flow to
+// issue short-lived (e.g. 1h) access tokens decoupled from the 7-day website
+// session token.
+function generateAccessToken(user, expiresIn = JWT_EXPIRES_IN) {
+  return jwt.sign(
+    { sub: user.id, email: user.email, name: user.name },
+    JWT_SECRET,
+    { expiresIn },
+  );
+}
+
 /**
  * Register a new user
  */
@@ -564,4 +576,5 @@ module.exports = {
   githubCallback,
   googleCallback,
   oauthProviders,
+  generateAccessToken,
 };

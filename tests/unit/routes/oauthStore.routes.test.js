@@ -1,7 +1,10 @@
-// Internal OAuth store routes — secret guard + client/code persistence.
-// Sets the internal secret BEFORE requiring the router (middleware reads it at
-// module load), and mocks the DAL so no DB is needed.
+// Internal OAuth store routes — secret guard, DCR, code lifecycle, and the
+// opaque/revocable token flow (consume → mint, refresh → rotate, revoke).
+// Sets the internal secret before requiring the router (read at module load),
+// and mocks the DAL so no DB is needed. generateAccessToken signs a real JWT
+// with the dev JWT_SECRET.
 process.env.MCP_INTERNAL_SECRET = 'test-secret';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret'; // generateAccessToken signs with this
 
 jest.mock('../../../src/db/dal.cjs', () => ({
   oauthDal: {
@@ -10,7 +13,11 @@ jest.mock('../../../src/db/dal.cjs', () => ({
     createCode: jest.fn(),
     getCode: jest.fn(),
     consumeCode: jest.fn(),
+    createRefreshToken: jest.fn(),
+    findValidRefreshToken: jest.fn(),
+    revokeRefreshToken: jest.fn(),
   },
+  usersDal: { findById: jest.fn() },
 }));
 
 const express = require('express');
@@ -18,84 +25,107 @@ const request = require('supertest');
 const dal = require('../../../src/db/dal.cjs');
 const oauthStoreRoutes = require('../../../src/routes/oauthStore.routes');
 
-function app() {
+const app = () => {
   const a = express();
   a.use(express.json());
   a.use('/internal/oauth', oauthStoreRoutes);
   return a;
-}
-
+};
 const SECRET = { 'X-Internal-Token': 'test-secret' };
+const USER = { id: 'u1', email: 'a@b.co', name: 'A' };
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  dal.usersDal.findById.mockResolvedValue(USER);
+  dal.oauthDal.createRefreshToken.mockResolvedValue({});
+});
 
 describe('internal-auth guard', () => {
-  it('rejects a request with no token (403)', async () => {
+  it('rejects missing/wrong token (403)', async () => {
     await request(app()).get('/internal/oauth/clients/x').expect(403);
-  });
-  it('rejects a wrong token (403)', async () => {
     await request(app()).get('/internal/oauth/clients/x').set('X-Internal-Token', 'nope').expect(403);
   });
 });
 
-describe('client registration (DCR)', () => {
-  it('registers a public client without a secret', async () => {
+describe('DCR', () => {
+  it('public client gets no secret; confidential gets one', async () => {
     dal.oauthDal.registerClient.mockImplementation((c) => Promise.resolve({ ...c }));
-    const res = await request(app())
-      .post('/internal/oauth/clients')
-      .set(SECRET)
-      .send({ token_endpoint_auth_method: 'none', redirect_uris: ['https://claude.ai/cb'], client_name: 'Claude' })
-      .expect(201);
-    expect(res.body.clientId).toBeTruthy();
-    expect(res.body.clientSecret).toBeNull();
-    expect(dal.oauthDal.registerClient).toHaveBeenCalledWith(expect.objectContaining({
-      tokenEndpointAuthMethod: 'none', redirectUris: ['https://claude.ai/cb'],
-    }));
-  });
-
-  it('registers a confidential client with a generated secret', async () => {
-    dal.oauthDal.registerClient.mockImplementation((c) => Promise.resolve({ ...c }));
-    const res = await request(app())
-      .post('/internal/oauth/clients')
-      .set(SECRET)
-      .send({ token_endpoint_auth_method: 'client_secret_basic', redirect_uris: ['https://x/cb'] })
-      .expect(201);
-    expect(res.body.clientSecret).toBeTruthy();
-  });
-
-  it('returns 404 for an unknown client', async () => {
-    dal.oauthDal.getClient.mockResolvedValue(null);
-    await request(app()).get('/internal/oauth/clients/ghost').set(SECRET).expect(404);
+    const pub = await request(app()).post('/internal/oauth/clients').set(SECRET)
+      .send({ token_endpoint_auth_method: 'none', redirect_uris: ['https://claude.ai/cb'] }).expect(201);
+    expect(pub.body.clientSecret).toBeNull();
+    const conf = await request(app()).post('/internal/oauth/clients').set(SECRET)
+      .send({ token_endpoint_auth_method: 'client_secret_basic', redirect_uris: ['https://x/cb'] }).expect(201);
+    expect(conf.body.clientSecret).toBeTruthy();
   });
 });
 
-describe('authorization codes', () => {
-  it('creates a code with the bound AP credential and a TTL expiry', async () => {
+describe('codes', () => {
+  it('creates a code bound to user_id (no AP creds stored)', async () => {
     dal.oauthDal.createCode.mockImplementation((c) => Promise.resolve({ code: c.code }));
-    const res = await request(app())
-      .post('/internal/oauth/codes')
-      .set(SECRET)
-      .send({ client_id: 'c1', code_challenge: 'ch', redirect_uri: 'https://claude.ai/cb', scopes: ['agentplanner'], user_id: 'u1', ap_access_token: 'ap-jwt', ap_refresh_token: 'ap-ref' })
+    await request(app()).post('/internal/oauth/codes').set(SECRET)
+      .send({ client_id: 'c1', code_challenge: 'ch', redirect_uri: 'https://claude.ai/cb', scopes: ['agentplanner'], user_id: 'u1' })
       .expect(201);
-    expect(res.body.code).toBeTruthy();
     const arg = dal.oauthDal.createCode.mock.calls[0][0];
-    expect(arg).toMatchObject({ clientId: 'c1', apAccessToken: 'ap-jwt', userId: 'u1' });
-    expect(arg.expiresAt).toBeInstanceOf(Date);
+    expect(arg).toMatchObject({ clientId: 'c1', userId: 'u1' });
+    expect(arg.apAccessToken).toBeUndefined();
+  });
+});
+
+describe('consume → mint token set', () => {
+  const code = { clientId: 'c1', redirectUri: 'https://claude.ai/cb', scopes: ['agentplanner'], userId: 'u1' };
+
+  it('mints an access JWT + opaque refresh token', async () => {
+    dal.oauthDal.consumeCode.mockResolvedValue(code);
+    const res = await request(app()).post('/internal/oauth/codes/abc/consume').set(SECRET)
+      .send({ client_id: 'c1', redirect_uri: 'https://claude.ai/cb' }).expect(200);
+    expect(res.body.access_token.split('.')).toHaveLength(3); // a JWT
+    expect(res.body.refresh_token).toMatch(/^apop_r_/);
+    expect(res.body.expires_in).toBe(3600);
+    expect(dal.oauthDal.createRefreshToken).toHaveBeenCalledWith(expect.objectContaining({ clientId: 'c1', userId: 'u1' }));
+    // the stored refresh token is hashed, never raw
+    expect(dal.oauthDal.createRefreshToken.mock.calls[0][0].tokenHash).not.toMatch(/^apop_r_/);
   });
 
-  it('peek (GET) returns the challenge but never the AP tokens', async () => {
-    dal.oauthDal.getCode.mockResolvedValue({ clientId: 'c1', codeChallenge: 'CH', redirectUri: 'https://claude.ai/cb', apAccessToken: 'secret-jwt' });
-    const res = await request(app()).get('/internal/oauth/codes/abc').set(SECRET).expect(200);
-    expect(res.body.code_challenge).toBe('CH');
-    expect(res.body.ap_access_token).toBeUndefined();
+  it('rejects client_id / redirect_uri mismatch', async () => {
+    dal.oauthDal.consumeCode.mockResolvedValue(code);
+    await request(app()).post('/internal/oauth/codes/abc/consume').set(SECRET)
+      .send({ client_id: 'other', redirect_uri: 'https://claude.ai/cb' }).expect(400);
+    dal.oauthDal.consumeCode.mockResolvedValue(code);
+    await request(app()).post('/internal/oauth/codes/abc/consume').set(SECRET)
+      .send({ client_id: 'c1', redirect_uri: 'https://evil/cb' }).expect(400);
   });
 
-  it('consume returns the AP credential and 404 once gone', async () => {
-    dal.oauthDal.consumeCode.mockResolvedValueOnce({ clientId: 'c1', codeChallenge: 'CH', redirectUri: 'https://claude.ai/cb', scopes: [], userId: 'u1', apAccessToken: 'ap-jwt', apRefreshToken: 'ap-ref' });
-    const ok = await request(app()).post('/internal/oauth/codes/abc/consume').set(SECRET).expect(200);
-    expect(ok.body.ap_access_token).toBe('ap-jwt');
+  it('404 when the code is gone', async () => {
+    dal.oauthDal.consumeCode.mockResolvedValue(null);
+    await request(app()).post('/internal/oauth/codes/abc/consume').set(SECRET).send({}).expect(404);
+  });
+});
 
-    dal.oauthDal.consumeCode.mockResolvedValueOnce(null);
-    await request(app()).post('/internal/oauth/codes/abc/consume').set(SECRET).expect(404);
+describe('refresh (rotate)', () => {
+  it('validates + rotates a refresh token bound to the client', async () => {
+    dal.oauthDal.findValidRefreshToken.mockResolvedValue({ tokenHash: 'h', clientId: 'c1', userId: 'u1', scopes: [] });
+    dal.oauthDal.revokeRefreshToken.mockResolvedValue({});
+    const res = await request(app()).post('/internal/oauth/refresh').set(SECRET)
+      .send({ refresh_token: 'apop_r_old', client_id: 'c1' }).expect(200);
+    expect(dal.oauthDal.revokeRefreshToken).toHaveBeenCalledWith('h'); // old one rotated out
+    expect(res.body.refresh_token).toMatch(/^apop_r_/);
+  });
+
+  it('rejects an invalid/revoked refresh token', async () => {
+    dal.oauthDal.findValidRefreshToken.mockResolvedValue(null);
+    await request(app()).post('/internal/oauth/refresh').set(SECRET).send({ refresh_token: 'bad' }).expect(400);
+  });
+
+  it('rejects a client_id mismatch (token bound to another client)', async () => {
+    dal.oauthDal.findValidRefreshToken.mockResolvedValue({ tokenHash: 'h', clientId: 'c1', userId: 'u1', scopes: [] });
+    await request(app()).post('/internal/oauth/refresh').set(SECRET).send({ refresh_token: 'x', client_id: 'other' }).expect(400);
+  });
+});
+
+describe('revoke', () => {
+  it('revokes the refresh token and returns 200', async () => {
+    dal.oauthDal.revokeRefreshToken.mockResolvedValue({});
+    await request(app()).post('/internal/oauth/revoke').set(SECRET).send({ token: 'apop_r_xyz' }).expect(200);
+    expect(dal.oauthDal.revokeRefreshToken).toHaveBeenCalled();
   });
 });

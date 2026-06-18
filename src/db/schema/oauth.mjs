@@ -36,10 +36,29 @@ export const oauthAuthCodes = pgTable('oauth_auth_codes', {
   redirectUri: text('redirect_uri').notNull(),
   scopes: jsonb('scopes').default([]),
   userId: uuid('user_id'),
-  apAccessToken: text('ap_access_token').notNull(),
+  // Legacy: previously held the user's AP JWT. No longer written — tokens are
+  // now minted from user_id at exchange time (see oauth_refresh_tokens).
+  apAccessToken: text('ap_access_token'),
   apRefreshToken: text('ap_refresh_token'),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 }, (t) => [
   index('oauth_auth_codes_expires_idx').on(t.expiresAt),
+]);
+
+// Opaque, revocable OAuth refresh tokens. The access token is a short-lived
+// (1h) AP JWT validated statelessly on /mcp; the refresh token is the durable,
+// revocable credential. Only the sha256 hash is stored (never the raw token),
+// and it's bound to the issuing client_id. Revoke (or expiry) here kills the
+// connection within the access-token TTL.
+export const oauthRefreshTokens = pgTable('oauth_refresh_tokens', {
+  tokenHash: text('token_hash').primaryKey(),
+  clientId: text('client_id').notNull(),
+  userId: uuid('user_id').notNull(),
+  scopes: jsonb('scopes').default([]),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index('oauth_refresh_tokens_user_client_idx').on(t.userId, t.clientId),
 ]);
