@@ -217,22 +217,28 @@ function planCardData(plan) {
   walk(plan.nodes);
   const roots = plan.nodes || [];
   const topLevel = roots.length === 1 && roots[0].nodeType === 'root' ? (roots[0].children || []) : roots;
-  const phases = topLevel.filter((n) => n.nodeType === 'phase');
+  // Prefer top-level phases; fall back to any phase nodes (so a flat plan that
+  // nests phases still shows them).
+  let phases = topLevel.filter((n) => n.nodeType === 'phase');
+  if (!phases.length) phases = all.filter((n) => n.nodeType === 'phase');
   const tasks = all.filter((n) => n.nodeType === 'task' || n.nodeType === 'milestone');
   const doneTasks = tasks.filter((n) => n.status === 'completed').length;
   const donePhases = phases.filter((p) => p.status === 'completed').length;
   const pct = tasks.length
     ? Math.round((doneTasks / tasks.length) * 100)
     : (phases.length ? Math.round((donePhases / phases.length) * 100) : 0);
-  return { phases, donePhases, taskTotal: tasks.length, doneTasks, pct };
+  const counts = { completed: 0, in_progress: 0, blocked: 0, plan_ready: 0, not_started: 0 };
+  for (const t of tasks) if (t.status in counts) counts[t.status] += 1;
+  return { phases, donePhases, taskTotal: tasks.length, doneTasks, pct, counts };
 }
 
 const getPublicPlanOgSvg = async (req, res, next) => {
   try {
     const plan = await planService.getPublicPlan(req.params.id);
     const ownerName = plan.owner?.name || 'AgentPlanner user';
-    const { phases: allPhases, donePhases, taskTotal, doneTasks, pct } = planCardData(plan);
+    const { phases: allPhases, donePhases, taskTotal, doneTasks, pct, counts } = planCardData(plan);
     const phases = allPhases.slice(0, 6);
+    const hasPhases = phases.length > 0;
     const n = phases.length || 1;
 
     const M = 72, W = 1200, H = 630, innerW = W - M * 2;
@@ -261,6 +267,23 @@ const getPublicPlanOgSvg = async (req, res, next) => {
   <text x="${x + bw / 2}" y="${subY + blockH / 2 + 5}" text-anchor="middle" font-family="${MONO}" font-size="13" letter-spacing="0.5" fill="${s.ink}">${escapeXml(short)}</text>`;
     }).join('\n');
 
+    // Flat plans (no phases): a status-breakdown chip row instead of the subway.
+    let cx = M;
+    const chips = [['completed', 'DONE'], ['in_progress', 'ACTIVE'], ['blocked', 'BLOCKED'], ['plan_ready', 'REVIEW'], ['not_started', 'TODO']]
+      .filter(([k]) => counts[k] > 0)
+      .map(([k, lbl]) => {
+        const s = CARD_STATUS[k] || CARD_STATUS.not_started;
+        const dot = s.fill !== 'none' ? s.fill : (s.outline || '#3c352e');
+        const text = `${counts[k]} ${lbl}`;
+        const w = 40 + text.length * 9.5;
+        const chip = `<rect x="${cx}" y="${subY}" width="${w}" height="${blockH}" rx="9" fill="#19140f" stroke="#2a2420" stroke-width="1"/>
+  <circle cx="${cx + 19}" cy="${subY + blockH / 2}" r="5" fill="${dot}"/>
+  <text x="${cx + 33}" y="${subY + blockH / 2 + 5}" font-family="${MONO}" font-size="14" letter-spacing="0.5" fill="#cfc6b6">${escapeXml(text)}</text>`;
+        cx += w + gap;
+        return chip;
+      }).join('\n');
+    const band = hasPhases ? subway : chips;
+
     const grid = Array.from({ length: 30 }, (_, i) => i * 40)
       .map((v) => `<line x1="${v}" y1="0" x2="${v}" y2="${H}" stroke="#fff" stroke-opacity="0.018"/><line x1="0" y1="${v}" x2="${W}" y2="${v}" stroke="#fff" stroke-opacity="0.018"/>`)
       .join('');
@@ -277,14 +300,14 @@ const getPublicPlanOgSvg = async (req, res, next) => {
   ${grid}
   <g stroke="#e0a96d" stroke-opacity="0.5" stroke-width="2"><path d="M40 40 h22 M40 40 v22"/><path d="M1160 40 h-22 M1160 40 v22"/><path d="M40 590 h22 M40 590 v-22"/><path d="M1160 590 h-22 M1160 590 v-22"/></g>
   <text x="${M}" y="100" font-family="${MONO}" font-size="21" font-weight="500" letter-spacing="5" fill="#e0a96d">◆ AGENTPLANNER</text>
-  <text x="${W - M}" y="100" text-anchor="end" font-family="${MONO}" font-size="15" letter-spacing="3" fill="#6f675b">PLAN · ${donePhases}/${allPhases.length || n} PHASES</text>
+  <text x="${W - M}" y="100" text-anchor="end" font-family="${MONO}" font-size="15" letter-spacing="3" fill="#6f675b">PLAN · ${hasPhases ? `${donePhases}/${allPhases.length} PHASES` : `${taskTotal} ${taskTotal === 1 ? 'TASK' : 'TASKS'}`}</text>
   <line x1="${M}" y1="122" x2="${W - M}" y2="122" stroke="#2a2420" stroke-width="1"/>
   ${titleSvg}
   <text x="${M}" y="${barY - 26}" font-family="${MONO}" font-size="16" letter-spacing="2" fill="#7a7264">PROGRESS</text>
   <text x="${W - M}" y="${barY - 24}" text-anchor="end" font-family="${DISPLAY}" font-size="34" font-weight="800" fill="#e0a96d">${pct}<tspan font-family="${MONO}" font-size="16" font-weight="400" fill="#8a8170" dx="4">%</tspan></text>
   <rect x="${M}" y="${barY}" width="${innerW}" height="${barH}" rx="7" fill="#221d19"/>
   <rect x="${M}" y="${barY}" width="${barFill}" height="${barH}" rx="7" fill="url(#amber)"/>
-  ${subway}
+  ${band}
   <text x="${M}" y="600" font-family="${MONO}" font-size="16" letter-spacing="1" fill="#8a8170">by ${escapeXml(ownerName)}${taskTotal ? `  ·  ${doneTasks}/${taskTotal} tasks` : ''}</text>
   <text x="${W - M}" y="600" text-anchor="end" font-family="${MONO}" font-size="15" letter-spacing="2" fill="#6f675b">agentplanner.io</text>
 </svg>`;
