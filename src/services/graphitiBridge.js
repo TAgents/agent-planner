@@ -342,40 +342,52 @@ function getGroupId(user) {
 }
 
 /**
- * Query Graphiti for knowledge relevant to a plan/task.
- * Used by the progressive context engine at Layer 3.
+ * Query Graphiti for knowledge relevant to a task, for the progressive context
+ * engine's Layer 3. Knowledge is ORG-scoped (the temporal graph is cross-plan
+ * by design — group_id = org), so `planId` is accepted for future plan-scoped
+ * filtering but is not currently used to narrow the search.
+ *
+ * Only CURRENT facts are returned: facts the graph has superseded (expired_at
+ * set, or invalid_at in the past) are dropped so an agent's working context
+ * never carries stale knowledge. Results are ordered by relevance when the
+ * search provides a score, else in Graphiti's own relevance order.
  */
+// Pure: turn a raw searchMemory response into Layer-3 context facts —
+// drop superseded facts, normalize the envelope, sort by relevance, cap.
+// Exported for direct testing.
+function normalizeContextFacts(result, maxResults = 5, now = Date.now()) {
+  if (!result) return [];
+
+  let rawFacts = [];
+  if (Array.isArray(result)) rawFacts = result;
+  else if (result.facts) rawFacts = result.facts;
+  else if (result.results) rawFacts = result.results;
+
+  const isSuperseded = (f) =>
+    Boolean(f.expired_at) || (f.invalid_at && new Date(f.invalid_at).getTime() <= now);
+
+  return rawFacts
+    .filter(f => !isSuperseded(f))
+    .map(f => ({
+      content: f.fact || f.content || f.text || String(f),
+      source: 'graphiti',
+      relevance: f.score ?? f.relevance,
+    }))
+    .sort((a, b) => (b.relevance ?? 0) - (a.relevance ?? 0))
+    .slice(0, maxResults);
+}
+
 async function queryForContext(planId, query, orgId, maxResults = 5) {
   if (!available) return [];
 
+  // Over-fetch so dropping superseded facts still leaves a full set.
   const result = await searchMemory({
     query,
     group_id: orgGroupId(orgId),
-    max_results: maxResults,
+    max_results: maxResults * 2,
   });
 
-  if (!result) return [];
-
-  // Normalize response into simple array of facts
-  if (Array.isArray(result)) {
-    return result.map(r => ({
-      content: r.fact || r.content || r.text || String(r),
-      source: 'graphiti',
-      relevance: r.score || r.relevance,
-    }));
-  }
-  if (result.facts) return result.facts.map(f => ({
-    content: f.fact || f.content || String(f),
-    source: 'graphiti',
-    relevance: f.score || f.relevance,
-  }));
-  if (result.results) return result.results.map(r => ({
-    content: r.fact || r.content || String(r),
-    source: 'graphiti',
-    relevance: r.score,
-  }));
-
-  return [];
+  return normalizeContextFacts(result, maxResults);
 }
 
 /**
@@ -428,6 +440,7 @@ module.exports = {
   orgGroupId,
   getGroupId,
   queryForContext,
+  normalizeContextFacts,
   detectContradictions,
   callTool,
 };

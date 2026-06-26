@@ -4,7 +4,8 @@
  * Assembles context for agent tasks via 4 progressive layers:
  *   Layer 1 — Task Focus: the node itself + recent logs
  *   Layer 2 — Local Neighborhood: parent, siblings, direct dependencies
- *   Layer 3 — Knowledge: plan-scoped knowledge entries (stub for Graphiti)
+ *   Layer 3 — Knowledge: relevant CURRENT facts from the Graphiti temporal
+ *             graph (org-scoped / cross-plan; superseded facts are dropped)
  *   Layer 4 — Extended: plan overview, cross-references, goal alignment
  *
  * Each layer adds detail; callers pick max depth + optional token budget.
