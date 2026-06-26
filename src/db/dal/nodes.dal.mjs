@@ -215,6 +215,24 @@ export const nodesDal = {
   },
 
   /**
+   * Bulk task/milestone completion stats across a set of plans, in one query.
+   * Matches the dashboard/briefing definition of progress (node_type IN
+   * ('task','milestone')) so goal_state can fall back to linked-plan progress
+   * when a goal links plans without per-task achiever edges.
+   * Returns { total, completed }.
+   */
+  async taskStatsForPlans(planIds) {
+    if (!Array.isArray(planIds) || planIds.length === 0) return { total: 0, completed: 0 };
+    const [row] = await db.select({
+      total: sql`count(*) FILTER (WHERE ${planNodes.nodeType} IN ('task','milestone'))::int`,
+      completed: sql`count(*) FILTER (WHERE ${planNodes.nodeType} IN ('task','milestone') AND ${planNodes.status} = 'completed')::int`,
+    })
+      .from(planNodes)
+      .where(inArray(planNodes.planId, planIds));
+    return { total: row?.total ?? 0, completed: row?.completed ?? 0 };
+  },
+
+  /**
    * Search nodes with filters
    */
   async search(planId, { query, status, nodeType, coherenceStatus, dateFrom, dateTo } = {}) {

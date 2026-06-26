@@ -217,13 +217,36 @@ async function detectKnowledgeGaps(goal, user, pathPromise = null) {
 /**
  * Calculate goal progress from the dependency graph (achieves edges).
  */
-async function getGoalProgress(goalId, pathPromise = null) {
+async function getGoalProgress(goalId, pathPromise = null, linkedPlanIds = null) {
   const { nodes, stats } = await (pathPromise || dal.dependenciesDal.getGoalPath(goalId));
   const directAchievers = nodes.filter(n => n.depth === 1);
   const directCompleted = directAchievers.filter(n => n.status === 'completed').length;
   const directProgress = directAchievers.length > 0
     ? Math.round((directCompleted / directAchievers.length) * 100)
     : 0;
+
+  // A goal can link a PLAN without wiring achiever edges to its individual
+  // tasks. The achiever path is then empty and stats.completion_percentage is
+  // 0 — misleading when the linked plan is well underway (goal_state showed 0%
+  // while the dashboard/briefing showed 88% for the same goal). Fall back to
+  // the linked plans' task completion so the two agree.
+  if ((!nodes || nodes.length === 0) && Array.isArray(linkedPlanIds) && linkedPlanIds.length) {
+    const planStats = await dal.nodesDal.taskStatsForPlans(linkedPlanIds);
+    const pct = planStats.total > 0
+      ? Math.round((planStats.completed / planStats.total) * 100)
+      : 0;
+    return {
+      goal_id: goalId,
+      progress: pct,
+      direct_progress: pct,
+      stats: {
+        total: planStats.total,
+        completed: planStats.completed,
+        completion_percentage: pct,
+        source: 'linked_plans',
+      },
+    };
+  }
 
   return {
     goal_id: goalId,
@@ -242,12 +265,28 @@ async function getGoalProgress(goalId, pathPromise = null) {
  * and authorized for `user`).
  */
 async function getGoalState(goal, user) {
+  const links = Array.isArray(goal.links) ? goal.links : [];
+  // Canonical "linked plans" = distinct NON-ARCHIVED (and still-existing) plans
+  // linked to the goal — same definition as the dashboard/briefing count. Dedupe
+  // by plan id, then drop archived/deleted stubs. Resolved up front so the live
+  // plan ids can drive both linked_plans and the progress fallback below.
+  const dedupedPlanLinks = [...new Map(
+    links.filter(l => l.linkedType === 'plan').map(l => [l.linkedId, { id: l.linkedId, link_id: l.id }]),
+  ).values()];
+  const planRows = await dal.plansDal.findByIds(dedupedPlanLinks.map(p => p.id));
+  const liveStatus = new Map(planRows.map(p => [p.id, p.status]));
+  const linkedPlans = dedupedPlanLinks.filter(p => {
+    const st = liveStatus.get(p.id);
+    return st !== undefined && st !== 'archived';
+  });
+  const livePlanIds = linkedPlans.map(p => p.id);
+
   // One goal-path query shared across progress, knowledge gaps, and
   // bottlenecks (each fetches its own when called standalone).
   const pathPromise = dal.dependenciesDal.getGoalPath(goal.id);
   const settled = await Promise.allSettled([
     assessGoalQuality(goal, user),
-    getGoalProgress(goal.id, pathPromise),
+    getGoalProgress(goal.id, pathPromise, livePlanIds),
     detectKnowledgeGaps(goal, user, pathPromise),
     pathPromise,
   ]);
@@ -275,19 +314,6 @@ async function getGoalState(goal, user) {
       direct_downstream_count: t.direct_downstream_count || 0,
     }));
 
-  const links = Array.isArray(goal.links) ? goal.links : [];
-  // Canonical "linked plans" = distinct NON-ARCHIVED (and still-existing) plans
-  // linked to the goal — same definition as the dashboard/briefing count. Dedupe
-  // by plan id, then drop archived/deleted stubs.
-  const dedupedPlanLinks = [...new Map(
-    links.filter(l => l.linkedType === 'plan').map(l => [l.linkedId, { id: l.linkedId, link_id: l.id }]),
-  ).values()];
-  const planRows = await dal.plansDal.findByIds(dedupedPlanLinks.map(p => p.id));
-  const liveStatus = new Map(planRows.map(p => [p.id, p.status]));
-  const linkedPlans = dedupedPlanLinks.filter(p => {
-    const st = liveStatus.get(p.id);
-    return st !== undefined && st !== 'archived';
-  });
   // Explicit task links (linkedType==='task') are rarely used; the tasks that
   // actually contribute to the goal are its achiever path. Surface those so
   // linked_tasks isn't misleadingly empty. Fall back to explicit links.
