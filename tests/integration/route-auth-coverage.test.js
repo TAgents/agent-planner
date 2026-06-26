@@ -14,6 +14,13 @@
 
 const app = require('../../src/index');
 const { authenticate } = require('../../src/middleware/auth.middleware');
+const { internalAuth } = require('../../src/middleware/internalAuth.middleware');
+
+// A route counts as protected if it applies any of these guards. `internalAuth`
+// guards the server-to-server /internal/* routes via a shared secret (and they
+// are never exposed through nginx) — it protects just like `authenticate`.
+const PROTECTORS = new Set([authenticate, internalAuth]);
+const isProtector = (handle) => PROTECTORS.has(handle);
 
 // Every intentionally-public route, as "METHOD /path". Keep alphabetised-ish
 // by group. A route here is asserted to genuinely have NO `authenticate`.
@@ -74,7 +81,7 @@ function collectRoutes(stack, prefix, inheritedAuth, out) {
   for (const layer of stack) {
     if (layer.route) {
       const routeHasAuth =
-        blanketAuth || layer.route.stack.some((s) => s.handle === authenticate);
+        blanketAuth || layer.route.stack.some((s) => isProtector(s.handle));
       for (const method of Object.keys(layer.route.methods)) {
         out.push({ method: method.toUpperCase(), path: prefix + layer.route.path, auth: routeHasAuth });
       }
@@ -86,7 +93,7 @@ function collectRoutes(stack, prefix, inheritedAuth, out) {
         throw new Error(`Unrecognised router mount regexp (check decodePrefix): ${layer.regexp?.source}`);
       }
       collectRoutes(layer.handle.stack, prefix + sub, blanketAuth, out);
-    } else if (layer.handle === authenticate) {
+    } else if (isProtector(layer.handle)) {
       blanketAuth = true; // router-level blanket applies to subsequent layers
     }
   }
