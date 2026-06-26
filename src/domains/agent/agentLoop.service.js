@@ -86,7 +86,12 @@ async function goalDashboard(user) {
 
     const lastActivity = row.last_log_at || null;
     const lastActivityTs = lastActivity ? new Date(lastActivity).getTime() : null;
-    const isStale = planIds.length > 0 && (!lastActivityTs || Date.now() - lastActivityTs > 3 * 24 * 60 * 60 * 1000);
+    // A goal with no execution path (no plans / no tasks) isn't "on track" — it
+    // needs planning. Previously the `planIds.length > 0` guard made such goals
+    // fall through to on_track, hiding them from the agent. Treat no-path goals
+    // as stale so they surface for action.
+    const hasPath = planIds.length > 0 && totalNodes > 0;
+    const isStale = !hasPath || !lastActivityTs || (Date.now() - lastActivityTs > 3 * 24 * 60 * 60 * 1000);
     const percentBlocked = totalNodes ? Math.round((blockedNodes / totalNodes) * 100) : 0;
     const health = isStale
       ? 'stale'
@@ -173,23 +178,21 @@ async function getBriefing(user, { goal_id, plan_id, recent_window_hours = 24, s
 
   const pending = await pendingItemsForPlans(scopedPlanIds, 10);
   const recentCutoff = Date.now() - Number(recent_window_hours || 24) * 60 * 60 * 1000;
-  const recentActivity = [];
-  for (const planId of scopedPlanIds.slice(0, 10)) {
-    try {
-      const logs = await dal.logsDal.listByPlan(planId, { limit: 20 });
-      const rows = Array.isArray(logs) ? logs : (logs.logs || []);
-      recentActivity.push(...rows
-        .filter(l => l.createdAt && new Date(l.createdAt).getTime() >= recentCutoff)
-        .map(l => ({
-          type: 'log',
-          ref_id: l.id,
-          plan_id: planId,
-          node_id: l.planNodeId,
-          summary: l.content,
-          occurred_at: l.createdAt,
-        })));
-    } catch {}
-  }
+  // One cross-plan query, newest first — replaces a per-plan loop that both
+  // capped at 10 plans AND called a non-existent logsDal.listByPlan (so the
+  // feed was silently always empty).
+  let recentActivity = [];
+  try {
+    const rows = await dal.logsDal.listRecentForPlans(scopedPlanIds, { sinceMs: recentCutoff, limit: 20 });
+    recentActivity = rows.map(l => ({
+      type: 'log',
+      ref_id: l.id,
+      plan_id: l.planId,
+      node_id: l.planNodeId,
+      summary: l.content,
+      occurred_at: l.createdAt,
+    }));
+  } catch {}
 
   let topRecommendation = null;
   const atRisk = goals.filter(g => g.health === 'at_risk' || g.health === 'stale');

@@ -24,6 +24,31 @@ export const logsDal = {
       .groupBy(planNodes.planId);
   },
 
+  /**
+   * Recent logs across a set of plans, newest first — powers the briefing's
+   * recent_activity feed in one query (no per-plan fan-out).
+   */
+  async listRecentForPlans(planIds, { sinceMs = null, limit = 20 } = {}) {
+    if (!Array.isArray(planIds) || planIds.length === 0) return [];
+    const conditions = [inArray(planNodes.planId, planIds)];
+    if (sinceMs) conditions.push(gte(planNodeLogs.createdAt, new Date(sinceMs)));
+    return db.select({
+      id: planNodeLogs.id,
+      planNodeId: planNodeLogs.planNodeId,
+      planId: planNodes.planId,
+      content: planNodeLogs.content,
+      logType: planNodeLogs.logType,
+      createdAt: planNodeLogs.createdAt,
+      userName: users.name,
+    })
+    .from(planNodeLogs)
+    .innerJoin(planNodes, eq(planNodeLogs.planNodeId, planNodes.id))
+    .leftJoin(users, eq(planNodeLogs.userId, users.id))
+    .where(and(...conditions))
+    .orderBy(desc(planNodeLogs.createdAt))
+    .limit(limit);
+  },
+
   async create(data) {
     const [log] = await db.insert(planNodeLogs).values(data).returning();
     return log;

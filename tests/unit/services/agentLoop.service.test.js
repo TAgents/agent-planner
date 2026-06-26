@@ -36,7 +36,7 @@ jest.mock('../../../src/db/dal.cjs', () => ({
     release: jest.fn(),
   },
   logsDal: {
-    listByPlan: jest.fn(),
+    listRecentForPlans: jest.fn(),
     create: jest.fn(),
   },
 }));
@@ -95,7 +95,7 @@ beforeEach(() => {
   dal.nodesDal.listByPlanIds.mockResolvedValue([]);
   dal.decisionsDal.listByPlan.mockResolvedValue([]);
   dal.claimsDal.listActiveClaimsByPlan.mockResolvedValue([]);
-  dal.logsDal.listByPlan.mockResolvedValue({ logs: [] });
+  dal.logsDal.listRecentForPlans.mockResolvedValue([]);
 });
 
 describe('agentLoopService.getBriefing', () => {
@@ -113,7 +113,7 @@ describe('agentLoopService.getBriefing', () => {
     }]);
     dal.decisionsDal.listByPlan.mockResolvedValue([{ id: 'dec-1', title: 'Pick one', planId: 'plan-1', status: 'pending' }]);
     dal.claimsDal.listActiveClaimsByPlan.mockResolvedValue([claim]);
-    dal.logsDal.listByPlan.mockResolvedValue({ logs: [{ id: 'log-1', content: 'Worked', createdAt: new Date().toISOString() }] });
+    dal.logsDal.listRecentForPlans.mockResolvedValue([{ id: 'log-1', planId: 'plan-1', planNodeId: 'node-1', content: 'Worked', createdAt: new Date().toISOString() }]);
 
     const result = await service.getBriefing(user, {});
 
