@@ -34,7 +34,7 @@ describe('GET /plans/:id/preview — unfurl meta', () => {
     const html = await run();
     expect(html).toContain('<meta property="og:title" content="Secret Launch Plan">');
     expect(html).toContain('<meta property="og:description" content="Ship the thing">');
-    expect(html).toContain(`/api/plans/public/${PLAN_ID}/og.svg`);
+    expect(html).toContain(`/api/plans/public/${PLAN_ID}/og.png`);
     expect(html).toContain('content="summary_large_image"');
   });
 

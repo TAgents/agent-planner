@@ -362,6 +362,8 @@ router.get('/public/:id', planController.getPublicPlanById);
  *         description: Plan not found or not public
  */
 router.get('/public/:id/og.svg', planController.getPublicPlanOgSvg);
+// PNG variant of the share card — Slack/Twitter don't render SVG og:image.
+router.get('/public/:id/og.png', planController.getPublicPlanOgPng);
 
 /**
  * @swagger

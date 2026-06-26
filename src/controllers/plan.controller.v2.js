@@ -232,9 +232,7 @@ function planCardData(plan) {
   return { phases, donePhases, taskTotal: tasks.length, doneTasks, pct, counts };
 }
 
-const getPublicPlanOgSvg = async (req, res, next) => {
-  try {
-    const plan = await planService.getPublicPlan(req.params.id);
+function buildPlanCardSvg(plan) {
     const ownerName = plan.owner?.name || 'AgentPlanner user';
     const { phases: allPhases, donePhases, taskTotal, doneTasks, pct, counts } = planCardData(plan);
     const phases = allPhases.slice(0, 6);
@@ -311,16 +309,55 @@ const getPublicPlanOgSvg = async (req, res, next) => {
   <text x="${M}" y="600" font-family="${MONO}" font-size="16" letter-spacing="1" fill="#8a8170">by ${escapeXml(ownerName)}${taskTotal ? `  ·  ${doneTasks}/${taskTotal} tasks` : ''}</text>
   <text x="${W - M}" y="600" text-anchor="end" font-family="${MONO}" font-size="15" letter-spacing="2" fill="#6f675b">agentplanner.io</text>
 </svg>`;
+  return svg;
+}
 
+// Rasterize the share-card SVG to PNG — Slack/Twitter don't render SVG og:image.
+// Bundled fonts (assets/fonts) make the output identical in the font-less
+// production container. Resvg is required lazily so startup never loads it.
+let _Resvg;
+function renderCardPng(svg) {
+  const path = require('path');
+  if (!_Resvg) _Resvg = require('@resvg/resvg-js').Resvg;
+  const fontDir = path.join(__dirname, '..', '..', 'assets', 'fonts');
+  return new _Resvg(svg, {
+    fitTo: { mode: 'width', value: 1200 },
+    font: {
+      loadSystemFonts: false,
+      defaultFontFamily: 'Bricolage Grotesque',
+      fontFiles: [
+        path.join(fontDir, 'BricolageGrotesque-ExtraBold.ttf'),
+        path.join(fontDir, 'JetBrainsMono-Medium.ttf'),
+      ],
+    },
+  }).render().asPng();
+}
+
+const getPublicPlanOgSvg = async (req, res, next) => {
+  try {
+    const svg = buildPlanCardSvg(await planService.getPublicPlan(req.params.id));
     res.set('Content-Type', 'image/svg+xml; charset=utf-8');
     res.set('Cache-Control', 'public, max-age=600, s-maxage=3600');
     res.send(svg);
   } catch (error) {
     if (error instanceof planService.ServiceError && error.statusCode === 404) {
-      res.status(404).set('Content-Type', 'image/svg+xml; charset=utf-8').send(
+      return res.status(404).set('Content-Type', 'image/svg+xml; charset=utf-8').send(
         '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"><rect width="1200" height="630" fill="#0e0c0a"/></svg>',
       );
-      return;
+    }
+    next(error);
+  }
+};
+
+const getPublicPlanOgPng = async (req, res, next) => {
+  try {
+    const png = renderCardPng(buildPlanCardSvg(await planService.getPublicPlan(req.params.id)));
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=600, s-maxage=3600');
+    res.send(png);
+  } catch (error) {
+    if (error instanceof planService.ServiceError && error.statusCode === 404) {
+      return res.status(404).end();
     }
     next(error);
   }
@@ -373,7 +410,7 @@ const getPlanPreviewMeta = async (req, res) => {
     // og.svg only serves `public` plans; for `unlisted` go text-only to avoid a
     // broken image. (PNG + unlisted image is the fast-follow.)
     const image = plan.visibility === 'public'
-      ? `${PUBLIC_URL}/api/plans/public/${encodeURIComponent(req.params.id)}/og.svg`
+      ? `${PUBLIC_URL}/api/plans/public/${encodeURIComponent(req.params.id)}/og.png`
       : null;
     res.send(previewHtml({ title: plan.title || 'AgentPlanner plan', description: desc, url: appUrl, image }));
   } catch (error) {
@@ -446,7 +483,7 @@ module.exports = {
   listPlans, createPlan, getPlan, updatePlan, deletePlan,
   listCollaborators, addCollaborator, removeCollaborator,
   getPlanContext, getPlanProgress,
-  listPublicPlans, getPublicPlan, getPublicPlanById, getPublicPlanKnowledgeDigest, getPublicPlanOgSvg, getPublicPlansSitemap,
+  listPublicPlans, getPublicPlan, getPublicPlanById, getPublicPlanKnowledgeDigest, getPublicPlanOgSvg, getPublicPlanOgPng, getPublicPlansSitemap,
   getPlanPreviewMeta,
   updatePlanVisibility, incrementViewCount, linkGitHubRepo,
 };
