@@ -383,10 +383,16 @@ async function listPublicPlans({ page = 1, limit = 12, search, status, sortBy = 
 // can view) in addition to `public`; `private` and missing still 404 so a
 // private plan's title/content never leaks into an unfurl. Lightweight shape —
 // just what the OG meta needs.
-async function getPlanForUnfurl(planId) {
+async function getPlanForUnfurl(planId, { userId } = {}) {
   const plan = await repo.findById(planId);
-  const shareable = plan && (plan.visibility === 'public' || plan.visibility === 'unlisted' || plan.isPublic);
-  if (!shareable) throw new ServiceError('Plan not found', 404);
+  if (!plan) throw new ServiceError('Plan not found', 404);
+  const publiclyShareable = plan.visibility === 'public' || plan.visibility === 'unlisted' || plan.isPublic;
+  // Authorized viewers (owner / collaborator / org member) may preview any plan
+  // they can access, including private ones — used when the preview request
+  // carries a token. Anonymous callers (e.g. Slack's unfurl bot) only ever see
+  // public/unlisted, so a private plan never leaks.
+  const authorized = userId ? await checkPlanAccess(planId, userId) : false;
+  if (!publiclyShareable && !authorized) throw new ServiceError('Plan not found', 404);
 
   const [nodes, owner] = await Promise.all([
     repo.getNodeTree(planId),

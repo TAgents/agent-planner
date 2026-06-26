@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { planController } = require('../config/auth');
-const { authenticate } = require('../middleware/auth.middleware');
+const { authenticate, optionalAuthenticate } = require('../middleware/auth.middleware');
 const { validate, schemas } = require('../validation');
 
 /**
@@ -387,7 +387,9 @@ router.get('/public/:id/og.svg', planController.getPublicPlanOgSvg);
  *           text/html:
  *             schema: { type: string }
  */
-router.get('/:id/preview', planController.getPlanPreviewMeta);
+// optionalAuthenticate: anonymous (bots) → visibility-gated; an authorized
+// caller's token → real preview for any plan they can access (incl. private).
+router.get('/:id/preview', optionalAuthenticate, planController.getPlanPreviewMeta);
 
 /**
  * @swagger

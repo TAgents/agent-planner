@@ -200,36 +200,93 @@ const wrapText = (text, maxCharsPerLine, maxLines) => {
   return lines;
 };
 
+// Status → subway block colors for the share card.
+const CARD_STATUS = {
+  completed:   { fill: '#6cbf93', ink: '#0c0a09' },
+  in_progress: { fill: '#e0a96d', ink: '#0c0a09' },
+  blocked:     { fill: '#d98b7a', ink: '#0c0a09' },
+  plan_ready:  { fill: '#caa9e0', ink: '#0c0a09' },
+  not_started: { fill: 'none',    ink: '#8a8170', outline: '#3c352e' },
+};
+
+// Derive the card's data (top-level phases + their status, task progress) from
+// the plan's node tree. Handles a [root]-wrapped tree or a flat top-level array.
+function planCardData(plan) {
+  const all = [];
+  const walk = (ns) => (ns || []).forEach((n) => { all.push(n); if (n.children) walk(n.children); });
+  walk(plan.nodes);
+  const roots = plan.nodes || [];
+  const topLevel = roots.length === 1 && roots[0].nodeType === 'root' ? (roots[0].children || []) : roots;
+  const phases = topLevel.filter((n) => n.nodeType === 'phase');
+  const tasks = all.filter((n) => n.nodeType === 'task' || n.nodeType === 'milestone');
+  const doneTasks = tasks.filter((n) => n.status === 'completed').length;
+  const donePhases = phases.filter((p) => p.status === 'completed').length;
+  const pct = tasks.length
+    ? Math.round((doneTasks / tasks.length) * 100)
+    : (phases.length ? Math.round((donePhases / phases.length) * 100) : 0);
+  return { phases, donePhases, taskTotal: tasks.length, doneTasks, pct };
+}
+
 const getPublicPlanOgSvg = async (req, res, next) => {
   try {
     const plan = await planService.getPublicPlan(req.params.id);
-    const titleLines = wrapText(plan.title, 32, 3);
     const ownerName = plan.owner?.name || 'AgentPlanner user';
-    const nodeCount = Array.isArray(plan.nodes)
-      ? plan.nodes.reduce(function count(acc, n) {
-          return acc + 1 + (Array.isArray(n.children) ? n.children.reduce(count, 0) : 0);
-        }, 0)
-      : 0;
+    const { phases: allPhases, donePhases, taskTotal, doneTasks, pct } = planCardData(plan);
+    const phases = allPhases.slice(0, 6);
+    const n = phases.length || 1;
 
-    const titleY = 200 + (3 - titleLines.length) * 40;
-    const titleSvg = titleLines
-      .map((line, i) => `<text x="80" y="${titleY + i * 76}" font-family="'Bricolage Grotesque', system-ui, sans-serif" font-size="64" font-weight="700" fill="#f5f1e9">${escapeXml(line)}</text>`)
+    const M = 72, W = 1200, H = 630, innerW = W - M * 2;
+    const DISPLAY = "'Bricolage Grotesque', 'Arial Black', 'Helvetica Neue', system-ui, sans-serif";
+    const MONO = "'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace";
+
+    const title = wrapText(plan.title, 23, 3);
+    const titleSize = title.length >= 3 ? 50 : title.length === 2 ? 58 : 66;
+    const titleLH = Math.round(titleSize * 1.16);
+    const titleSvg = title
+      .map((l, i) => `<text x="${M}" y="${188 + i * titleLH}" font-family="${DISPLAY}" font-size="${titleSize}" font-weight="800" letter-spacing="-1.5" fill="#f4eee2">${escapeXml(l)}</text>`)
       .join('\n');
 
+    const barY = 430, barH = 14, barFill = Math.max((innerW * pct) / 100, pct > 0 ? barH : 0);
+    const subY = 510, blockH = 46, gap = 12, bw = (innerW - gap * (n - 1)) / n;
+    const subway = phases.map((p, i) => {
+      const s = CARD_STATUS[p.status] || CARD_STATUS.not_started;
+      const x = M + i * (bw + gap);
+      const rect = s.fill !== 'none'
+        ? `<rect x="${x}" y="${subY}" width="${bw}" height="${blockH}" rx="9" fill="${s.fill}"/>`
+        : `<rect x="${x + 0.75}" y="${subY + 0.75}" width="${bw - 1.5}" height="${blockH - 1.5}" rx="9" fill="none" stroke="${s.outline}" stroke-width="1.5"/>`;
+      const label = (p.title || `Phase ${i + 1}`).replace(/^Phase\s*\d+[,:]?\s*/i, '') || `P${i + 1}`;
+      const max = Math.max(4, Math.floor(bw / 9));
+      const short = label.length > max ? label.slice(0, max - 1) + '…' : label;
+      return `${rect}
+  <text x="${x + bw / 2}" y="${subY + blockH / 2 + 5}" text-anchor="middle" font-family="${MONO}" font-size="13" letter-spacing="0.5" fill="${s.ink}">${escapeXml(short)}</text>`;
+    }).join('\n');
+
+    const grid = Array.from({ length: 30 }, (_, i) => i * 40)
+      .map((v) => `<line x1="${v}" y1="0" x2="${v}" y2="${H}" stroke="#fff" stroke-opacity="0.018"/><line x1="0" y1="${v}" x2="${W}" y2="${v}" stroke="#fff" stroke-opacity="0.018"/>`)
+      .join('');
+
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#0e0c0a"/>
-      <stop offset="100%" stop-color="#1a1612"/>
-    </linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#100d0b"/><stop offset="55%" stop-color="#0c0a09"/><stop offset="100%" stop-color="#181311"/></linearGradient>
+    <radialGradient id="glow" cx="14%" cy="8%" r="55%"><stop offset="0%" stop-color="#e0a96d" stop-opacity="0.10"/><stop offset="100%" stop-color="#e0a96d" stop-opacity="0"/></radialGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#c98a4e"/><stop offset="100%" stop-color="#f0c187"/></linearGradient>
   </defs>
-  <rect width="1200" height="630" fill="url(#bg)"/>
-  <text x="80" y="100" font-family="'JetBrains Mono', monospace" font-size="20" font-weight="500" letter-spacing="3" fill="#9ca3af">◆ AGENTPLANNER</text>
+  <rect width="${W}" height="${H}" fill="url(#bg)"/>
+  <rect width="${W}" height="${H}" fill="url(#glow)"/>
+  ${grid}
+  <g stroke="#e0a96d" stroke-opacity="0.5" stroke-width="2"><path d="M40 40 h22 M40 40 v22"/><path d="M1160 40 h-22 M1160 40 v22"/><path d="M40 590 h22 M40 590 v-22"/><path d="M1160 590 h-22 M1160 590 v-22"/></g>
+  <text x="${M}" y="100" font-family="${MONO}" font-size="21" font-weight="500" letter-spacing="5" fill="#e0a96d">◆ AGENTPLANNER</text>
+  <text x="${W - M}" y="100" text-anchor="end" font-family="${MONO}" font-size="15" letter-spacing="3" fill="#6f675b">PLAN · ${donePhases}/${allPhases.length || n} PHASES</text>
+  <line x1="${M}" y1="122" x2="${W - M}" y2="122" stroke="#2a2420" stroke-width="1"/>
   ${titleSvg}
-  <text x="80" y="500" font-family="'Inter', system-ui, sans-serif" font-size="22" fill="#a1a1aa">by ${escapeXml(ownerName)}</text>
-  <text x="80" y="540" font-family="'JetBrains Mono', monospace" font-size="18" letter-spacing="2" fill="#6b7280">${nodeCount} ${nodeCount === 1 ? 'NODE' : 'NODES'}</text>
-  <text x="1120" y="580" font-family="'JetBrains Mono', monospace" font-size="16" letter-spacing="2" fill="#6b7280" text-anchor="end">agentplanner.io</text>
+  <text x="${M}" y="${barY - 26}" font-family="${MONO}" font-size="16" letter-spacing="2" fill="#7a7264">PROGRESS</text>
+  <text x="${W - M}" y="${barY - 24}" text-anchor="end" font-family="${DISPLAY}" font-size="34" font-weight="800" fill="#e0a96d">${pct}<tspan font-family="${MONO}" font-size="16" font-weight="400" fill="#8a8170" dx="4">%</tspan></text>
+  <rect x="${M}" y="${barY}" width="${innerW}" height="${barH}" rx="7" fill="#221d19"/>
+  <rect x="${M}" y="${barY}" width="${barFill}" height="${barH}" rx="7" fill="url(#amber)"/>
+  ${subway}
+  <text x="${M}" y="600" font-family="${MONO}" font-size="16" letter-spacing="1" fill="#8a8170">by ${escapeXml(ownerName)}${taskTotal ? `  ·  ${doneTasks}/${taskTotal} tasks` : ''}</text>
+  <text x="${W - M}" y="600" text-anchor="end" font-family="${MONO}" font-size="15" letter-spacing="2" fill="#6f675b">agentplanner.io</text>
 </svg>`;
 
     res.set('Content-Type', 'image/svg+xml; charset=utf-8');
@@ -284,7 +341,9 @@ const getPlanPreviewMeta = async (req, res) => {
   res.set('Content-Type', 'text/html; charset=utf-8');
   res.set('Cache-Control', 'public, max-age=300, s-maxage=900');
   try {
-    const plan = await planService.getPlanForUnfurl(req.params.id);
+    // optionalAuthenticate may have set req.user — authorized viewers get the
+    // real preview even for private plans; anonymous bots stay leak-safe.
+    const plan = await planService.getPlanForUnfurl(req.params.id, { userId: req.user?.id });
     const nodeWord = plan.node_count === 1 ? 'node' : 'nodes';
     const desc = (plan.description && plan.description.trim())
       || `${plan.node_count} ${nodeWord}${plan.owner?.name ? ` · by ${plan.owner.name}` : ''} on AgentPlanner`;

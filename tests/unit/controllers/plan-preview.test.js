@@ -12,7 +12,7 @@ const planController = require('../../../src/controllers/plan.controller.v2');
 
 const PLAN_ID = '11111111-1111-1111-1111-111111111111';
 
-function run() {
+function run(user) {
   const sent = {};
   const res = {
     set: jest.fn().mockReturnThis(),
@@ -20,7 +20,7 @@ function run() {
     status: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
   };
-  return planController.getPlanPreviewMeta({ params: { id: PLAN_ID } }, res).then(() => sent.html);
+  return planController.getPlanPreviewMeta({ params: { id: PLAN_ID }, user }, res).then(() => sent.html);
 }
 
 beforeEach(() => jest.clearAllMocks());
@@ -51,12 +51,25 @@ describe('GET /plans/:id/preview — unfurl meta', () => {
     expect(html).toContain('1 node · by Ada on AgentPlanner');
   });
 
-  it('SECURITY: private/missing plan → generic meta, NO title/description leak', async () => {
+  it('SECURITY: anonymous + private/missing plan → generic meta, NO leak', async () => {
     planService.getPlanForUnfurl.mockRejectedValue(new planService.ServiceError('Plan not found', 404));
-    const html = await run();
+    const html = await run(); // no user → anonymous
+    expect(planService.getPlanForUnfurl).toHaveBeenCalledWith(PLAN_ID, { userId: undefined });
     expect(html).toContain('og:title" content="AgentPlanner"');
     expect(html).not.toMatch(/Secret|Launch|Unlisted/i); // no plan content leaks
     expect(html).not.toContain('og:image');
+  });
+
+  it('authorized viewer (token) → real preview even for a PRIVATE plan', async () => {
+    // getPlanForUnfurl resolves because the user can access the plan.
+    planService.getPlanForUnfurl.mockResolvedValue({
+      id: PLAN_ID, title: 'Private Roadmap', description: 'internal only', visibility: 'private',
+      owner: { name: 'Ada' }, node_count: 3,
+    });
+    const html = await run({ id: 'user-1' });
+    expect(planService.getPlanForUnfurl).toHaveBeenCalledWith(PLAN_ID, { userId: 'user-1' });
+    expect(html).toContain('og:title" content="Private Roadmap"');
+    expect(html).not.toContain('og:image'); // private → still no public og.svg image
   });
 
   it('escapes HTML in the title (no meta-tag injection)', async () => {
