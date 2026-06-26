@@ -33,6 +33,12 @@ router.get('/', authenticate, async (req, res) => {
     const userId = req.user.id;
 
     if (!node_id) return res.status(400).json({ error: 'node_id is required' });
+    // A malformed id (e.g. the literal "undefined" from a buggy client) would
+    // otherwise reach Postgres and blow up as a 500 uuid-cast error. Reject it
+    // as a clean 400 instead.
+    if (!/^[0-9a-fA-F-]{36}$/.test(node_id)) {
+      return res.status(400).json({ error: 'node_id must be a valid UUID' });
+    }
 
     const node = await nodesDal.findById(node_id);
     if (!node) return res.status(404).json({ error: 'Node not found' });
@@ -197,6 +203,12 @@ router.get('/progressive', authenticate, async (req, res) => {
     const userId = req.user.id;
 
     if (!node_id) return res.status(400).json({ error: 'node_id is required' });
+    // A malformed id (e.g. the literal "undefined" from a buggy client) would
+    // otherwise reach Postgres and blow up as a 500 uuid-cast error. Reject it
+    // as a clean 400 instead.
+    if (!/^[0-9a-fA-F-]{36}$/.test(node_id)) {
+      return res.status(400).json({ error: 'node_id must be a valid UUID' });
+    }
 
     const node = await nodesDal.findById(node_id);
     if (!node) return res.status(404).json({ error: 'Node not found' });
