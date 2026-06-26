@@ -379,6 +379,31 @@ async function listPublicPlans({ page = 1, limit = 12, search, status, sortBy = 
   return { plans: results, total, page, limit, total_pages: totalPages };
 }
 
+// For link unfurls / share previews. Allows `unlisted` (anyone with the link
+// can view) in addition to `public`; `private` and missing still 404 so a
+// private plan's title/content never leaks into an unfurl. Lightweight shape —
+// just what the OG meta needs.
+async function getPlanForUnfurl(planId) {
+  const plan = await repo.findById(planId);
+  const shareable = plan && (plan.visibility === 'public' || plan.visibility === 'unlisted' || plan.isPublic);
+  if (!shareable) throw new ServiceError('Plan not found', 404);
+
+  const [nodes, owner] = await Promise.all([
+    repo.getNodeTree(planId),
+    repo.findUserById(plan.ownerId),
+  ]);
+  const countNodes = (ns) => (Array.isArray(ns) ? ns.reduce((acc, n) => acc + 1 + countNodes(n.children), 0) : 0);
+
+  return {
+    id: plan.id,
+    title: plan.title,
+    description: plan.description,
+    visibility: plan.visibility,
+    owner: owner ? { name: owner.name } : null,
+    node_count: countNodes(nodes),
+  };
+}
+
 async function getPublicPlan(planId) {
   const plan = await repo.findById(planId);
   if (!plan || (plan.visibility !== 'public' && !plan.isPublic)) {
@@ -516,6 +541,7 @@ module.exports = {
   getPlanProgress,
   listPublicPlans,
   getPublicPlan,
+  getPlanForUnfurl,
   getPublicPlanKnowledgeDigest,
   updatePlanVisibility,
   incrementViewCount,

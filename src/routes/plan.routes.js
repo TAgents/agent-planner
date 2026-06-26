@@ -365,6 +365,32 @@ router.get('/public/:id/og.svg', planController.getPublicPlanOgSvg);
 
 /**
  * @swagger
+ * /plans/{id}/preview:
+ *   get:
+ *     summary: OpenGraph/Twitter meta for a plan link (for unfurler bots)
+ *     description: |
+ *       Server-rendered HTML meta tags so Slack/Twitter/etc. unfurl plan links
+ *       (the SPA's JS doesn't run for bots). No auth. VISIBILITY-SAFE: only
+ *       public/unlisted plans expose a title/description; private or missing
+ *       plans return generic AgentPlanner meta so nothing leaks. nginx routes
+ *       crawler User-Agents on /app/plans/:id here; humans get the SPA.
+ *     tags: [Plans]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: HTML document with OG/Twitter meta tags
+ *         content:
+ *           text/html:
+ *             schema: { type: string }
+ */
+router.get('/:id/preview', planController.getPlanPreviewMeta);
+
+/**
+ * @swagger
  * /plans/public/{id}/knowledge-digest:
  *   get:
  *     summary: Recent agent-learned knowledge for a public plan

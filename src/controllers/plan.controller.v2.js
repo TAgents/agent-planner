@@ -246,6 +246,65 @@ const getPublicPlanOgSvg = async (req, res, next) => {
   }
 };
 
+/**
+ * Server-rendered OpenGraph/Twitter meta for a plan link, for unfurler bots
+ * (Slack, Twitter, etc.) that don't run the SPA's JS. Unauthenticated and
+ * VISIBILITY-SAFE: only public/unlisted plans expose a title/description; a
+ * private or missing plan returns generic AgentPlanner meta so nothing leaks.
+ * nginx routes crawler User-Agents on /app/plans/:id here; humans get the SPA.
+ */
+const escapeHtml = (s) => String(s ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+const PUBLIC_URL = (process.env.PUBLIC_URL || process.env.FRONTEND_URL || 'https://agentplanner.io').replace(/\/$/, '');
+
+function previewHtml({ title, description, url, image }) {
+  const t = escapeHtml(title);
+  const d = escapeHtml(description);
+  const u = escapeHtml(url);
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>${t}</title>
+<meta name="description" content="${d}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="AgentPlanner">
+<meta property="og:title" content="${t}">
+<meta property="og:description" content="${d}">
+<meta property="og:url" content="${u}">
+${image ? `<meta property="og:image" content="${escapeHtml(image)}">` : ''}
+<meta name="twitter:card" content="${image ? 'summary_large_image' : 'summary'}">
+<meta name="twitter:title" content="${t}">
+<meta name="twitter:description" content="${d}">
+<meta http-equiv="refresh" content="0; url=${u}">
+</head><body><p>Redirecting to <a href="${u}">${t}</a>…</p></body></html>`;
+}
+
+const getPlanPreviewMeta = async (req, res) => {
+  const appUrl = `${PUBLIC_URL}/app/plans/${encodeURIComponent(req.params.id)}`;
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.set('Cache-Control', 'public, max-age=300, s-maxage=900');
+  try {
+    const plan = await planService.getPlanForUnfurl(req.params.id);
+    const nodeWord = plan.node_count === 1 ? 'node' : 'nodes';
+    const desc = (plan.description && plan.description.trim())
+      || `${plan.node_count} ${nodeWord}${plan.owner?.name ? ` · by ${plan.owner.name}` : ''} on AgentPlanner`;
+    // og.svg only serves `public` plans; for `unlisted` go text-only to avoid a
+    // broken image. (PNG + unlisted image is the fast-follow.)
+    const image = plan.visibility === 'public'
+      ? `${PUBLIC_URL}/api/plans/public/${encodeURIComponent(req.params.id)}/og.svg`
+      : null;
+    res.send(previewHtml({ title: plan.title || 'AgentPlanner plan', description: desc, url: appUrl, image }));
+  } catch (error) {
+    // Private / missing / any error → generic, leak-safe meta (no plan content).
+    res.send(previewHtml({
+      title: 'AgentPlanner',
+      description: 'Agent-first planning — agents drive, humans steer.',
+      url: appUrl,
+      image: null,
+    }));
+  }
+};
+
 const getPublicPlansSitemap = async (req, res, next) => {
   try {
     const result = await planService.listPublicPlans({ page: 1, limit: 50, sortBy: 'recent' });
@@ -306,5 +365,6 @@ module.exports = {
   listCollaborators, addCollaborator, removeCollaborator,
   getPlanContext, getPlanProgress,
   listPublicPlans, getPublicPlan, getPublicPlanById, getPublicPlanKnowledgeDigest, getPublicPlanOgSvg, getPublicPlansSitemap,
+  getPlanPreviewMeta,
   updatePlanVisibility, incrementViewCount, linkGitHubRepo,
 };

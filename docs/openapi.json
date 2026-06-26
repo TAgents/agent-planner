@@ -6396,6 +6396,37 @@
         }
       }
     },
+    "/plans/{id}/preview": {
+      "get": {
+        "summary": "OpenGraph/Twitter meta for a plan link (for unfurler bots)",
+        "description": "Server-rendered HTML meta tags so Slack/Twitter/etc. unfurl plan links\n(the SPA's JS doesn't run for bots). No auth. VISIBILITY-SAFE: only\npublic/unlisted plans expose a title/description; private or missing\nplans return generic AgentPlanner meta so nothing leaks. nginx routes\ncrawler User-Agents on /app/plans/:id here; humans get the SPA.\n",
+        "tags": [
+          "Plans"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "HTML document with OG/Twitter meta tags",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/plans/public/{id}/knowledge-digest": {
       "get": {
         "summary": "Recent agent-learned knowledge for a public plan",

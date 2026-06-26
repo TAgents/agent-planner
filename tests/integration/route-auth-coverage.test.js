@@ -51,6 +51,7 @@ const PUBLIC_ALLOWLIST = new Set([
   'GET /plans/public/:id',
   'GET /plans/public/:id/og.svg',
   'GET /plans/public/:id/knowledge-digest',
+  'GET /plans/:id/preview', // unfurl OG meta — visibility-safe, no auth (bots)
   'GET /plans/:id/public',
   'POST /plans/:id/view',
   // Public blueprint gallery (visibility-gated)
