@@ -919,6 +919,47 @@ router.get('/:goalId/briefing', authenticate, async (req, res) => {
  *       200:
  *         description: Goal coherence score and signal breakdown
  */
+// The Graphiti query behind a goal's coherence contradictions count AND the
+// contradictions drill-down: the first 10 incomplete task/milestone titles
+// across the goal's linked plans. Shared so the count and the detail can't drift.
+async function goalContradictionQuery(planIds) {
+  const flatNodes = (await Promise.all(planIds.map(id => nodesDal.listByPlan(id).catch(() => []))))
+    .flat()
+    .filter(n => (n.nodeType === 'task' || n.nodeType === 'milestone') && n.status !== 'completed')
+    .slice(0, 10);
+  if (flatNodes.length === 0) return null;
+  return flatNodes.map(t => t.title).join('. ');
+}
+
+// Drill-down behind the "N knowledge contradictions" count: returns the actual
+// current vs. superseded facts (the count itself is superseded.length). Same
+// query as /coherence, so the panel always matches the number.
+router.get('/:id/contradictions', authenticate, async (req, res) => {
+  try {
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
+    const planIds = (goal.links || []).filter(l => l.linkedType === 'plan').map(l => l.linkedId);
+    const empty = { goal_id: goal.id, query: null, current: [], superseded: [], contradictions_found: false };
+    if (planIds.length === 0 || !graphitiBridge.isAvailable()) return res.json(empty);
+
+    const query = await goalContradictionQuery(planIds);
+    if (!query) return res.json(empty);
+
+    const groupId = graphitiBridge.getGroupId(req.user);
+    const result = await graphitiBridge.detectContradictions({ query, group_id: groupId, max_results: 20 });
+    return res.json({
+      goal_id: goal.id,
+      query,
+      current: result?.current || [],
+      superseded: result?.superseded || [],
+      contradictions_found: Boolean(result?.contradictions_found),
+    });
+  } catch (err) {
+    await logger.error('Goal contradictions error:', err);
+    res.status(500).json({ error: 'Failed to fetch goal contradictions' });
+  }
+});
+
 router.get('/:id/coherence', authenticate, async (req, res) => {
   try {
     const goal = await requireGoalAccess(req, res);
@@ -955,13 +996,9 @@ router.get('/:id/coherence', authenticate, async (req, res) => {
       (async () => {
         if (!graphitiBridge.isAvailable()) return null;
         try {
+          const query = await goalContradictionQuery(planIds);
+          if (!query) return null;
           const groupId = graphitiBridge.getGroupId(req.user);
-          const flatNodes = (await Promise.all(planIds.map(id => nodesDal.listByPlan(id).catch(() => []))))
-            .flat()
-            .filter(n => (n.nodeType === 'task' || n.nodeType === 'milestone') && n.status !== 'completed')
-            .slice(0, 10);
-          if (flatNodes.length === 0) return null;
-          const query = flatNodes.map(t => t.title).join('. ');
           return await graphitiBridge.detectContradictions({ query, group_id: groupId, max_results: 20 });
         } catch {
           return null;
