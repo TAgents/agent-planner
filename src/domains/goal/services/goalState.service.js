@@ -49,13 +49,16 @@ async function assessGoalQuality(goal, user) {
   };
   if (!hasCriteria) suggestions.push('Define success criteria with specific metrics and targets (e.g., "API latency < 100ms p99")');
 
-  // 3. Actionability — has linked plans
-  const planLinks = (goal.links || []).filter(l => l.linkedType === 'plan');
+  // 3. Actionability — has linked plans. Count DISTINCT, NON-ARCHIVED linked
+  // plans, the same definition as briefing/goal_state, so the numbers agree.
+  const planIds = [...new Set((goal.links || []).filter(l => l.linkedType === 'plan').map(l => l.linkedId))];
+  const planRows = planIds.length ? await dal.plansDal.findByIds(planIds) : [];
+  const activePlanCount = planRows.filter(p => p.status !== 'archived').length;
   dimensions.actionability = {
-    score: planLinks.length > 0 ? Math.min(planLinks.length / 2, 1.0) : 0,
-    detail: planLinks.length > 0 ? `${planLinks.length} plan${planLinks.length > 1 ? 's' : ''} linked` : 'No plans linked — goal has no execution path',
+    score: activePlanCount > 0 ? Math.min(activePlanCount / 2, 1.0) : 0,
+    detail: activePlanCount > 0 ? `${activePlanCount} plan${activePlanCount > 1 ? 's' : ''} linked` : 'No plans linked — goal has no execution path',
   };
-  if (planLinks.length === 0) suggestions.push('Link at least one plan that works toward this goal');
+  if (activePlanCount === 0) suggestions.push('Link at least one plan that works toward this goal');
 
   // 4. Knowledge grounding — knowledge exists for success criteria
   let knowledgeScore = 0.5; // Neutral default
