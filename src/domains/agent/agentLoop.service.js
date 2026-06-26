@@ -5,6 +5,7 @@ const reasoning = require('../../services/reasoning');
 const graphitiBridge = require('../../services/graphitiBridge');
 const { coherenceFields } = require('../../services/coherenceVocab');
 const { evaluatePlanQuality } = require('../../services/planQualityEvaluator');
+const { classifyGoalHealth } = require('../../utils/goalHealth');
 
 // A plan with this many actionable tasks and zero dependency edges is flagged
 // as weakly structured — agents can produce a valid-looking tree with no
@@ -86,16 +87,16 @@ async function goalDashboard(user) {
 
     const lastActivity = row.last_log_at || null;
     const lastActivityTs = lastActivity ? new Date(lastActivity).getTime() : null;
-    // A goal with no execution path (no plans / no tasks) isn't "on track" — it
-    // needs planning. Previously the `planIds.length > 0` guard made such goals
-    // fall through to on_track, hiding them from the agent. Treat no-path goals
-    // as stale so they surface for action.
-    const hasPath = planIds.length > 0 && totalNodes > 0;
-    const isStale = !hasPath || !lastActivityTs || (Date.now() - lastActivityTs > 3 * 24 * 60 * 60 * 1000);
     const percentBlocked = totalNodes ? Math.round((blockedNodes / totalNodes) * 100) : 0;
-    const health = isStale
-      ? 'stale'
-      : (bottleneckSummary.length > 0 || percentBlocked > 30 || stalePending > 0 ? 'at_risk' : 'on_track');
+    // Shared classifier so briefing + dashboard can never diverge (see utils/goalHealth).
+    const health = classifyGoalHealth({
+      hasLinkedPlans: planIds.length > 0,
+      totalNodes,
+      lastActivityTs,
+      bottleneckCount: bottleneckSummary.length,
+      percentBlocked,
+      stalePendingCount: stalePending,
+    });
 
     return {
       id: row.id,

@@ -21,6 +21,7 @@ const organizationsDal = require('../../db/dal.cjs').organizationsDal;
 const graphitiBridge = require('../../services/graphitiBridge');
 const reasoning = require('../../services/reasoning');
 const goalStateService = require('../../domains/goal/services/goalState.service');
+const { classifyGoalHealth } = require('../../utils/goalHealth');
 const { coherenceFields } = require('../../services/coherenceVocab');
 
 const VALID_LINK_TYPES = ['plan', 'task', 'agent'];
@@ -199,23 +200,19 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
           .slice(0, 3);
       }
 
-      // Determine health status
-      const now = Date.now();
-      const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+      // Determine health status via the shared classifier (utils/goalHealth)
+      // so this dashboard and the briefing can't disagree. Previously the stale
+      // check here was gated on hasLinkedPlans, so a goal with no plans fell
+      // through to on_track while the briefing called the same goal stale.
       const lastActivityTs = lastLogAt ? new Date(lastLogAt).getTime() : null;
-      const hasLinkedPlans = linkedPlanCount > 0;
-
-      let health = 'on_track';
-
-      if (hasLinkedPlans && (!lastActivityTs || (now - lastActivityTs) > threeDaysMs)) {
-        health = 'stale';
-      } else if (
-        bottleneckSummary.length > 0 ||
-        percentBlocked > 30 ||
-        stalePendingDecisions > 0
-      ) {
-        health = 'at_risk';
-      }
+      const health = classifyGoalHealth({
+        hasLinkedPlans: linkedPlanCount > 0,
+        totalNodes,
+        lastActivityTs,
+        bottleneckCount: bottleneckSummary.length,
+        percentBlocked,
+        stalePendingCount: stalePendingDecisions,
+      });
 
       return {
         id: row.id,
@@ -1214,7 +1211,10 @@ async function getKnowledgeStatus(nodes, user) {
  *  - stale: no recent activity on incomplete tasks
  */
 function calculateHealth(progress, bottlenecks, nodes) {
-  if (progress.total_tasks === 0) return 'on_track';
+  // A goal with no tasks has no execution path — it needs planning, not a
+  // clean bill of health. Matches the shared classifier (utils/goalHealth) and
+  // the briefing, where no-path goals are stale rather than on_track.
+  if (progress.total_tasks === 0) return 'stale';
 
   // Stale: check if any incomplete task was updated in the last 7 days
   const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
