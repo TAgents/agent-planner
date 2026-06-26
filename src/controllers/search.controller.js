@@ -42,12 +42,17 @@ const globalSearch = async (req, res, next) => {
       }
     }
 
-    // Categorize results
+    // Categorize results. Plan title/description match is tokenized (all query
+    // words must appear), consistent with searchDal — a single whole-phrase
+    // includes() matched almost nothing for multi-word queries.
+    const ql = query.toLowerCase().trim();
+    const tokens = ql.split(/\s+/).filter(t => t.length >= 2);
+    const planMatches = (p) => {
+      const hay = `${p.title || ''} ${p.description || ''}`.toLowerCase();
+      return tokens.length ? tokens.every(t => hay.includes(t)) : hay.includes(ql);
+    };
     const plans = ownedPlans
-      .filter(p => 
-        p.title?.toLowerCase().includes(query.toLowerCase()) ||
-        p.description?.toLowerCase().includes(query.toLowerCase())
-      )
+      .filter(planMatches)
       .map(p => ({ id: p.id, type: 'plan', title: p.title, description: p.description, status: p.status, created_at: p.createdAt }));
 
     const nodes = allResults.filter(r => r.type === 'node');
