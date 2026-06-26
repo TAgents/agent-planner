@@ -33,21 +33,18 @@ const getTokens = async (req, res, next) => {
 const createToken = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { name, permissions = ['read'] } = req.body;
+    const { name } = req.body;
 
     if (!name) {
       return res.status(400).json({ error: 'Token name is required' });
     }
 
-    // Validate permissions
-    const validPermissions = ['read', 'write', 'admin'];
-    for (const perm of permissions) {
-      if (!validPermissions.includes(perm)) {
-        return res.status(400).json({ 
-          error: `Invalid permission: ${perm}. Valid values are: ${validPermissions.join(', ')}` 
-        });
-      }
-    }
+    // Token scopes were never enforced, and read-only tokens made agents
+    // conclude they couldn't act (creating goals/plans/tasks). API tokens are
+    // now full-access — same as the OAuth connector, which acts as the full
+    // user. Any `permissions` in the body is ignored. `FULL_ACCESS` keeps the
+    // column populated for back-compat with code that still reads it.
+    const FULL_ACCESS = ['read', 'write', 'admin'];
 
     // Generate a random token
     const tokenValue = crypto.randomBytes(32).toString('hex');
@@ -68,7 +65,7 @@ const createToken = async (req, res, next) => {
       organizationId: req.user.organizationId || null,
       name,
       tokenHash: tokenHash,
-      permissions,
+      permissions: FULL_ACCESS,
       createdAt: now,
       revoked: false
     });

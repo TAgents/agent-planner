@@ -561,7 +561,8 @@ router.get('/token', authenticate, tokenController.getTokens);
  * @swagger
  * /auth/token:
  *   post:
- *     summary: Create an API token with specific scopes
+ *     summary: Create an API token
+ *     description: Tokens are full-access (the same authority as the OAuth connector). Any permissions field in the body is ignored.
  *     tags: [Authentication]
  *     security:
  *       - bearerAuth: []
@@ -577,12 +578,6 @@ router.get('/token', authenticate, tokenController.getTokens);
  *               name:
  *                 type: string
  *                 description: A name for the token
- *               permissions:
- *                 type: array
- *                 items:
- *                   type: string
- *                   enum: [read, write, admin]
- *                 description: Permission levels for the token
  *     responses:
  *       201:
  *         description: Token created successfully
