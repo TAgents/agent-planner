@@ -173,6 +173,16 @@ router.post('/:id/coherence/check', authenticate, async (req, res, next) => {
       plan_id: planId,
       quality,
       coherence_issues_count: flaggedNodes.length,
+      // Surface WHICH nodes are flagged and why, not just a count — otherwise
+      // "1 coherence issue" is unactionable. The flagged nodes are already
+      // loaded here; include the per-node detail.
+      coherence_issues: flaggedNodes.map(n => ({
+        node_id: n.id,
+        title: n.title,
+        node_type: n.nodeType,
+        status: n.status,
+        coherence_status: n.coherenceStatus,
+      })),
       checked_at: new Date().toISOString(),
     });
   } catch (error) {
