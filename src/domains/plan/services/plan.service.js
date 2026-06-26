@@ -404,6 +404,7 @@ async function getPlanForUnfurl(planId, { userId } = {}) {
     id: plan.id,
     title: plan.title,
     description: plan.description,
+    nodes, // for the share-card (phases/progress)
     visibility: plan.visibility,
     owner: owner ? { name: owner.name } : null,
     node_count: countNodes(nodes),

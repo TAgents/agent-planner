@@ -335,7 +335,7 @@ function renderCardPng(svg) {
 
 const getPublicPlanOgSvg = async (req, res, next) => {
   try {
-    const svg = buildPlanCardSvg(await planService.getPublicPlan(req.params.id));
+    const svg = buildPlanCardSvg(await planService.getPlanForUnfurl(req.params.id));
     res.set('Content-Type', 'image/svg+xml; charset=utf-8');
     res.set('Cache-Control', 'public, max-age=600, s-maxage=3600');
     res.send(svg);
@@ -351,7 +351,7 @@ const getPublicPlanOgSvg = async (req, res, next) => {
 
 const getPublicPlanOgPng = async (req, res, next) => {
   try {
-    const png = renderCardPng(buildPlanCardSvg(await planService.getPublicPlan(req.params.id)));
+    const png = renderCardPng(buildPlanCardSvg(await planService.getPlanForUnfurl(req.params.id)));
     res.set('Content-Type', 'image/png');
     res.set('Cache-Control', 'public, max-age=600, s-maxage=3600');
     res.send(png);
@@ -407,9 +407,10 @@ const getPlanPreviewMeta = async (req, res) => {
     const nodeWord = plan.node_count === 1 ? 'node' : 'nodes';
     const desc = (plan.description && plan.description.trim())
       || `${plan.node_count} ${nodeWord}${plan.owner?.name ? ` · by ${plan.owner.name}` : ''} on AgentPlanner`;
-    // og.svg only serves `public` plans; for `unlisted` go text-only to avoid a
-    // broken image. (PNG + unlisted image is the fast-follow.)
-    const image = plan.visibility === 'public'
+    // The card image renders for public AND unlisted (anyone-with-link). Private
+    // stays imageless — even an authorized private preview omits it, since the
+    // og.png endpoint is anonymous (Slack can't auth) and would 404.
+    const image = (plan.visibility === 'public' || plan.visibility === 'unlisted')
       ? `${PUBLIC_URL}/api/plans/public/${encodeURIComponent(req.params.id)}/og.png`
       : null;
     res.send(previewHtml({ title: plan.title || 'AgentPlanner plan', description: desc, url: appUrl, image }));

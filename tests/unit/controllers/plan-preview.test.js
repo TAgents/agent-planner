@@ -38,15 +38,15 @@ describe('GET /plans/:id/preview — unfurl meta', () => {
     expect(html).toContain('content="summary_large_image"');
   });
 
-  it('unlisted plan → title shown but text-only (no image)', async () => {
+  it('unlisted plan → title + image (anyone-with-link gets the full card)', async () => {
     planService.getPlanForUnfurl.mockResolvedValue({
       id: PLAN_ID, title: 'Unlisted Plan', description: '', visibility: 'unlisted',
       owner: { name: 'Ada' }, node_count: 1,
     });
     const html = await run();
     expect(html).toContain('og:title" content="Unlisted Plan"');
-    expect(html).not.toContain('og:image');
-    expect(html).toContain('content="summary"');
+    expect(html).toContain(`/api/plans/public/${PLAN_ID}/og.png`);
+    expect(html).toContain('content="summary_large_image"');
     // Falls back to a stats-based description when none is set.
     expect(html).toContain('1 node · by Ada on AgentPlanner');
   });
