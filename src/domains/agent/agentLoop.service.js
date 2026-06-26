@@ -156,7 +156,7 @@ async function pendingItemsForPlans(planIds, limit = 10) {
   };
 }
 
-async function getBriefing(user, { goal_id, plan_id, recent_window_hours = 24 } = {}) {
+async function getBriefing(user, { goal_id, plan_id, recent_window_hours = 24, scope } = {}) {
   const plans = await accessiblePlanIds(user.id, user.organizationId || null);
   let scopedPlanIds = plans.map(p => p.id);
   if (plan_id) scopedPlanIds = scopedPlanIds.filter(id => id === plan_id);
@@ -207,9 +207,14 @@ async function getBriefing(user, { goal_id, plan_id, recent_window_hours = 24 } 
     }
   }
 
+  const effectiveScope = plan_id ? 'plan' : (goal_id ? 'goal' : 'mission_control');
   return {
     as_of: asOf(),
-    scope: plan_id ? 'plan' : (goal_id ? 'goal' : 'mission_control'),
+    // Echo the caller's requested scope (the MCP uses a different vocabulary,
+    // e.g. 'task_session'/'org') plus the effective data scope derived from the
+    // ids, so the response no longer silently contradicts the request.
+    scope: scope || effectiveScope,
+    effective_scope: effectiveScope,
     goal_health: { summary: filteredSummary, goals },
     pending_decisions: pending.pending_decisions,
     active_claims: pending.active_claims,

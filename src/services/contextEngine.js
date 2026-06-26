@@ -237,6 +237,11 @@ async function assembleContext(nodeId, opts = {}) {
       .map(snakeNodeMinimal);
   }
 
+  // Children — the focal node's direct descendants. Without this you can only
+  // walk a plan tree sideways (siblings) or up (parent/ancestry), never DOWN,
+  // which makes a plan/phase impossible to enumerate from the top.
+  context.children = (await dal.nodesDal.getChildren(nodeId)).map(snakeNodeMinimal);
+
   // Direct dependencies (upstream = what blocks me, downstream = what I block)
   try {
     const deps = await dal.dependenciesDal.listByNode(nodeId, 'both');

@@ -273,8 +273,18 @@ async function getGoalState(goal, user) {
     }));
 
   const links = Array.isArray(goal.links) ? goal.links : [];
-  const linkedPlans = links.filter(l => l.linkedType === 'plan').map(l => ({ id: l.linkedId, link_id: l.id }));
-  const linkedTasks = links.filter(l => l.linkedType === 'task').map(l => ({ id: l.linkedId, link_id: l.id }));
+  // Dedupe plan links by plan id — a plan can be linked more than once, which
+  // otherwise inflates the count vs. briefing's distinct linked_plan_count.
+  const linkedPlans = [...new Map(
+    links.filter(l => l.linkedType === 'plan').map(l => [l.linkedId, { id: l.linkedId, link_id: l.id }]),
+  ).values()];
+  // Explicit task links (linkedType==='task') are rarely used; the tasks that
+  // actually contribute to the goal are its achiever path. Surface those so
+  // linked_tasks isn't misleadingly empty. Fall back to explicit links.
+  const pathNodes = Array.isArray(path.nodes) ? path.nodes : [];
+  const linkedTasks = pathNodes.length
+    ? pathNodes.map(t => ({ id: t.node_id || t.id, title: t.title, status: t.status }))
+    : links.filter(l => l.linkedType === 'task').map(l => ({ id: l.linkedId, link_id: l.id }));
 
   return {
     as_of: asOf(),
