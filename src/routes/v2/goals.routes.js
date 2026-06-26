@@ -282,7 +282,8 @@ router.get('/', authenticate, async (req, res) => {
 // POST /api/goals
 router.post('/', authenticate, validateBody(createGoalSchema), async (req, res) => {
   try {
-    const { title, description, type, goalType, status, successCriteria, priority, parentGoalId, organizationId } = req.body;
+    const { title, description, type, goalType, status, priority, parentGoalId, organizationId } = req.body;
+    const successCriteria = req.body.successCriteria ?? req.body.success_criteria;
     const resolvedOrgId = organizationId || req.user.organizationId || null;
     let workspaceId = req.body.workspaceId || req.body.workspace_id || null;
     // Workspace-first invariant: fall back to the org's default workspace so
@@ -342,7 +343,10 @@ router.put('/:id', authenticate, validateBody(updateGoalSchema), async (req, res
     const existing = await requireGoalAccess(req, res);
     if (!existing) return;
 
-    const { title, description, type, status, goalType, successCriteria, priority, parentGoalId } = req.body;
+    const { title, description, type, status, goalType, priority, parentGoalId } = req.body;
+    const successCriteria = req.body.successCriteria !== undefined
+      ? req.body.successCriteria
+      : req.body.success_criteria;
     const workspaceId = req.body.workspaceId !== undefined
       ? req.body.workspaceId
       : (req.body.workspace_id !== undefined ? req.body.workspace_id : undefined);

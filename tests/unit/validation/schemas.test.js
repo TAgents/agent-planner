@@ -441,4 +441,34 @@ describe('Validation Schemas', () => {
       });
     });
   });
+
+  describe('Goal Schemas — success_criteria key tolerance', () => {
+    // The goal schema is .strict() and historically only accepted camelCase
+    // `successCriteria`, so MCP clients sending snake_case `success_criteria`
+    // (the convention the node schema uses) got a 400. Accept both, like the
+    // existing workspaceId/workspace_id dual key.
+    it('updateGoal accepts snake_case success_criteria', () => {
+      const result = schemas.goal.updateGoal.safeParse({
+        success_criteria: { criteria: ['Ship it'] },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('updateGoal still accepts camelCase successCriteria', () => {
+      const result = schemas.goal.updateGoal.safeParse({ successCriteria: ['Ship it'] });
+      expect(result.success).toBe(true);
+    });
+
+    it('createGoal accepts snake_case success_criteria', () => {
+      const result = schemas.goal.createGoal.safeParse({
+        title: 'G', success_criteria: ['Reach 50 users'],
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('still rejects a genuinely unknown key (strict)', () => {
+      const result = schemas.goal.updateGoal.safeParse({ bogus_field: 1 });
+      expect(result.success).toBe(false);
+    });
+  });
 });

@@ -34,6 +34,7 @@ const createGoal = z.object({
   goalType: goalKind.optional(),  // deprecated; do not default — commitment derives from promoted_at
   status: goalStatus.optional().default('active'),
   successCriteria: successCriteria,
+  success_criteria: successCriteria,  // snake_case alias (cf. workspaceId/workspace_id)
   priority: z.number().int().min(0).max(10).optional().default(0),
   parentGoalId: optionalUuid,
   organizationId: optionalUuid,
@@ -49,6 +50,7 @@ const updateGoal = z.object({
   goalType: goalKind.optional(),
   status: goalStatus.optional(),
   successCriteria: successCriteria,
+  success_criteria: successCriteria,  // snake_case alias (cf. workspaceId/workspace_id)
   priority: z.number().int().min(0).max(10).optional(),
   parentGoalId: optionalUuid,
   // v1.1 — move this goal to a different workspace, or unassign with null
