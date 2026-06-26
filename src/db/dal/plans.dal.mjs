@@ -10,6 +10,14 @@ export const plansDal = {
     return plan ?? null;
   },
 
+  // Bulk id → {id, status, title} lookup. Missing ids are simply absent from
+  // the result (used to filter out deleted/archived links).
+  async findByIds(ids) {
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+    return db.select({ id: plans.id, status: plans.status, title: plans.title })
+      .from(plans).where(inArray(plans.id, ids));
+  },
+
   async create(data) {
     const [plan] = await db.insert(plans).values(data).returning();
     return plan;

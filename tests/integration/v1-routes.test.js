@@ -239,6 +239,8 @@ jest.mock('../../src/db/dal.cjs', () => ({
   plansDal: {
     listForUser: jest.fn().mockResolvedValue({ owned: [], shared: [], organization: [] }),
     findById: jest.fn().mockResolvedValue(null),
+    // Echo requested ids as active plans so goal_state's non-archived filter keeps them.
+    findByIds: jest.fn().mockImplementation((ids) => Promise.resolve((ids || []).map((id) => ({ id, status: 'active' })))),
     create: jest.fn().mockResolvedValue(null),
     update: jest.fn().mockResolvedValue(null),
     delete: jest.fn().mockResolvedValue(null),

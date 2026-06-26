@@ -384,6 +384,19 @@ export const goalsDal = {
         INNER JOIN user_goals ug ON ug.id = gl.goal_id
         WHERE gl.linked_type = 'plan'
       ),
+      -- "Linked plans" = distinct NON-ARCHIVED plans linked to the goal (the
+      -- canonical definition shared with goal_state). Counted from the plans
+      -- table directly, not plan_node_stats, so empty-but-active plans still
+      -- count and archived/deleted stubs don't.
+      linked_plan_summary AS (
+        SELECT lp.goal_id,
+               COUNT(DISTINCT lp.plan_id)::int AS linked_plan_count,
+               json_agg(DISTINCT lp.plan_id) AS plan_ids
+        FROM linked_plans lp
+        INNER JOIN plans p ON p.id = lp.plan_id
+        WHERE p.status <> 'archived'
+        GROUP BY lp.goal_id
+      ),
       plan_node_stats AS (
         SELECT lp.goal_id,
                lp.plan_id,
@@ -431,11 +444,12 @@ export const goalsDal = {
              COALESCE(ga.agent_request_nodes, 0)::int AS agent_request_nodes,
              COALESCE(ga.stale_plan_ready_nodes, 0)::int AS stale_plan_ready_nodes,
              COALESCE(ga.stale_agent_request_nodes, 0)::int AS stale_agent_request_nodes,
-             COALESCE(ga.linked_plan_count, 0)::int AS linked_plan_count,
-             COALESCE(ga.plan_ids, '[]'::json) AS plan_ids,
+             COALESCE(lps.linked_plan_count, 0)::int AS linked_plan_count,
+             COALESCE(lps.plan_ids, '[]'::json) AS plan_ids,
              lla.last_log_at
       FROM user_goals ug
       LEFT JOIN goal_aggregates ga ON ga.goal_id = ug.id
+      LEFT JOIN linked_plan_summary lps ON lps.goal_id = ug.id
       LEFT JOIN last_log_activity lla ON lla.goal_id = ug.id
       ORDER BY ug.priority DESC, ug.created_at DESC
     `;

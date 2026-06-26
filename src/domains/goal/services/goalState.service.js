@@ -273,11 +273,18 @@ async function getGoalState(goal, user) {
     }));
 
   const links = Array.isArray(goal.links) ? goal.links : [];
-  // Dedupe plan links by plan id — a plan can be linked more than once, which
-  // otherwise inflates the count vs. briefing's distinct linked_plan_count.
-  const linkedPlans = [...new Map(
+  // Canonical "linked plans" = distinct NON-ARCHIVED (and still-existing) plans
+  // linked to the goal — same definition as the dashboard/briefing count. Dedupe
+  // by plan id, then drop archived/deleted stubs.
+  const dedupedPlanLinks = [...new Map(
     links.filter(l => l.linkedType === 'plan').map(l => [l.linkedId, { id: l.linkedId, link_id: l.id }]),
   ).values()];
+  const planRows = await dal.plansDal.findByIds(dedupedPlanLinks.map(p => p.id));
+  const liveStatus = new Map(planRows.map(p => [p.id, p.status]));
+  const linkedPlans = dedupedPlanLinks.filter(p => {
+    const st = liveStatus.get(p.id);
+    return st !== undefined && st !== 'archived';
+  });
   // Explicit task links (linkedType==='task') are rarely used; the tasks that
   // actually contribute to the goal are its achiever path. Surface those so
   // linked_tasks isn't misleadingly empty. Fall back to explicit links.
