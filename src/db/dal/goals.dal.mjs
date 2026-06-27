@@ -369,7 +369,7 @@ export const goalsDal = {
       WITH user_goals AS (
         SELECT g.id, g.title, g.description, g.type,
                (g.promoted_at IS NOT NULL) AS committed,
-               g.status, g.priority,
+               g.status, g.priority, g.success_criteria,
                g.created_at, g.updated_at, g.owner_id,
                u.name AS owner_name
         FROM goals g
@@ -436,6 +436,7 @@ export const goalsDal = {
         GROUP BY pns.goal_id
       )
       SELECT ug.id, ug.title, ug.description, ug.type, ug.committed, ug.status, ug.priority,
+             ug.success_criteria,
              ug.created_at, ug.updated_at, ug.owner_name,
              COALESCE(ga.total_nodes, 0)::int AS total_nodes,
              COALESCE(ga.completed_nodes, 0)::int AS completed_nodes,

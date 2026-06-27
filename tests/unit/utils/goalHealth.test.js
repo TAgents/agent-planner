@@ -30,4 +30,28 @@ describe('classifyGoalHealth — single source of truth for briefing + dashboard
   it('percentBlocked exactly at the 30% threshold is not yet at_risk', () => {
     expect(classifyGoalHealth({ hasLinkedPlans: true, totalNodes: 10, lastActivityTs: fresh, percentBlocked: 30, now: NOW })).toBe('on_track');
   });
+
+  describe('attainment signal — execution outpacing outcomes', () => {
+    const base = { hasLinkedPlans: true, totalNodes: 10, lastActivityTs: fresh, now: NOW };
+
+    it('tasks moving but the metric is flat (execution >> attainment) → at_risk', () => {
+      expect(classifyGoalHealth({ ...base, executionPct: 80, attainmentPct: 20 })).toBe('at_risk');
+    });
+
+    it('execution and attainment in step → on_track', () => {
+      expect(classifyGoalHealth({ ...base, executionPct: 80, attainmentPct: 70 })).toBe('on_track');
+    });
+
+    it('no measurable criteria (attainmentPct null) → signal skipped, on_track', () => {
+      expect(classifyGoalHealth({ ...base, executionPct: 90, attainmentPct: null })).toBe('on_track');
+    });
+
+    it('fully attained (100%) never reads as lagging', () => {
+      expect(classifyGoalHealth({ ...base, executionPct: 100, attainmentPct: 100 })).toBe('on_track');
+    });
+
+    it('low execution does not trigger the lag signal even if attainment is 0', () => {
+      expect(classifyGoalHealth({ ...base, executionPct: 20, attainmentPct: 0 })).toBe('on_track');
+    });
+  });
 });

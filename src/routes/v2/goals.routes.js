@@ -22,7 +22,7 @@ const graphitiBridge = require('../../services/graphitiBridge');
 const reasoning = require('../../services/reasoning');
 const goalStateService = require('../../domains/goal/services/goalState.service');
 const { classifyGoalHealth } = require('../../utils/goalHealth');
-const { canonicalizeCriteria, autoAchieveStatus } = require('../../utils/goalCriteria');
+const { canonicalizeCriteria, autoAchieveStatus, criteriaAttainment } = require('../../utils/goalCriteria');
 const { coherenceFields } = require('../../services/coherenceVocab');
 
 const VALID_LINK_TYPES = ['plan', 'task', 'agent'];
@@ -206,6 +206,7 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
       // check here was gated on hasLinkedPlans, so a goal with no plans fell
       // through to on_track while the briefing called the same goal stale.
       const lastActivityTs = lastLogAt ? new Date(lastLogAt).getTime() : null;
+      const { attainment_pct } = criteriaAttainment(row.success_criteria);
       const health = classifyGoalHealth({
         hasLinkedPlans: linkedPlanCount > 0,
         totalNodes,
@@ -213,6 +214,8 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
         bottleneckCount: bottleneckSummary.length,
         percentBlocked,
         stalePendingCount: stalePendingDecisions,
+        attainmentPct: attainment_pct,
+        executionPct: percentCompleted,
       });
 
       return {

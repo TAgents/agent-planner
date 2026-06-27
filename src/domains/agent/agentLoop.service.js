@@ -6,6 +6,7 @@ const graphitiBridge = require('../../services/graphitiBridge');
 const { coherenceFields } = require('../../services/coherenceVocab');
 const { evaluatePlanQuality } = require('../../services/planQualityEvaluator');
 const { classifyGoalHealth } = require('../../utils/goalHealth');
+const { criteriaAttainment } = require('../../utils/goalCriteria');
 
 // A plan with this many actionable tasks and zero dependency edges is flagged
 // as weakly structured — agents can produce a valid-looking tree with no
@@ -88,6 +89,8 @@ async function goalDashboard(user) {
     const lastActivity = row.last_log_at || null;
     const lastActivityTs = lastActivity ? new Date(lastActivity).getTime() : null;
     const percentBlocked = totalNodes ? Math.round((blockedNodes / totalNodes) * 100) : 0;
+    const percentCompleted = totalNodes ? Math.round((completedNodes / totalNodes) * 100) : 0;
+    const { attainment_pct } = criteriaAttainment(row.success_criteria);
     // Shared classifier so briefing + dashboard can never diverge (see utils/goalHealth).
     const health = classifyGoalHealth({
       hasLinkedPlans: planIds.length > 0,
@@ -96,6 +99,8 @@ async function goalDashboard(user) {
       bottleneckCount: bottleneckSummary.length,
       percentBlocked,
       stalePendingCount: stalePending,
+      attainmentPct: attainment_pct,
+      executionPct: percentCompleted,
     });
 
     return {
