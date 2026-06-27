@@ -12,6 +12,7 @@
 const dal = require('../../../db/dal.cjs');
 const graphitiBridge = require('../../../services/graphitiBridge');
 const logger = require('../../../utils/logger');
+const { normalizeCriteria } = require('../../../utils/goalCriteria');
 
 // Bound the number of incomplete tasks we probe Graphiti for per call. This
 // caps the slice size (and hence the Promise.all fan-out), not in-flight
@@ -36,13 +37,12 @@ async function assessGoalQuality(goal, user) {
   };
   if (!hasDesc) suggestions.push('Add a detailed description explaining what this goal achieves and why it matters');
 
-  // 2. Measurability — has success criteria
-  const criteria = goal.successCriteria;
-  const hasCriteria = criteria && (
-    (Array.isArray(criteria) && criteria.length > 0) ||
-    (typeof criteria === 'object' && Object.keys(criteria).length > 0)
-  );
-  const criteriaCount = Array.isArray(criteria) ? criteria.length : (typeof criteria === 'object' && criteria ? Object.keys(criteria).length : 0);
+  // 2. Measurability — has success criteria. Normalize first: the legacy
+  // { criteria: [...] } wrapped shape (written by the MCP) otherwise counted as
+  // a single criterion via Object.keys(), mis-scoring every multi-criterion goal.
+  const criteriaList = normalizeCriteria(goal.successCriteria);
+  const hasCriteria = criteriaList.length > 0;
+  const criteriaCount = criteriaList.length;
   dimensions.measurability = {
     score: hasCriteria ? Math.min(criteriaCount / 2, 1.0) : 0,
     detail: hasCriteria ? `${criteriaCount} success criteria defined` : 'No success criteria — goal is not measurable',
@@ -183,11 +183,13 @@ async function detectKnowledgeGaps(goal, user, pathPromise = null) {
   const gaps = results.filter(r => !r.has_knowledge);
   const covered = results.filter(r => r.has_knowledge).length;
 
-  // Check goal-level knowledge (success criteria) — batch with tasks
+  // Check goal-level knowledge (success criteria) — batch with tasks. Normalize
+  // so the legacy { criteria: [...] } wrapped shape is iterated, not skipped.
   let goalKnowledge;
-  if (goal.successCriteria && Array.isArray(goal.successCriteria)) {
+  const criteriaForKnowledge = normalizeCriteria(goal.successCriteria);
+  if (criteriaForKnowledge.length > 0) {
     goalKnowledge = await Promise.all(
-      goal.successCriteria.slice(0, 5).map(async (criterion) => {
+      criteriaForKnowledge.slice(0, 5).map(async (criterion) => {
         const query = typeof criterion === 'string' ? criterion : (criterion.metric || criterion.name || JSON.stringify(criterion));
         try {
           const result = await graphitiBridge.searchMemory({ query, group_id: groupId, max_results: 2 });
