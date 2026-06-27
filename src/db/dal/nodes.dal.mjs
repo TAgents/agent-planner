@@ -311,21 +311,25 @@ export const nodesDal = {
    */
   async workNodeStatusCountsByPlanIds(planIds) {
     if (!planIds || planIds.length === 0) return [];
-    const result = await db.execute(sql`
-      SELECT
-        plan_id,
-        COUNT(*)::int AS total_work,
-        COUNT(*) FILTER (WHERE status = 'not_started')::int AS not_started,
-        COUNT(*) FILTER (WHERE status = 'in_progress')::int AS in_progress,
-        COUNT(*) FILTER (WHERE status = 'completed')::int  AS completed,
-        COUNT(*) FILTER (WHERE status = 'blocked')::int     AS blocked,
-        COUNT(*) FILTER (WHERE status = 'plan_ready')::int  AS plan_ready
-      FROM plan_nodes
-      WHERE plan_id = ANY(${planIds})
-        AND node_type IN ('task', 'milestone')
-      GROUP BY plan_id
-    `);
-    return Array.from(result);
+    // Use the query builder so Drizzle renders the id list as a proper
+    // `IN ($1,$2,…)` (a raw `ANY(${array})` template expands to an invalid
+    // parenthesized parameter list).
+    return db
+      .select({
+        plan_id: planNodes.planId,
+        total_work: sql`COUNT(*)::int`,
+        not_started: sql`COUNT(*) FILTER (WHERE ${planNodes.status} = 'not_started')::int`,
+        in_progress: sql`COUNT(*) FILTER (WHERE ${planNodes.status} = 'in_progress')::int`,
+        completed: sql`COUNT(*) FILTER (WHERE ${planNodes.status} = 'completed')::int`,
+        blocked: sql`COUNT(*) FILTER (WHERE ${planNodes.status} = 'blocked')::int`,
+        plan_ready: sql`COUNT(*) FILTER (WHERE ${planNodes.status} = 'plan_ready')::int`,
+      })
+      .from(planNodes)
+      .where(and(
+        inArray(planNodes.planId, planIds),
+        inArray(planNodes.nodeType, ['task', 'milestone']),
+      ))
+      .groupBy(planNodes.planId);
   },
 
   /**
