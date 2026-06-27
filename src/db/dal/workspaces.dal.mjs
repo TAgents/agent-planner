@@ -31,10 +31,14 @@ export const workspacesDal = {
     const where = includeArchived
       ? eq(workspaces.organizationId, organizationId)
       : and(eq(workspaces.organizationId, organizationId), isNull(workspaces.archivedAt));
-    // Decorate each row with goal + plan counts in a single round trip via
-    // correlated subqueries — keeps the list endpoint useful for the
-    // Workspaces Index without an N+1 fan-out from the UI.
-    return db
+    // Decorate each row with goal + plan counts AND a progress/health rollup in
+    // a single round trip via correlated subqueries — keeps the list endpoint
+    // useful for the Workspaces Index without an N+1 fan-out from the UI. The
+    // node aggregates count task+milestone (leaf work) nodes across the
+    // workspace's NON-ARCHIVED plans — the same definition the plan page and
+    // goal rollup use — so the Progress column stops reading a hardcoded 0%.
+    const workNodeFilter = drizzleSql`pn.node_type IN ('task','milestone')`;
+    const rows = await db
       .select({
         id: workspaces.id,
         organizationId: workspaces.organizationId,
@@ -52,10 +56,27 @@ export const workspacesDal = {
         updatedAt: workspaces.updatedAt,
         goalCount: drizzleSql`(SELECT COUNT(*)::int FROM goals g WHERE g.workspace_id = workspaces.id)`.as('goal_count'),
         planCount: drizzleSql`(SELECT COUNT(*)::int FROM plans p WHERE p.workspace_id = workspaces.id)`.as('plan_count'),
+        totalNodes: drizzleSql`(SELECT COUNT(*)::int FROM plan_nodes pn JOIN plans p ON p.id = pn.plan_id WHERE p.workspace_id = workspaces.id AND p.status <> 'archived' AND ${workNodeFilter})`.as('total_nodes'),
+        completedNodes: drizzleSql`(SELECT COUNT(*)::int FROM plan_nodes pn JOIN plans p ON p.id = pn.plan_id WHERE p.workspace_id = workspaces.id AND p.status <> 'archived' AND ${workNodeFilter} AND pn.status = 'completed')`.as('completed_nodes'),
+        blockedNodes: drizzleSql`(SELECT COUNT(*)::int FROM plan_nodes pn JOIN plans p ON p.id = pn.plan_id WHERE p.workspace_id = workspaces.id AND p.status <> 'archived' AND ${workNodeFilter} AND pn.status = 'blocked')`.as('blocked_nodes'),
+        lastActivityAt: drizzleSql`(SELECT MAX(pnl.created_at) FROM plan_node_logs pnl JOIN plan_nodes pn ON pn.id = pnl.plan_node_id JOIN plans p ON p.id = pn.plan_id WHERE p.workspace_id = workspaces.id)`.as('last_activity_at'),
       })
       .from(workspaces)
       .where(where)
       .orderBy(asc(workspaces.createdAt));
+
+    return rows.map((r) => {
+      const total = Number(r.totalNodes ?? 0);
+      const completed = Number(r.completedNodes ?? 0);
+      const blocked = Number(r.blockedNodes ?? 0);
+      return {
+        ...r,
+        totalNodes: total,
+        completedNodes: completed,
+        blockedNodes: blocked,
+        progressPct: total > 0 ? Math.round((completed / total) * 100) : 0,
+      };
+    });
   },
 
   async findDefault(organizationId) {
