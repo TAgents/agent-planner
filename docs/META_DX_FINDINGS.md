@@ -46,4 +46,22 @@
   list/get/progress now return `rollup`; `docs/openapi*.json` Plan schema should
   describe it so the v1 contract is complete. (Follow-up; not blocking.)
 
+## Backend — workspace rollup (next derivations gap)
+
+- 🔴 **Workspace HEALTH has no server rollup; it's recomputed client-side.**
+  `workspaces.dal.mjs` emits `progressPct` but NOT health (its comment claims a
+  "progress/health rollup" — inaccurate). So the Workspaces list rolls health up
+  client-side from each workspace's goals (`Workspaces.tsx:healthByWorkspace`),
+  while `WorkspaceDetail.tsx` shows literally "Workspace-level health rollup is
+  server-side TBD" — list and detail can disagree on the same workspace. FIX:
+  add health to the workspace rollup (same classification the goals use, rolled
+  up across the workspace's active goals), expose it, and have both surfaces read
+  it. This is the workspace analogue of the plan-rollup fix.
+- 🟢 **Confirmed canonical (no residual recompute):** Mission Control and the
+  Goals list/detail read `goal.health` + `execution_pct` from the goal dashboard
+  rollup; GoalsV2 progress reads `goal._dash.linked_plan_progress` (same
+  dashboard source as health, so no drift); workspace PROGRESS reads
+  `w.progressPct` from the server. Segmented-bar widths are presentation ratios
+  over server counts, not metric recomputes — fine.
+
 <!-- Append new findings below as they surface. -->

@@ -43,9 +43,13 @@ under (A) and `100%` under (C). The Plans index shows the server `progress` fiel
   `pending_decision_count`, `bottleneck_summary`. Health decided by
   `utils/goalHealth.js`.
 
-### Workspace-level (entity: workspace) — ALREADY canonical
+### Workspace-level (entity: workspace) — PROGRESS canonical, HEALTH still client-side
 - Source: `workspaces.dal.mjs` `listForUser` (counts `task`+`milestone` ✅).
-  Fields: `total_nodes`, `completed_nodes`, `progress_pct`, health.
+  Fields: `total_nodes`, `completed_nodes`, `progress_pct`.
+- ⚠️ **Health is NOT yet a server field.** The Workspaces list recomputes it
+  client-side from goals; WorkspaceDetail has none ("server-side TBD"). This is
+  the next gap to close (see META_DX_FINDINGS.md) — add workspace health to the
+  rollup so list and detail agree.
 
 ## Current plan-progress computation sites (ALL must converge on §Plan-level)
 
