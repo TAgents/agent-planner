@@ -349,6 +349,30 @@ export const goalsDal = {
     return this.getActiveGoals({ userId: ownerId });
   },
 
+  // Standing guidance = active org-level INVARIANT goals (type principle |
+  // constraint). Unlike outcome/metric goals these aren't "worked toward" task
+  // by task; they apply to ALL agent work in the org, so the context engine
+  // injects them into every task. This is what makes goal.type behavioral.
+  async getStandingGuidance(orgId) {
+    if (!orgId) return [];
+    const rows = await db
+      .select({
+        id: goals.id,
+        title: goals.title,
+        description: goals.description,
+        type: goals.type,
+        priority: goals.priority,
+      })
+      .from(goals)
+      .where(and(
+        eq(goals.organizationId, orgId),
+        eq(goals.status, 'active'),
+        inArray(goals.type, ['constraint', 'principle']),
+      ))
+      .orderBy(desc(goals.priority));
+    return rows;
+  },
+
   // ─── Dashboard ────────────────────────────────────────────────
 
   /**

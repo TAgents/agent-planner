@@ -315,6 +315,27 @@ async function assembleContext(nodeId, opts = {}) {
     context.goals = [];
   }
 
+  // Standing guidance — active org-level INVARIANT goals (type principle |
+  // constraint). These aren't worked toward task-by-task; they apply to ALL
+  // work in the org, so every task surfaces them. This is what makes goal.type
+  // behavioral: a 'principle'/'constraint' goal steers agents directly here,
+  // rather than being an inert label. Requires orgId (org-scoped).
+  if (orgId) {
+    try {
+      const guidance = await dal.goalsDal.getStandingGuidance(orgId);
+      context.standing_guidance = guidance.map(g => ({
+        id: g.id,
+        type: g.type, // 'principle' (durable invariant) | 'constraint' (must-not-violate)
+        title: g.title,
+        description: g.description,
+      }));
+    } catch {
+      context.standing_guidance = [];
+    }
+  } else {
+    context.standing_guidance = [];
+  }
+
   // Transitive dependencies (depth 2+)
   try {
     const upstream = await dal.dependenciesDal.getUpstream(nodeId, 5);
