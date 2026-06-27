@@ -221,10 +221,13 @@ router.post('/episodes', authenticate, async (req, res) => {
       return res.status(503).json({ error: 'Knowledge graph not available' });
     }
 
-    const { content, name, plan_id, node_id, metadata = {} } = req.body;
+    const { content, name, plan_id, node_id, entry_type, metadata = {} } = req.body;
     if (!content) {
       return res.status(400).json({ error: 'content is required' });
     }
+    // Stable effective name so we can resolve the async-created episode's uuid
+    // by name afterwards (addEpisode applies the same fallback internally).
+    const effectiveName = name || content.substring(0, 100);
 
     // If the episode targets a plan/node, the caller must have access to
     // that plan — episode links and coherence checks write to it.
@@ -248,9 +251,14 @@ router.post('/episodes', authenticate, async (req, res) => {
     const result = await graphitiBridge.addEpisode({
       content,
       group_id,
-      name: name || undefined,
+      name: effectiveName,
+      // Persist the clean entry_type taxonomy (decision/learning/constraint/…)
+      // as source_description so the timeline renders the real type instead of
+      // a generic plumbing string. Defaults to the bridge's generic label.
+      source_description: entry_type || undefined,
       metadata: {
         ...metadata,
+        entry_type: entry_type || undefined,
         plan_id: plan_id || undefined,
         node_id: node_id || undefined,
         user_id: req.user.id,
@@ -258,7 +266,20 @@ router.post('/episodes', authenticate, async (req, res) => {
       },
     });
 
-    const episodeId = result?.uuid || result?.episode_id || null;
+    // add_memory ingests asynchronously and rarely returns a uuid. Try a single
+    // cheap by-name resolution to upgrade to the real uuid; otherwise mint a
+    // non-null `pending:` correlation id (used for BOTH the response and the
+    // episode_node_link, so a caller can correlate the two). Returning null
+    // here was the "add_learning returns episode_id:null" bug.
+    let episodeId = result?.uuid || result?.episode_id || null;
+    let episodePending = false;
+    if (!episodeId) {
+      episodeId = await graphitiBridge.resolveEpisodeIdByName({ group_id, name: effectiveName });
+    }
+    if (!episodeId) {
+      episodeId = `pending:${randomUUID()}`;
+      episodePending = true;
+    }
 
     // Create an episode_node_link so the episode is queryable by plan/node
     // without round-tripping through Graphiti metadata (which get_episodes
@@ -278,7 +299,7 @@ router.post('/episodes', authenticate, async (req, res) => {
           targetNodeId = root?.id || null;
         }
         if (targetNodeId) {
-          await dal.episodeLinksDal.link(episodeId || `pending:${randomUUID()}`, targetNodeId, 'informs');
+          await dal.episodeLinksDal.link(episodeId, targetNodeId, 'informs');
         }
       } catch (err) {
         await logger.warn('episode_node_link create failed:', err.message);
@@ -316,7 +337,16 @@ router.post('/episodes', authenticate, async (req, res) => {
       organizationId: req.user.organizationId,
     }).catch(err => logger.warn('Failed to publish episode.created:', err.message));
 
-    res.status(201).json({ episode: result, group_id, coherence_warnings });
+    res.status(201).json({
+      episode: result,
+      episode_id: episodeId,
+      // pending=true means episodeId is a local correlation id, not yet the
+      // real Graphiti uuid (async ingestion); it still matches the
+      // episode_node_link and is reconciled to the real uuid later.
+      pending: episodePending,
+      group_id,
+      coherence_warnings,
+    });
   } catch (err) {
     await logger.error('Graphiti add episode error:', err);
     res.status(500).json({ error: 'Failed to add knowledge episode' });

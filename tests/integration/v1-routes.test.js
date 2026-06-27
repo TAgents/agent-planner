@@ -119,6 +119,7 @@ jest.mock('../../src/services/graphitiBridge', () => ({
   getGroupId: jest.fn().mockReturnValue('org_test'),
   getStatus: jest.fn().mockResolvedValue({ available: false }),
   addEpisode: jest.fn(),
+  resolveEpisodeIdByName: jest.fn().mockResolvedValue(null),
   deleteEpisode: jest.fn(),
   getEpisodes: jest.fn().mockResolvedValue([]),
   searchMemory: jest.fn().mockResolvedValue([]),
@@ -373,6 +374,7 @@ jest.mock('../../src/db/dal.cjs', () => ({
     listByNodeIds: jest.fn().mockResolvedValue([]),
     listByEpisodeIdsWithTitles: jest.fn().mockResolvedValue([]),
     create: jest.fn().mockResolvedValue(null),
+    link: jest.fn().mockResolvedValue(null),
   },
   searchDal: {
     globalSearch: jest.fn().mockResolvedValue([]),

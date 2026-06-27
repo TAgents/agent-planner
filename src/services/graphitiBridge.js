@@ -289,6 +289,29 @@ async function searchEntities({ query, group_id, max_results = 10 }) {
 }
 
 /**
+ * Best-effort resolution of a freshly-added episode's real Graphiti uuid.
+ * add_memory ingests asynchronously and returns no synchronous uuid, so the
+ * caller can't know the id at creation time. This does a SINGLE cheap
+ * get_episodes lookup and returns the newest episode whose name matches —
+ * enough to upgrade a pending correlation id to the real uuid when Graphiti
+ * has already registered the episode. Returns null if not found (caller
+ * keeps its pending id); never throws.
+ */
+async function resolveEpisodeIdByName({ group_id, name, max_episodes = 15 }) {
+  if (!available || !name) return null;
+  try {
+    const res = await getEpisodes({ group_id, max_episodes });
+    const eps = Array.isArray(res) ? res : res?.episodes || res?.episodes?.episodes || [];
+    const matches = eps.filter((e) => e && e.uuid && e.name === name);
+    if (matches.length === 0) return null;
+    matches.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    return matches[0].uuid;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Delete an episode from Graphiti.
  * Graphiti tool: delete_episode (uses uuid, not episode_id).
  */
@@ -432,6 +455,7 @@ module.exports = {
   init,
   isAvailable,
   addEpisode,
+  resolveEpisodeIdByName,
   searchMemory,
   searchEntities,
   deleteEpisode,

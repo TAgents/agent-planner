@@ -266,24 +266,33 @@ async function updateTask(user, nodeId, {
   if (add_learning) {
     if (graphitiBridge.isAvailable()) {
       try {
+        const groupId = graphitiBridge.getGroupId(user);
+        const learningName = `Task: ${node.title}`;
         const epResult = await graphitiBridge.addEpisode({
           content: add_learning,
-          name: `Task: ${node.title}`,
+          name: learningName,
           source: 'text',
           source_description: 'v1 task update',
-          group_id: graphitiBridge.getGroupId(user),
+          group_id: groupId,
         });
         result.applied.learning_recorded = true;
         // Link the episode to this node so it counts toward knowledge
         // coverage. Graphiti's add_memory ingests asynchronously and returns
-        // no synchronous uuid, so fall back to a 'pending:' correlation id —
-        // coverage only needs one link row per node; a reconciliation job can
-        // backfill the real Graphiti uuid later. Without this link the task is
-        // invisible to /knowledge/coverage (the 0-of-840 bug).
+        // no synchronous uuid, so try a cheap by-name resolution, else fall
+        // back to a 'pending:' correlation id — coverage only needs one link
+        // row per node; the real uuid reconciles later. Without this link the
+        // task is invisible to /knowledge/coverage (the 0-of-840 bug).
         try {
-          const episodeId = epResult?.uuid || epResult?.episode_id || `pending:${randomUUID()}`;
+          let episodeId = epResult?.uuid || epResult?.episode_id || null;
+          if (!episodeId) {
+            episodeId = await graphitiBridge.resolveEpisodeIdByName({ group_id: groupId, name: learningName });
+          }
+          const pending = !episodeId;
+          if (!episodeId) episodeId = `pending:${randomUUID()}`;
           await dal.episodeLinksDal.link(episodeId, node.id, 'informs');
           result.applied.knowledge_linked = true;
+          result.applied.episode_id = episodeId;
+          result.applied.episode_pending = pending;
         } catch (linkErr) {
           result.failures.push({ step: 'link_learning', error: linkErr.message });
         }
