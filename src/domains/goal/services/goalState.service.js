@@ -318,7 +318,16 @@ async function getGoalState(goal, user) {
   );
   const accessible = new Set(accessChecks.filter(([, ok]) => ok).map(([id]) => id));
 
-  const linkedPlans = livePlans.filter(p => accessible.has(p.id));
+  // Carry the plan title + status (we already fetched planRows) so the UI shows
+  // real plan names instead of an "untitled" fallback when the plan isn't in the
+  // viewer's first page of /plans.
+  const planById = new Map(planRows.map(p => [p.id, p]));
+  const linkedPlans = livePlans
+    .filter(p => accessible.has(p.id))
+    .map(p => {
+      const row = planById.get(p.id);
+      return { id: p.id, link_id: p.link_id, title: row?.title || null, status: row?.status || null };
+    });
   const hiddenLinkedPlanCount = livePlans.length - linkedPlans.length;
   const visiblePlanIds = linkedPlans.map(p => p.id);
 

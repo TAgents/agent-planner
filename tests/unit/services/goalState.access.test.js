@@ -56,7 +56,7 @@ describe('getGoalState — plan-access boundary', () => {
 
     const res = await service.getGoalState(goalWith(['P1', 'P2']), USER);
 
-    expect(res.linked_plans).toEqual([{ id: 'P1', link_id: 'link-0' }]);
+    expect(res.linked_plans).toEqual([{ id: 'P1', link_id: 'link-0', title: null, status: 'active' }]);
     expect(res.hidden_linked_plan_count).toBe(1);
   });
 
