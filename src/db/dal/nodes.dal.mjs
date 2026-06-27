@@ -301,6 +301,34 @@ export const nodesDal = {
   },
 
   /**
+   * Per-plan work-node status counts in ONE grouped query — feeds the batch
+   * planRollup for the Plans index. Counts WORK nodes only
+   * (node_type IN ('task','milestone')); root + phases are structure. The filter
+   * MUST match planRollup.rollupFromNodes so list and detail agree.
+   * @param {string[]} planIds
+   * @returns {Promise<Array<{plan_id:string,total_work:number,not_started:number,
+   *   in_progress:number,completed:number,blocked:number,plan_ready:number}>>}
+   */
+  async workNodeStatusCountsByPlanIds(planIds) {
+    if (!planIds || planIds.length === 0) return [];
+    const result = await db.execute(sql`
+      SELECT
+        plan_id,
+        COUNT(*)::int AS total_work,
+        COUNT(*) FILTER (WHERE status = 'not_started')::int AS not_started,
+        COUNT(*) FILTER (WHERE status = 'in_progress')::int AS in_progress,
+        COUNT(*) FILTER (WHERE status = 'completed')::int  AS completed,
+        COUNT(*) FILTER (WHERE status = 'blocked')::int     AS blocked,
+        COUNT(*) FILTER (WHERE status = 'plan_ready')::int  AS plan_ready
+      FROM plan_nodes
+      WHERE plan_id = ANY(${planIds})
+        AND node_type IN ('task', 'milestone')
+      GROUP BY plan_id
+    `);
+    return Array.from(result);
+  },
+
+  /**
    * Get max order_index among siblings, excluding a specific node
    */
   async getMaxSiblingOrder(planId, parentId, excludeNodeId = null) {
