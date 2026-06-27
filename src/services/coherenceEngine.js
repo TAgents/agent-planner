@@ -40,6 +40,18 @@ function extractKeywords(content) {
   return unique.slice(0, 5);
 }
 
+/** Normalized text of a Graphiti fact for keyword matching. */
+function factText(f) {
+  return String(f.fact || f.content || f.name || '').toLowerCase();
+}
+
+/** How many of `keywords` appear in `text`. */
+function keywordOverlap(keywords, text) {
+  let n = 0;
+  for (const k of keywords) if (text.includes(k)) n += 1;
+  return n;
+}
+
 /**
  * Find tasks semantically related to episode content.
  *
@@ -101,40 +113,42 @@ async function findAffectedTasks(episodeContent, planId, organizationId, maxTask
 }
 
 /**
- * Check a single task for coherence issues against the knowledge graph.
+ * Decide whether a task is touched by a genuine contradiction introduced by
+ * the new episode.
+ *
+ * `supersededFacts` are facts the graph has marked OUTDATED that the new
+ * episode itself relates to (computed once per episode in checkCoherence).
+ * A task is flagged only when one of those superseded facts also overlaps the
+ * task's own keywords — i.e. the episode reasserts outdated information
+ * bearing on this task.
+ *
+ * This replaces the previous logic, which queried the graph with the TASK's
+ * topic and fired on the mere existence of ANY superseded fact in that topic
+ * area — so an episode that AGREED with a task (same subject) was flagged as a
+ * contradiction. An agreement/restatement of CURRENT knowledge surfaces no
+ * superseded facts for the episode, so it no longer raises a warning.
  *
  * @param {object} node - The task node
- * @param {string} groupId - Graphiti org namespace
- * @returns {Promise<object|null>} CoherenceIssue or null
+ * @param {Array} supersededFacts - episode-relevant outdated facts
+ * @returns {object|null} CoherenceIssue or null
  */
-async function checkTaskCoherence(node, groupId) {
-  if (!graphitiBridge.isAvailable()) return null;
+function checkTaskCoherence(node, supersededFacts) {
+  if (!supersededFacts || supersededFacts.length === 0) return null;
 
-  const query = [node.title, node.description].filter(Boolean).join(' ');
-  if (!query.trim()) return null;
+  const taskKeywords = extractKeywords([node.title, node.description].filter(Boolean).join(' '));
+  if (taskKeywords.length === 0) return null;
 
-  try {
-    const result = await graphitiBridge.detectContradictions({
-      query,
-      group_id: groupId,
-      max_results: 5,
-    });
+  const relevant = supersededFacts.filter((f) => keywordOverlap(taskKeywords, factText(f)) >= 1);
+  if (relevant.length === 0) return null;
 
-    if (result && result.contradictions_found) {
-      return {
-        node_id: node.id,
-        title: node.title,
-        status: node.status,
-        node_type: node.nodeType,
-        conflict_type: 'contradiction_detected',
-        superseded_facts: result.superseded || [],
-      };
-    }
-  } catch {
-    // Graphiti call failed — skip this task
-  }
-
-  return null;
+  return {
+    node_id: node.id,
+    title: node.title,
+    status: node.status,
+    node_type: node.nodeType,
+    conflict_type: 'contradiction_detected',
+    superseded_facts: relevant,
+  };
 }
 
 /**
@@ -188,13 +202,36 @@ async function checkCoherence({ episodeContent, episodeId, groupId, planId, orga
 
   async function run() {
     const tasks = await findAffectedTasks(episodeContent, planId, organizationId, maxTasks);
-    const issues = [];
 
-    for (const task of tasks) {
-      const issue = await checkTaskCoherence(task, groupId);
-      if (issue) {
-        await applyCoherenceResult(task.id, episodeId, issue);
-        issues.push(issue);
+    // Scope the contradiction check to the EPISODE's own claim, ONCE (not
+    // per-task). Only facts the graph has SUPERSEDED that the episode actually
+    // relates to count as contradictions — this is what separates a genuine
+    // opposing claim from agreement/restatement of current knowledge. If the
+    // episode merely agrees with current facts, nothing here is superseded and
+    // no warnings are raised.
+    let supersededFacts = [];
+    try {
+      const contra = await graphitiBridge.detectContradictions({
+        query: episodeContent,
+        group_id: groupId,
+        max_results: 10,
+      });
+      const epKeywords = extractKeywords(episodeContent);
+      supersededFacts = (contra?.superseded || []).filter(
+        (f) => keywordOverlap(epKeywords, factText(f)) >= 1,
+      );
+    } catch {
+      // Graphiti call failed — treat as no contradictions.
+    }
+
+    const issues = [];
+    if (supersededFacts.length > 0) {
+      for (const task of tasks) {
+        const issue = checkTaskCoherence(task, supersededFacts);
+        if (issue) {
+          await applyCoherenceResult(task.id, episodeId, issue);
+          issues.push(issue);
+        }
       }
     }
 
