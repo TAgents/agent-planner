@@ -22,7 +22,7 @@ const graphitiBridge = require('../../services/graphitiBridge');
 const reasoning = require('../../services/reasoning');
 const goalStateService = require('../../domains/goal/services/goalState.service');
 const { classifyGoalHealth } = require('../../utils/goalHealth');
-const { canonicalizeCriteria } = require('../../utils/goalCriteria');
+const { canonicalizeCriteria, autoAchieveStatus } = require('../../utils/goalCriteria');
 const { coherenceFields } = require('../../services/coherenceVocab');
 
 const VALID_LINK_TYPES = ['plan', 'task', 'agent'];
@@ -361,6 +361,13 @@ router.put('/:id', authenticate, validateBody(updateGoalSchema), async (req, res
     if (priority !== undefined) updates.priority = priority;
     if (parentGoalId !== undefined) updates.parentGoalId = parentGoalId;
     if (workspaceId !== undefined) updates.workspaceId = workspaceId;
+
+    // Auto-achieve when criteria change pushes attainment to 100% — unless the
+    // caller set status explicitly in this same request (respect their intent).
+    if (successCriteria !== undefined && status === undefined) {
+      const newStatus = autoAchieveStatus(successCriteria, existing.status);
+      if (newStatus !== existing.status) updates.status = newStatus;
+    }
 
     const goal = await goalsDal.update(req.params.id, updates);
     res.json(goal);
@@ -759,9 +766,21 @@ router.post('/:id/criteria/progress', authenticate, async (req, res) => {
     }
 
     criteria[idx] = { ...criteria[idx], current };
-    await goalsDal.update(req.params.id, { successCriteria: criteria });
 
-    res.json({ goal_id: req.params.id, criterion: criteria[idx], criteria });
+    // Close the loop: when every measurable criterion is met, the goal achieves
+    // itself — no human flip required.
+    const newStatus = autoAchieveStatus(criteria, goal.status);
+    const update = { successCriteria: criteria };
+    if (newStatus !== goal.status) update.status = newStatus;
+    await goalsDal.update(req.params.id, update);
+
+    res.json({
+      goal_id: req.params.id,
+      criterion: criteria[idx],
+      criteria,
+      status: newStatus,
+      auto_achieved: newStatus === 'achieved' && goal.status !== 'achieved',
+    });
   } catch (err) {
     await logger.error('Record criterion progress error:', err);
     res.status(500).json({ error: 'Failed to record criterion progress' });

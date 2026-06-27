@@ -88,6 +88,24 @@ function criteriaAttainment(raw) {
   };
 }
 
+const TERMINAL_GOAL_STATUSES = ['achieved', 'abandoned', 'archived'];
+
+/**
+ * Decide a goal's status after a criteria change: auto-transition to 'achieved'
+ * when every measurable criterion is met (attainment_pct === 100). Never
+ * downgrades a terminal status, and never fires for goals with no measurable
+ * criteria (qualitative goals stay where they are — a human closes those).
+ * @param {*} rawCriteria - stored success_criteria
+ * @param {string} currentStatus
+ * @returns {string} the status the goal should have
+ */
+function autoAchieveStatus(rawCriteria, currentStatus) {
+  if (TERMINAL_GOAL_STATUSES.includes(currentStatus)) return currentStatus;
+  const { measurable_count, attainment_pct } = criteriaAttainment(rawCriteria);
+  if (measurable_count > 0 && attainment_pct === 100) return 'achieved';
+  return currentStatus;
+}
+
 /**
  * Canonicalize criteria into an array of objects each guaranteed an `id` and a
  * `statement`. Plain strings become { id, statement }; objects keep their own
@@ -109,5 +127,6 @@ module.exports = {
   isMeasurableCriterion,
   isCriterionMet,
   criteriaAttainment,
+  autoAchieveStatus,
   canonicalizeCriteria,
 };

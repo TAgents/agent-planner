@@ -3,6 +3,7 @@ const {
   isMeasurableCriterion,
   isCriterionMet,
   criteriaAttainment,
+  autoAchieveStatus,
   canonicalizeCriteria,
 } = require('../../../src/utils/goalCriteria');
 
@@ -145,5 +146,39 @@ describe('criteriaAttainment', () => {
   it('handles the wrapped {criteria:[]} shape', () => {
     expect(criteriaAttainment({ criteria: [{ metric: 'm', target: 1, current: 5, direction: 'increase' }] }))
       .toEqual({ measurable_count: 1, met_count: 1, attainment_pct: 100 });
+  });
+});
+
+describe('autoAchieveStatus', () => {
+  const allMet = [
+    { metric: 'a', direction: 'boolean', current: true },
+    { metric: 'b', target: 10, direction: 'increase', current: 12 },
+  ];
+  const partial = [
+    { metric: 'a', direction: 'boolean', current: true },
+    { metric: 'b', target: 10, direction: 'increase', current: 4 },
+  ];
+
+  it("transitions active → achieved when every measurable criterion is met", () => {
+    expect(autoAchieveStatus(allMet, 'active')).toBe('achieved');
+  });
+
+  it('leaves status unchanged when attainment is below 100%', () => {
+    expect(autoAchieveStatus(partial, 'active')).toBe('active');
+  });
+
+  it('does not fire for goals with no measurable criteria', () => {
+    expect(autoAchieveStatus(['qualitative only'], 'active')).toBe('active');
+    expect(autoAchieveStatus([], 'active')).toBe('active');
+  });
+
+  it('never downgrades a terminal status', () => {
+    expect(autoAchieveStatus(partial, 'abandoned')).toBe('abandoned');
+    expect(autoAchieveStatus(allMet, 'archived')).toBe('archived');
+    expect(autoAchieveStatus(allMet, 'achieved')).toBe('achieved');
+  });
+
+  it('promotes a draft goal too once fully attained', () => {
+    expect(autoAchieveStatus(allMet, 'draft')).toBe('achieved');
   });
 });
