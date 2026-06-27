@@ -21,6 +21,7 @@ const organizationsDal = require('../../db/dal.cjs').organizationsDal;
 const graphitiBridge = require('../../services/graphitiBridge');
 const reasoning = require('../../services/reasoning');
 const goalStateService = require('../../domains/goal/services/goalState.service');
+const goalRollupService = require('../../services/goalRollup.service');
 const { cascadePlanAchievers } = require('../../domains/goal/services/goalLinks.service');
 const { classifyGoalHealth } = require('../../utils/goalHealth');
 const { canonicalizeCriteria, autoAchieveStatus, criteriaAttainment, coerceCriterionCurrent } = require('../../utils/goalCriteria');
@@ -152,100 +153,39 @@ function classifyPgError(err) {
  */
 router.get('/dashboard', authenticate, async (req, res, next) => {
   try {
-    const userId = req.user.id;
-
-    // 1. Get all goal data with plan stats in a single SQL query
-    const dashboardRows = await goalsDal.getDashboardData({
+    // Canonical per-goal rollup (health, execution %, blocked, linked-plan
+    // count, attainment, pending decisions, bottlenecks) computed in ONE place
+    // — shared with goal_state and the briefing so they can't disagree.
+    const rollups = await goalRollupService.computeGoalRollups({
+      userId: req.user.id,
       organizationIds: (req.user.organizations || []).map(o => o.id),
-      userId,
     });
 
-    // 2. For each goal with linked plans, detect bottlenecks (parallel, capped)
-    const goalResults = await Promise.all(dashboardRows.map(async (row) => {
-      const totalNodes = row.total_nodes;
-      const completedNodes = row.completed_nodes;
-      const blockedNodes = row.blocked_nodes;
-      const planReadyNodes = row.plan_ready_nodes;
-      const agentRequestNodes = row.agent_request_nodes;
-      const stalePlanReady = row.stale_plan_ready_nodes;
-      const staleAgentRequest = row.stale_agent_request_nodes;
-      const linkedPlanCount = row.linked_plan_count;
-      const lastLogAt = row.last_log_at;
-
-      // Calculate progress percentages
-      const percentCompleted = totalNodes > 0
-        ? Math.round((completedNodes / totalNodes) * 100)
-        : 0;
-      const percentBlocked = totalNodes > 0
-        ? Math.round((blockedNodes / totalNodes) * 100)
-        : 0;
-
-      // Pending decisions = plan_ready + agent_request nodes
-      const pendingDecisionCount = planReadyNodes + agentRequestNodes;
-
-      // Stale pending decisions (older than 1 day)
-      const stalePendingDecisions = stalePlanReady + staleAgentRequest;
-
-      // Detect bottlenecks across linked plans (cap at 5 plans)
-      let bottleneckSummary = [];
-      const planIds = Array.isArray(row.plan_ids) ? row.plan_ids.filter(Boolean) : [];
-      if (planIds.length > 0) {
-        const allBottlenecks = [];
-        for (const planId of planIds.slice(0, 5)) {
-          try {
-            const bottlenecks = await reasoning.detectBottlenecks(planId, { limit: 3, incomplete_only: true });
-            allBottlenecks.push(...bottlenecks);
-          } catch { /* skip plan on error */ }
-        }
-        bottleneckSummary = allBottlenecks
-          .sort((a, b) => b.direct_downstream_count - a.direct_downstream_count)
-          .slice(0, 3);
-      }
-
-      // Determine health status via the shared classifier (utils/goalHealth)
-      // so this dashboard and the briefing can't disagree. Previously the stale
-      // check here was gated on hasLinkedPlans, so a goal with no plans fell
-      // through to on_track while the briefing called the same goal stale.
-      const lastActivityTs = lastLogAt ? new Date(lastLogAt).getTime() : null;
-      const attainment = criteriaAttainment(row.success_criteria);
-      const health = classifyGoalHealth({
-        hasLinkedPlans: linkedPlanCount > 0,
-        totalNodes,
-        lastActivityTs,
-        bottleneckCount: bottleneckSummary.length,
-        percentBlocked,
-        stalePendingCount: stalePendingDecisions,
-        attainmentPct: attainment.attainment_pct,
-        executionPct: percentCompleted,
-      });
-
-      return {
-        id: row.id,
-        title: row.title,
-        description: row.description,
-        type: row.type,
-        committed: Boolean(row.committed),
-        status: row.status,
-        health,
-        owner_name: row.owner_name || null,
-        bottleneck_summary: bottleneckSummary,
-        knowledge_gap_count: 0, // Requires Graphiti — returned as 0 when unavailable
-        last_activity: lastLogAt || null,
-        // Outcome attainment (criteria met) — distinct from execution
-        // (linked_plan_progress.percent_completed). attainment_pct is null when
-        // the goal has no measurable criteria.
-        attainment_pct: attainment.attainment_pct,
-        attainment: { measurable_count: attainment.measurable_count, met_count: attainment.met_count },
-        linked_plan_progress: {
-          total_nodes: totalNodes,
-          completed_nodes: completedNodes,
-          blocked_nodes: blockedNodes,
-          percent_completed: percentCompleted,
-          percent_blocked: percentBlocked,
-          linked_plan_count: linkedPlanCount,
-        },
-        pending_decision_count: pendingDecisionCount,
-      };
+    // Preserve the dashboard's existing response shape (Mission depends on it):
+    // the canonical numbers live under linked_plan_progress here.
+    const goalResults = rollups.map((r) => ({
+      id: r.id,
+      title: r.title,
+      description: r.description,
+      type: r.type,
+      committed: r.committed,
+      status: r.status,
+      health: r.health,
+      owner_name: r.owner_name,
+      bottleneck_summary: r.bottleneck_summary,
+      knowledge_gap_count: r.knowledge_gap_count,
+      last_activity: r.last_activity,
+      attainment_pct: r.attainment_pct,
+      attainment: r.attainment,
+      linked_plan_progress: {
+        total_nodes: r.total_nodes,
+        completed_nodes: r.completed_nodes,
+        blocked_nodes: r.blocked_nodes,
+        percent_completed: r.execution_pct,
+        percent_blocked: r.percent_blocked,
+        linked_plan_count: r.linked_plan_count,
+      },
+      pending_decision_count: r.pending_decision_count,
     }));
 
     res.json({ goals: goalResults });
@@ -954,8 +894,15 @@ router.get('/:goalId/briefing', authenticate, async (req, res) => {
       };
     });
 
-    // 12. Calculate health
-    const health = calculateHealth(progress, allBottlenecks, flatNodes);
+    // 12. Health — use the canonical rollup (same inputs as the dashboard) so
+    // the briefing and Mission can't disagree. Falls back to the local
+    // heuristic only when the goal isn't in the active-goal rollup set.
+    const briefingRollup = await goalRollupService.computeGoalRollup({
+      userId: req.user.id,
+      organizationIds: (req.user.organizations || []).map(o => o.id),
+      goalId: goal.id,
+    });
+    const health = briefingRollup?.health || calculateHealth(progress, allBottlenecks, flatNodes);
 
     res.json({
       goal: {
