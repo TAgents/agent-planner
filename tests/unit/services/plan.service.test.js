@@ -154,17 +154,19 @@ describe('Plan Service', () => {
     it('should return plan with progress and owner', async () => {
       repo.findById.mockResolvedValue(makePlan());
       repo.listNodesByPlan.mockResolvedValue([
-        { status: 'completed' },
-        { status: 'not_started' },
-        { status: 'completed' },
-        { status: 'in_progress' },
+        { node_type: 'root', status: 'not_started' }, // structure — excluded
+        { node_type: 'task', status: 'completed' },
+        { node_type: 'task', status: 'not_started' },
+        { node_type: 'task', status: 'completed' },
+        { node_type: 'task', status: 'in_progress' },
       ]);
       repo.findUserById.mockResolvedValue({ id: USER_ID, name: 'Test', email: 'test@test.com' });
 
       const result = await planService.getPlan(PLAN_ID, USER_ID);
 
       expect(result.id).toBe(PLAN_ID);
-      expect(result.progress).toBe(50); // 2/4
+      expect(result.progress).toBe(50); // 2/4 work nodes (root excluded)
+      expect(result.rollup.total_work).toBe(4);
       expect(result.owner.name).toBe('Test');
     });
 
@@ -248,13 +250,13 @@ describe('Plan Service', () => {
 
     it('should calculate percentage correctly', async () => {
       repo.listNodesByPlan.mockResolvedValue([
-        { status: 'completed' },
-        { status: 'completed' },
-        { status: 'not_started' },
+        { node_type: 'task', status: 'completed' },
+        { node_type: 'milestone', status: 'completed' },
+        { node_type: 'task', status: 'not_started' },
       ]);
 
       const progress = await planService.calculatePlanProgress(PLAN_ID);
-      expect(progress).toBe(67); // 2/3 = 66.7 → rounded to 67
+      expect(progress).toBe(67); // 2/3 work nodes = 66.7 → rounded to 67
     });
   });
 
@@ -340,11 +342,11 @@ describe('Plan Service', () => {
   describe('getPlanProgress', () => {
     it('should return status breakdown', async () => {
       repo.listNodesByPlan.mockResolvedValue([
-        { status: 'completed' },
-        { status: 'completed' },
-        { status: 'in_progress' },
-        { status: 'not_started' },
-        { status: 'blocked' },
+        { node_type: 'task', status: 'completed' },
+        { node_type: 'task', status: 'completed' },
+        { node_type: 'task', status: 'in_progress' },
+        { node_type: 'task', status: 'not_started' },
+        { node_type: 'task', status: 'blocked' },
       ]);
 
       const result = await planService.getPlanProgress(PLAN_ID, USER_ID);

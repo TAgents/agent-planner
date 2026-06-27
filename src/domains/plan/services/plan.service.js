@@ -134,7 +134,11 @@ async function getPlan(planId, userId) {
   await requireAccess(planId, userId);
 
   const plan = await requirePlan(planId);
-  const rollup = await planRollup.computePlanRollup(planId, { withCriticalPath: true });
+  // Single-plan reads derive the rollup from repo-fetched nodes via the pure
+  // core (no DAL coupling here; data access stays in the repository). The
+  // critical-path summary has its own endpoint, so it's omitted from this shape.
+  const nodes = await repo.listNodesByPlan(planId);
+  const rollup = planRollup.rollupFromNodes(nodes);
   const owner = await repo.findUserById(plan.ownerId);
 
   return {
