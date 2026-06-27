@@ -50,6 +50,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
+      # Deployed commit, surfaced at GET /version. deploy.sh sets this from the
+      # VM's checked-out HEAD; falls back to 'unknown' on a bare restart.
+      GIT_SHA: ${GIT_SHA:-unknown}
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET}
       FRONTEND_URL: https://${DOMAIN}
