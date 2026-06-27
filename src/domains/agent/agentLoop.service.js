@@ -92,7 +92,8 @@ async function goalDashboard(user) {
     const lastActivityTs = lastActivity ? new Date(lastActivity).getTime() : null;
     const percentBlocked = totalNodes ? Math.round((blockedNodes / totalNodes) * 100) : 0;
     const percentCompleted = totalNodes ? Math.round((completedNodes / totalNodes) * 100) : 0;
-    const { attainment_pct } = criteriaAttainment(row.success_criteria);
+    const attainment = criteriaAttainment(row.success_criteria);
+    const attainment_pct = attainment.attainment_pct;
     // Shared classifier so briefing + dashboard can never diverge (see utils/goalHealth).
     const health = classifyGoalHealth({
       hasLinkedPlans: planIds.length > 0,
@@ -117,6 +118,8 @@ async function goalDashboard(user) {
       owner_name: row.owner_name || null,
       bottleneck_summary: bottleneckSummary,
       last_activity: lastActivity,
+      attainment_pct,
+      attainment: { measurable_count: attainment.measurable_count, met_count: attainment.met_count },
       linked_plan_progress: {
         total_nodes: totalNodes,
         completed_nodes: completedNodes,

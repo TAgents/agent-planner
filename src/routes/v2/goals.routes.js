@@ -207,7 +207,7 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
       // check here was gated on hasLinkedPlans, so a goal with no plans fell
       // through to on_track while the briefing called the same goal stale.
       const lastActivityTs = lastLogAt ? new Date(lastLogAt).getTime() : null;
-      const { attainment_pct } = criteriaAttainment(row.success_criteria);
+      const attainment = criteriaAttainment(row.success_criteria);
       const health = classifyGoalHealth({
         hasLinkedPlans: linkedPlanCount > 0,
         totalNodes,
@@ -215,7 +215,7 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
         bottleneckCount: bottleneckSummary.length,
         percentBlocked,
         stalePendingCount: stalePendingDecisions,
-        attainmentPct: attainment_pct,
+        attainmentPct: attainment.attainment_pct,
         executionPct: percentCompleted,
       });
 
@@ -231,6 +231,11 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
         bottleneck_summary: bottleneckSummary,
         knowledge_gap_count: 0, // Requires Graphiti — returned as 0 when unavailable
         last_activity: lastLogAt || null,
+        // Outcome attainment (criteria met) — distinct from execution
+        // (linked_plan_progress.percent_completed). attainment_pct is null when
+        // the goal has no measurable criteria.
+        attainment_pct: attainment.attainment_pct,
+        attainment: { measurable_count: attainment.measurable_count, met_count: attainment.met_count },
         linked_plan_progress: {
           total_nodes: totalNodes,
           completed_nodes: completedNodes,
