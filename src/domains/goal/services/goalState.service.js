@@ -13,6 +13,7 @@ const dal = require('../../../db/dal.cjs');
 const graphitiBridge = require('../../../services/graphitiBridge');
 const logger = require('../../../utils/logger');
 const { normalizeCriteria, isMeasurableCriterion, criteriaAttainment } = require('../../../utils/goalCriteria');
+const { checkPlanAccess } = require('../../../middleware/planAccess.middleware');
 
 // Bound the number of incomplete tasks we probe Graphiti for per call. This
 // caps the slice size (and hence the Promise.all fan-out), not in-flight
@@ -279,32 +280,69 @@ async function getGoalProgress(goalId, pathPromise = null, linkedPlanIds = null)
  */
 async function getGoalState(goal, user) {
   const links = Array.isArray(goal.links) ? goal.links : [];
-  // Canonical "linked plans" = distinct NON-ARCHIVED (and still-existing) plans
-  // linked to the goal — same definition as the dashboard/briefing count. Dedupe
-  // by plan id, then drop archived/deleted stubs. Resolved up front so the live
-  // plan ids can drive both linked_plans and the progress fallback below.
+  const failures = [];
+
+  // Live (non-archived, still-existing) linked plans, deduped by plan id.
   const dedupedPlanLinks = [...new Map(
     links.filter(l => l.linkedType === 'plan').map(l => [l.linkedId, { id: l.linkedId, link_id: l.id }]),
   ).values()];
   const planRows = await dal.plansDal.findByIds(dedupedPlanLinks.map(p => p.id));
   const liveStatus = new Map(planRows.map(p => [p.id, p.status]));
-  const linkedPlans = dedupedPlanLinks.filter(p => {
+  const livePlans = dedupedPlanLinks.filter(p => {
     const st = liveStatus.get(p.id);
     return st !== undefined && st !== 'archived';
   });
-  const livePlanIds = linkedPlans.map(p => p.id);
 
-  // One goal-path query shared across progress, knowledge gaps, and
-  // bottlenecks (each fetches its own when called standalone).
-  const pathPromise = dal.dependenciesDal.getGoalPath(goal.id);
+  // Resolve the achiever path up front so plan-access filtering applies BEFORE
+  // progress/knowledge are derived from it.
+  let path = { nodes: [] };
+  try {
+    path = await dal.dependenciesDal.getGoalPath(goal.id);
+  } catch (e) {
+    failures.push({ source: 'path', message: e?.message });
+  }
+  const allPathNodes = Array.isArray(path.nodes) ? path.nodes : [];
+
+  // ── Access boundary ──
+  // Org membership authorizes the GOAL, but each linked plan carries its own
+  // visibility. Don't leak a private plan's tasks/progress/bottlenecks to a
+  // viewer who can't open the plan. Filter linked plans AND achiever-path nodes
+  // by the viewer's plan access; report how many linked plans are hidden.
+  const candidatePlanIds = [...new Set([
+    ...livePlans.map(p => p.id),
+    ...allPathNodes.map(n => n.plan_id).filter(Boolean),
+  ])];
+  const accessChecks = await Promise.all(
+    candidatePlanIds.map(async (id) => [id, await checkPlanAccess(id, user.id)]),
+  );
+  const accessible = new Set(accessChecks.filter(([, ok]) => ok).map(([id]) => id));
+
+  const linkedPlans = livePlans.filter(p => accessible.has(p.id));
+  const hiddenLinkedPlanCount = livePlans.length - linkedPlans.length;
+  const visiblePlanIds = linkedPlans.map(p => p.id);
+
+  // Path nodes the viewer may actually see (a node without a plan_id is kept).
+  const pathNodes = allPathNodes.filter(n => !n.plan_id || accessible.has(n.plan_id));
+  const completedNodes = pathNodes.filter(n => n.status === 'completed').length;
+  const filteredPath = {
+    nodes: pathNodes,
+    stats: {
+      total: pathNodes.length,
+      completed: completedNodes,
+      blocked: pathNodes.filter(n => n.status === 'blocked').length,
+      in_progress: pathNodes.filter(n => n.status === 'in_progress').length,
+      not_started: pathNodes.filter(n => !['completed', 'blocked', 'in_progress'].includes(n.status)).length,
+      completion_percentage: pathNodes.length ? Math.round((completedNodes / pathNodes.length) * 100) : 0,
+    },
+  };
+  const filteredPathPromise = Promise.resolve(filteredPath);
+
   const settled = await Promise.allSettled([
     assessGoalQuality(goal, user),
-    getGoalProgress(goal.id, pathPromise, livePlanIds),
-    detectKnowledgeGaps(goal, user, pathPromise),
-    pathPromise,
+    getGoalProgress(goal.id, filteredPathPromise, visiblePlanIds),
+    detectKnowledgeGaps(goal, user, filteredPathPromise),
   ]);
 
-  const failures = [];
   const unwrap = (s, label, def) => {
     if (s.status === 'fulfilled') return s.value;
     failures.push({ source: label, message: s.reason?.message });
@@ -314,7 +352,6 @@ async function getGoalState(goal, user) {
   const quality = unwrap(settled[0], 'quality', {});
   const progress = unwrap(settled[1], 'progress', {});
   const gaps = unwrap(settled[2], 'knowledge_gaps', { gaps: [] });
-  const path = unwrap(settled[3], 'path', { nodes: [] });
 
   // Attainment (success criteria actually met) is DISTINCT from execution
   // (tasks completed) — a goal can be 100% task-done yet 0% attained. Surface
@@ -324,7 +361,7 @@ async function getGoalState(goal, user) {
   progress.attainment_pct = attainment.attainment_pct;
   progress.attainment = { measurable_count: attainment.measurable_count, met_count: attainment.met_count };
 
-  const bottlenecks = (Array.isArray(path.nodes) ? path.nodes : [])
+  const bottlenecks = pathNodes
     .filter(t => t.status !== 'completed')
     .sort((a, b) => (b.direct_downstream_count || 0) - (a.direct_downstream_count || 0))
     .slice(0, 5)
@@ -336,9 +373,7 @@ async function getGoalState(goal, user) {
     }));
 
   // Explicit task links (linkedType==='task') are rarely used; the tasks that
-  // actually contribute to the goal are its achiever path. Surface those so
-  // linked_tasks isn't misleadingly empty. Fall back to explicit links.
-  const pathNodes = Array.isArray(path.nodes) ? path.nodes : [];
+  // actually contribute to the goal are its (access-filtered) achiever path.
   const linkedTasks = pathNodes.length
     ? pathNodes.map(t => ({ id: t.node_id || t.id, title: t.title, status: t.status }))
     : links.filter(l => l.linkedType === 'task').map(l => ({ id: l.linkedId, link_id: l.id }));
@@ -358,6 +393,7 @@ async function getGoalState(goal, user) {
       promoted_at: goal.promotedAt,
     },
     linked_plans: linkedPlans,
+    hidden_linked_plan_count: hiddenLinkedPlanCount,
     linked_tasks: linkedTasks,
     quality: {
       score: quality.score,
