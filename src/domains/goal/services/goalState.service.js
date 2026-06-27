@@ -12,7 +12,7 @@
 const dal = require('../../../db/dal.cjs');
 const graphitiBridge = require('../../../services/graphitiBridge');
 const logger = require('../../../utils/logger');
-const { normalizeCriteria, isMeasurableCriterion } = require('../../../utils/goalCriteria');
+const { normalizeCriteria, isMeasurableCriterion, criteriaAttainment } = require('../../../utils/goalCriteria');
 
 // Bound the number of incomplete tasks we probe Graphiti for per call. This
 // caps the slice size (and hence the Promise.all fan-out), not in-flight
@@ -315,6 +315,14 @@ async function getGoalState(goal, user) {
   const progress = unwrap(settled[1], 'progress', {});
   const gaps = unwrap(settled[2], 'knowledge_gaps', { gaps: [] });
   const path = unwrap(settled[3], 'path', { nodes: [] });
+
+  // Attainment (success criteria actually met) is DISTINCT from execution
+  // (tasks completed) — a goal can be 100% task-done yet 0% attained. Surface
+  // both; never conflate. attainment_pct is null when no criterion is measurable.
+  const attainment = criteriaAttainment(goal.successCriteria);
+  progress.execution_pct = progress.progress;
+  progress.attainment_pct = attainment.attainment_pct;
+  progress.attainment = { measurable_count: attainment.measurable_count, met_count: attainment.met_count };
 
   const bottlenecks = (Array.isArray(path.nodes) ? path.nodes : [])
     .filter(t => t.status !== 'completed')

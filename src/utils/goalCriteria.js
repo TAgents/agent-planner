@@ -50,6 +50,45 @@ function isMeasurableCriterion(c) {
 }
 
 /**
+ * Has a measurable criterion reached its target? increase → current >= target,
+ * decrease → current <= target, boolean → current is truthy. Returns false for
+ * non-measurable criteria or a missing/blank current.
+ * @param {*} c
+ * @returns {boolean}
+ */
+function isCriterionMet(c) {
+  if (!isMeasurableCriterion(c)) return false;
+  const cur = c.current;
+  if (cur === undefined || cur === null || cur === '') return false;
+  if (c.direction === 'boolean') {
+    if (typeof cur === 'number') return cur > 0;
+    if (typeof cur === 'boolean') return cur;
+    return !['false', 'no', '0', 'pending', 'not_started'].includes(String(cur).toLowerCase());
+  }
+  const curN = Number(cur);
+  const tgtN = Number(c.target);
+  if (Number.isNaN(curN) || Number.isNaN(tgtN)) return false;
+  return c.direction === 'increase' ? curN >= tgtN : curN <= tgtN;
+}
+
+/**
+ * Goal attainment over MEASURABLE criteria only — distinct from task/execution
+ * progress. attainment_pct is null when a goal has no measurable criteria, so
+ * qualitative goals aren't reported as 0% attained.
+ * @param {*} raw - stored success_criteria
+ * @returns {{measurable_count:number, met_count:number, attainment_pct:(number|null)}}
+ */
+function criteriaAttainment(raw) {
+  const measurable = normalizeCriteria(raw).filter(isMeasurableCriterion);
+  const metCount = measurable.filter(isCriterionMet).length;
+  return {
+    measurable_count: measurable.length,
+    met_count: metCount,
+    attainment_pct: measurable.length ? Math.round((metCount / measurable.length) * 100) : null,
+  };
+}
+
+/**
  * Canonicalize criteria into an array of objects each guaranteed an `id` and a
  * `statement`. Plain strings become { id, statement }; objects keep their own
  * id or get one assigned by index ('c{i}'). Used when WRITING criteria back
@@ -65,4 +104,10 @@ function canonicalizeCriteria(raw) {
   });
 }
 
-module.exports = { normalizeCriteria, isMeasurableCriterion, canonicalizeCriteria };
+module.exports = {
+  normalizeCriteria,
+  isMeasurableCriterion,
+  isCriterionMet,
+  criteriaAttainment,
+  canonicalizeCriteria,
+};
