@@ -3,6 +3,7 @@ const cors = require('cors');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const logger = require('./utils/logger');
+const { versionInfo } = require('./version');
 require('dotenv').config();
 
 // Import swagger configuration
@@ -259,11 +260,18 @@ app.get('/', (req, res) => {
 
 // Health check endpoint for Cloud Run
 app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'healthy', 
+  res.status(200).json({
+    status: 'healthy',
     timestamp: new Date().toISOString(),
-    service: 'agent-planner-api'
+    service: 'agent-planner-api',
+    version: versionInfo().version,
   });
+});
+
+// Version endpoint — confirm exactly which build is running. Public (no auth)
+// so any client (UI, MCP, ops) can read it.
+app.get('/version', (req, res) => {
+  res.status(200).json(versionInfo());
 });
 
 // Error handling middleware

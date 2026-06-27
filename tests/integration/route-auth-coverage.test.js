@@ -28,6 +28,7 @@ const PUBLIC_ALLOWLIST = new Set([
   // App basics
   'GET /',
   'GET /health',
+  'GET /version', // public build/version info (ops, UI footer, MCP get_started)
   'GET /files/*', // dev-only static (NODE_ENV=development); harmless to allow
   // Auth bootstrap + recovery + OAuth (internal /auth)
   'POST /auth/register',
