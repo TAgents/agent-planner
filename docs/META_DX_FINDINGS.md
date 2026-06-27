@@ -64,4 +64,17 @@
   `w.progressPct` from the server. Segmented-bar widths are presentation ratios
   over server counts, not metric recomputes — fine.
 
+## Frontend — minor
+
+- 🔵 **Dead `calculatePlanProgress` in `planUtils.ts`** computed progress over ALL
+  nodes (the 68-vs-100 denominator bug), zero callers. Removed during Phase 4 —
+  noting so it isn't re-added. Live-compute now goes through `src/selectors`.
+- 🔵 **Duplicated blueprint structure counts.** `BlueprintDetail.tsx` and
+  `PublicBlueprint.tsx` each inline `nodes.filter(n => n.node_type === 'task')`
+  / `'phase'` for their "N phases · M tasks" labels. Presentation-only (not a
+  drifting metric) but a candidate for a shared `blueprintCounts` selector.
+- 🔵 **UI tests must run via `npm test` (react-scripts), not `npx jest`.** Raw
+  jest can't parse `import type` (no CRA babel preset) and fails with a confusing
+  SyntaxError. Worth a one-line note in the UI CLAUDE.md/README.
+
 <!-- Append new findings below as they surface. -->
