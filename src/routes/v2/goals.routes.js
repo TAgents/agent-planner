@@ -21,6 +21,7 @@ const organizationsDal = require('../../db/dal.cjs').organizationsDal;
 const graphitiBridge = require('../../services/graphitiBridge');
 const reasoning = require('../../services/reasoning');
 const goalStateService = require('../../domains/goal/services/goalState.service');
+const { cascadePlanAchievers } = require('../../domains/goal/services/goalLinks.service');
 const { classifyGoalHealth } = require('../../utils/goalHealth');
 const { canonicalizeCriteria, autoAchieveStatus, criteriaAttainment } = require('../../utils/goalCriteria');
 const { coherenceFields } = require('../../services/coherenceVocab');
@@ -524,26 +525,12 @@ router.post('/:id/links', authenticate, async (req, res) => {
     let achieversCreated = 0;
     if (linkedType === 'plan') {
       try {
-        const nodes = await nodesDal.listByPlan(linkedId);
-        const taskNodes = (nodes || []).filter(
-          n => (n.nodeType || n.node_type) === 'task',
-        );
-        const existing = await dependenciesDal.listByGoal(req.params.id);
-        const existingNodeIds = new Set(
-          (existing || []).map(r => r.node?.id).filter(Boolean),
-        );
-        for (const n of taskNodes) {
-          if (existingNodeIds.has(n.id)) continue;
-          await dependenciesDal.create({
-            sourceNodeId: n.id,
-            targetGoalId: req.params.id,
-            dependencyType: 'achieves',
-            weight: 1,
-            metadata: { auto_created_from_link: link.id },
-            createdBy: req.user.id,
-          });
-          achieversCreated++;
-        }
+        achieversCreated = await cascadePlanAchievers({
+          goalId: req.params.id,
+          planId: linkedId,
+          linkId: link.id,
+          userId: req.user.id,
+        });
       } catch (cascadeErr) {
         // Cascade is best-effort; the link itself succeeded. Log and move on.
         await logger.error('Plan-link achiever cascade error:', cascadeErr);

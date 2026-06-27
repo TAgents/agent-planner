@@ -7,6 +7,8 @@ const { coherenceFields } = require('../../services/coherenceVocab');
 const { evaluatePlanQuality } = require('../../services/planQualityEvaluator');
 const { classifyGoalHealth } = require('../../utils/goalHealth');
 const { criteriaAttainment } = require('../../utils/goalCriteria');
+const { cascadePlanAchievers } = require('../goal/services/goalLinks.service');
+const logger = require('../../utils/logger');
 
 // A plan with this many actionable tasks and zero dependency edges is flagged
 // as weakly structured — agents can produce a valid-looking tree with no
@@ -525,7 +527,16 @@ async function createIntention(user, { goal_id, title, description, rationale, s
   }
 
   const children = await createChildren(Array.isArray(tree) ? tree : [], root.id);
-  await dal.goalsDal.addLink(goal_id, 'plan', plan.id);
+  // Link the plan AND cascade 'achieves' edges to the just-created task nodes.
+  // addLink alone only inserts the link row (the achiever cascade lives in the
+  // shared goalLinks service); without this the plan had an empty achiever path
+  // and goal progress fell back to coarse linked-plan stats.
+  const planLink = await dal.goalsDal.addLink(goal_id, 'plan', plan.id);
+  try {
+    await cascadePlanAchievers({ goalId: goal_id, planId: plan.id, linkId: planLink?.id, userId: user.id });
+  } catch (cascadeErr) {
+    await logger.error('createIntention achiever cascade error:', cascadeErr);
+  }
 
   // Resolve inline dependency edges. depends_on:[X] on node N means "X blocks N"
   // → edge source=X, target=N, type=blocks. Best-effort: unresolved refs and
