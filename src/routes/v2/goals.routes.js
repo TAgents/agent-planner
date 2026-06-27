@@ -676,7 +676,7 @@ router.delete('/:id/achievers/:depId', authenticate, async (req, res) => {
  */
 router.post('/:id/criteria/progress', authenticate, async (req, res) => {
   try {
-    const { criterion_id, index, current } = req.body || {};
+    const { criterion_id, index, current, direction } = req.body || {};
     if (current === undefined) {
       return res.status(400).json({ error: 'current is required' });
     }
@@ -702,9 +702,20 @@ router.post('/:id/criteria/progress', authenticate, async (req, res) => {
       });
     }
 
-    // Coerce to the type the criterion's direction implies — MCP transports
-    // stringify untyped params (boolean true → "true"), which drifts the stored type.
-    criteria[idx] = { ...criteria[idx], current: coerceCriterionCurrent(criteria[idx], current) };
+    // Optionally promote a qualitative criterion to a yes/no milestone so a
+    // human (or agent) can mark it met. A boolean criterion needs a non-empty
+    // metric to count toward attainment — default it to the statement.
+    let next = { ...criteria[idx] };
+    if (direction === 'increase' || direction === 'decrease' || direction === 'boolean') {
+      next.direction = direction;
+      if (direction === 'boolean' && (!next.metric || !String(next.metric).trim())) {
+        next.metric = String(next.statement || 'Done').slice(0, 80);
+      }
+    }
+    // Coerce to the type the criterion's (possibly just-set) direction implies —
+    // MCP transports stringify untyped params (boolean true → "true").
+    next.current = coerceCriterionCurrent(next, current);
+    criteria[idx] = next;
 
     // Close the loop: when every measurable criterion is met, the goal achieves
     // itself — no human flip required.
