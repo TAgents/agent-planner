@@ -35,4 +35,15 @@
   → Either resolve short refs everywhere or return a friendly "use the full UUID"
   error rather than leaking the SQL.
 
+## Backend — other
+
+- 🔵 **`listPublicPlans` `sortBy: 'completion'` is a no-op.** The sort block does
+  `alphabetical`, else (if not `'completion'`) sort by date — so passing
+  `completion` silently falls through to NO sort (insertion order). Either
+  implement completion sort (now trivial: `rollup.progress_pct`) or drop the
+  option. `src/domains/plan/services/plan.service.js` ~line 340.
+- 🔵 **New `rollup` field is undocumented in the OpenAPI Plan schema.** Plan
+  list/get/progress now return `rollup`; `docs/openapi*.json` Plan schema should
+  describe it so the v1 contract is complete. (Follow-up; not blocking.)
+
 <!-- Append new findings below as they surface. -->

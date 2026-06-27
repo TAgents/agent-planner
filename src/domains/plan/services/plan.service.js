@@ -4,6 +4,7 @@
  * All data access goes through plan.repository.js — never imports DAL directly.
  */
 const repo = require('../repositories/plan.repository');
+const planRollup = require('../../../services/planRollup.service');
 const { checkPlanAccess } = require('../../../middleware/planAccess.middleware');
 const { broadcastPlanUpdate, broadcastToAll } = require('../../../websocket/broadcast');
 const {
@@ -39,42 +40,36 @@ const snakePlan = (p) => ({
   last_viewed_at: p.lastViewedAt,
 });
 
+// Plan progress + stats are derived ONLY through the canonical planRollup
+// service (work nodes = task+milestone; root/phases are structure). Do NOT
+// reintroduce ad-hoc completed/total math here — that drift is the 68-vs-100
+// bug. See docs/DERIVATIONS_AUDIT.md.
+
 const calculatePlanProgress = async (planId) => {
   const nodes = await repo.listNodesByPlan(planId);
-  if (!nodes.length) return 0;
-  const completed = nodes.filter(n => n.status === 'completed').length;
-  return Math.round((completed / nodes.length) * 100);
+  return planRollup.rollupFromNodes(nodes).progress_pct;
 };
 
 /**
- * Returns the per-status breakdown plus total + percentage so the
- * Plans Index can render a segmented progress bar (done / doing /
- * blocked / todo) instead of a single number. Reuses the same node
- * fetch as `calculatePlanProgress` so the listing page doesn't pay
- * twice per plan.
+ * Legacy segmented-bar shape (total/done/doing/blocked/todo/percentage) for the
+ * Plans Index, projected from the canonical rollup so it can never disagree with
+ * `progress`. `todo` folds not_started + plan_ready.
  */
+const statsFromRollup = (rollup) => {
+  const c = rollup.status_counts;
+  return {
+    total: rollup.total_work,
+    done: c.completed,
+    doing: c.in_progress,
+    blocked: c.blocked,
+    todo: c.not_started + c.plan_ready,
+    percentage: rollup.progress_pct,
+  };
+};
+
 const computePlanStats = async (planId) => {
   const nodes = await repo.listNodesByPlan(planId);
-  const total = nodes.length;
-  if (!total) {
-    return { total: 0, done: 0, doing: 0, blocked: 0, todo: 0, percentage: 0 };
-  }
-  let done = 0;
-  let doing = 0;
-  let blocked = 0;
-  let todo = 0;
-  for (const n of nodes) {
-    if (n.nodeType === 'root') continue; // root is structural, not a real task
-    switch (n.status) {
-      case 'completed': done += 1; break;
-      case 'in_progress': doing += 1; break;
-      case 'blocked': blocked += 1; break;
-      default: todo += 1; break;
-    }
-  }
-  const counted = done + doing + blocked + todo;
-  const percentage = counted ? Math.round((done / counted) * 100) : 0;
-  return { total: counted, done, doing, blocked, todo, percentage };
+  return statsFromRollup(planRollup.rollupFromNodes(nodes));
 };
 
 const requireAccess = async (planId, userId, roles = []) => {
@@ -97,34 +92,28 @@ const requirePlan = async (planId) => {
 async function listPlans(userId, organizationId, { statusFilter, workspaceId } = {}) {
   const { owned, shared, organization = [] } = await repo.listForUser(userId, { organizationId, status: statusFilter, workspaceId });
 
-  const ownedResults = await Promise.all(owned.map(async (p) => ({
-    ...snakePlan(p), role: 'owner',
-    progress: await calculatePlanProgress(p.id),
-    stats: await computePlanStats(p.id),
-  })));
-
-  const sharedResults = await Promise.all(shared.map(async (p) => ({
-    ...snakePlan(p), role: p.role,
-    progress: await calculatePlanProgress(p.id),
-    stats: await computePlanStats(p.id),
-  })));
-
-  const orgResults = await Promise.all(organization.map(async (p) => ({
-    ...snakePlan(p), role: p.role,
-    progress: await calculatePlanProgress(p.id),
-    stats: await computePlanStats(p.id),
-  })));
-
-  const all = [...ownedResults, ...sharedResults, ...orgResults];
+  const all = [
+    ...owned.map((p) => ({ ...snakePlan(p), role: 'owner' })),
+    ...shared.map((p) => ({ ...snakePlan(p), role: p.role })),
+    ...organization.map((p) => ({ ...snakePlan(p), role: p.role })),
+  ];
   const unique = [...new Map(all.map(p => [p.id, p])).values()];
 
-  // Bulk-decorate with goal tether + agent-active timestamps so the
-  // Plans Index row ornaments don't trigger N+1 queries client-side.
+  // Bulk-decorate with the canonical rollup, goal tether, and agent-active
+  // timestamps in three batch queries — no per-plan N+1. `progress` + `stats`
+  // are projected from `rollup` so every plan row is internally consistent.
   const planIds = unique.map(p => p.id);
-  const [goalRows, logRows] = await Promise.all([
+  const [rollups, goalRows, logRows] = await Promise.all([
+    planRollup.computePlanRollups(planIds),
     repo.listGoalTethersForPlanIds(planIds),
     repo.latestLogTimestampsByPlanIds(planIds),
   ]);
+  for (const p of unique) {
+    const r = rollups.get(p.id) || planRollup.rollupFromNodes([]);
+    p.rollup = r;
+    p.progress = r.progress_pct;
+    p.stats = statsFromRollup(r);
+  }
   const tethersByPlan = new Map();
   for (const row of goalRows) {
     if (!tethersByPlan.has(row.plan_id)) tethersByPlan.set(row.plan_id, []);
@@ -145,11 +134,11 @@ async function getPlan(planId, userId) {
   await requireAccess(planId, userId);
 
   const plan = await requirePlan(planId);
-  const progress = await calculatePlanProgress(planId);
+  const rollup = await planRollup.computePlanRollup(planId, { withCriticalPath: true });
   const owner = await repo.findUserById(plan.ownerId);
 
   return {
-    ...snakePlan(plan), progress,
+    ...snakePlan(plan), rollup, progress: rollup.progress_pct,
     owner: owner ? { id: owner.id, name: owner.name, email: owner.email } : null,
   };
 }
@@ -305,10 +294,10 @@ async function getPlanContext(planId, userId) {
     repo.listCollaborators(planId),
   ]);
 
-  const progress = nodes.length ? Math.round(nodes.filter(n => n.status === 'completed').length / nodes.length * 100) : 0;
+  const rollup = planRollup.rollupFromNodes(nodes);
 
   return {
-    plan: plan ? { ...snakePlan(plan), progress } : null,
+    plan: plan ? { ...snakePlan(plan), rollup, progress: rollup.progress_pct } : null,
     nodes_count: nodes.length,
     collaborators_count: collabs.length,
   };
@@ -318,19 +307,20 @@ async function getPlanProgress(planId, userId) {
   await requireAccess(planId, userId);
 
   const nodes = await repo.listNodesByPlan(planId);
-  const total = nodes.length;
-  const byStatus = {};
-  for (const n of nodes) {
-    byStatus[n.status] = (byStatus[n.status] || 0) + 1;
-  }
+  const rollup = planRollup.rollupFromNodes(nodes);
+  const c = rollup.status_counts;
 
+  // Legacy keys retained for back-compat, but every value comes from the
+  // canonical rollup over work nodes — so this can't disagree with the list or
+  // the detail view.
   return {
-    total,
-    completed: byStatus.completed || 0,
-    in_progress: byStatus.in_progress || 0,
-    not_started: byStatus.not_started || 0,
-    blocked: byStatus.blocked || 0,
-    progress_percentage: total ? Math.round(((byStatus.completed || 0) / total) * 100) : 0,
+    total: rollup.total_work,
+    completed: c.completed,
+    in_progress: c.in_progress,
+    not_started: c.not_started,
+    blocked: c.blocked,
+    progress_percentage: rollup.progress_pct,
+    rollup,
   };
 }
 
@@ -362,16 +352,15 @@ async function listPublicPlans({ page = 1, limit = 12, search, status, sortBy = 
   const results = await Promise.all(paginated.map(async (p) => {
     const owner = await repo.findUserById(p.ownerId);
     const nodes = await repo.listNodesByPlan(p.id);
-    const task_count = nodes.length;
-    const completed_count = nodes.filter(n => n.status === 'completed').length;
-    const completion_percentage = task_count > 0 ? Math.round((completed_count / task_count) * 100) : 0;
+    const rollup = planRollup.rollupFromNodes(nodes);
     return {
       ...snakePlan(p),
       owner: owner ? { id: owner.id, name: owner.name } : null,
-      progress: completion_percentage,
-      task_count,
-      completed_count,
-      completion_percentage,
+      rollup,
+      progress: rollup.progress_pct,
+      task_count: rollup.total_work,
+      completed_count: rollup.completed_work,
+      completion_percentage: rollup.progress_pct,
       star_count: p.starCount || 0,
     };
   }));
