@@ -12,7 +12,7 @@
 const dal = require('../../../db/dal.cjs');
 const graphitiBridge = require('../../../services/graphitiBridge');
 const logger = require('../../../utils/logger');
-const { normalizeCriteria } = require('../../../utils/goalCriteria');
+const { normalizeCriteria, isMeasurableCriterion } = require('../../../utils/goalCriteria');
 
 // Bound the number of incomplete tasks we probe Graphiti for per call. This
 // caps the slice size (and hence the Promise.all fan-out), not in-flight
@@ -37,17 +37,28 @@ async function assessGoalQuality(goal, user) {
   };
   if (!hasDesc) suggestions.push('Add a detailed description explaining what this goal achieves and why it matters');
 
-  // 2. Measurability — has success criteria. Normalize first: the legacy
-  // { criteria: [...] } wrapped shape (written by the MCP) otherwise counted as
-  // a single criterion via Object.keys(), mis-scoring every multi-criterion goal.
+  // 2. Measurability — reward criteria that actually carry a metric+target,
+  // not the raw bullet count: 6 vague statements must not outscore 2 sharp
+  // metrics. Normalize first (the legacy { criteria: [...] } wrapped shape would
+  // otherwise count as a single criterion via Object.keys()). Half the score is
+  // coverage (enough criteria), half is the share that is measurable.
   const criteriaList = normalizeCriteria(goal.successCriteria);
-  const hasCriteria = criteriaList.length > 0;
   const criteriaCount = criteriaList.length;
-  dimensions.measurability = {
-    score: hasCriteria ? Math.min(criteriaCount / 2, 1.0) : 0,
-    detail: hasCriteria ? `${criteriaCount} success criteria defined` : 'No success criteria — goal is not measurable',
-  };
-  if (!hasCriteria) suggestions.push('Define success criteria with specific metrics and targets (e.g., "API latency < 100ms p99")');
+  const measurableCount = criteriaList.filter(isMeasurableCriterion).length;
+  if (criteriaCount === 0) {
+    dimensions.measurability = { score: 0, detail: 'No success criteria — goal is not measurable' };
+    suggestions.push('Define success criteria with specific metrics and targets (e.g., "API latency < 100ms p99")');
+  } else {
+    const coverage = Math.min(criteriaCount / 2, 1.0);
+    const measurableShare = measurableCount / criteriaCount;
+    dimensions.measurability = {
+      score: Math.round((0.5 * coverage + 0.5 * measurableShare) * 100) / 100,
+      detail: `${measurableCount}/${criteriaCount} criteria carry a metric + target`,
+    };
+    if (measurableShare < 1) {
+      suggestions.push("Make criteria measurable — add metric + target + direction (e.g. {metric: 'p99 latency', target: 100, unit: 'ms', direction: 'decrease'})");
+    }
+  }
 
   // 3. Actionability — has linked plans. Count DISTINCT, NON-ARCHIVED linked
   // plans, the same definition as briefing/goal_state, so the numbers agree.

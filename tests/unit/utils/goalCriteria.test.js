@@ -1,4 +1,4 @@
-const { normalizeCriteria } = require('../../../src/utils/goalCriteria');
+const { normalizeCriteria, isMeasurableCriterion } = require('../../../src/utils/goalCriteria');
 
 describe('normalizeCriteria', () => {
   it('returns a string[] unchanged', () => {
@@ -30,5 +30,38 @@ describe('normalizeCriteria', () => {
   it('drops null/empty entries so the count reflects real criteria', () => {
     expect(normalizeCriteria(['a', '', null, undefined, 'b'])).toEqual(['a', 'b']);
     expect(normalizeCriteria({ criteria: ['a', null, ''] })).toEqual(['a']);
+  });
+});
+
+describe('isMeasurableCriterion', () => {
+  it('is false for plain-string (qualitative) criteria', () => {
+    expect(isMeasurableCriterion('make it fast')).toBe(false);
+  });
+
+  it('is false for an object with only a statement', () => {
+    expect(isMeasurableCriterion({ statement: 'make it fast' })).toBe(false);
+  });
+
+  it('is true for increase/decrease with metric + target + direction', () => {
+    expect(isMeasurableCriterion({ metric: 'p99 latency', target: 100, direction: 'decrease' })).toBe(true);
+    expect(isMeasurableCriterion({ metric: 'paying customers', target: 10, direction: 'increase' })).toBe(true);
+  });
+
+  it('is false when target is missing for increase/decrease', () => {
+    expect(isMeasurableCriterion({ metric: 'p99 latency', direction: 'decrease' })).toBe(false);
+  });
+
+  it('is true for a boolean criterion with a metric (target optional)', () => {
+    expect(isMeasurableCriterion({ metric: 'oauth shipped', direction: 'boolean' })).toBe(true);
+  });
+
+  it('is false without a metric, or with an unknown direction', () => {
+    expect(isMeasurableCriterion({ target: 100, direction: 'decrease' })).toBe(false);
+    expect(isMeasurableCriterion({ metric: 'x', target: 1, direction: 'sideways' })).toBe(false);
+  });
+
+  it('is false for null / non-objects', () => {
+    expect(isMeasurableCriterion(null)).toBe(false);
+    expect(isMeasurableCriterion(42)).toBe(false);
   });
 });

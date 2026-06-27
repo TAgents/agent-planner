@@ -31,4 +31,22 @@ function normalizeCriteria(raw) {
   return arr.filter((c) => c !== null && c !== undefined && c !== '');
 }
 
-module.exports = { normalizeCriteria };
+/**
+ * A criterion is "measurable" — and therefore countable toward goal attainment —
+ * only when it carries enough structure to evaluate automatically: a metric, a
+ * direction, and (for increase/decrease) a target. Plain-string criteria and
+ * objects with only a statement are qualitative, not measurable.
+ * @param {*} c - a single normalized criterion
+ * @returns {boolean}
+ */
+function isMeasurableCriterion(c) {
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return false;
+  if (typeof c.metric !== 'string' || c.metric.trim() === '') return false;
+  if (c.direction === 'boolean') return true;
+  if (c.direction === 'increase' || c.direction === 'decrease') {
+    return c.target !== undefined && c.target !== null && c.target !== '';
+  }
+  return false;
+}
+
+module.exports = { normalizeCriteria, isMeasurableCriterion };
