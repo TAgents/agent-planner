@@ -10517,7 +10517,23 @@
     "/knowledge/coverage": {
       "get": {
         "summary": "Per-plan + per-task knowledge coverage aggregation (Phase 3)",
-        "description": "Computes coverage from the structured `episode_node_links` table —\nexact, not text-match-based like /coverage-map. Returns:\n\n  - org_summary: { total_tasks, tasks_with_facts, ratio }\n  - plans: [{ plan_id, plan_title, total_tasks, tasks_with_facts,\n              ratio, stale_tasks: [...], conflict_tasks: [...] }]\n\nA task is \"stale\" if its most-recent episode link is older than\nSTALE_DAYS (default 5). A task is \"conflict\" if it has at least\none link with link_type='contradicts'.\n"
+        "description": "Computes coverage from the structured `episode_node_links` table —\nexact, not text-match-based like /coverage-map. Returns:\n\n  - org_summary: { total_tasks, tasks_with_facts, ratio }\n  - plans: [{ plan_id, plan_title, total_tasks, tasks_with_facts,\n              ratio, gap_tasks: [...], gap_count, stale_tasks: [...],\n              conflict_tasks: [...] }]\n\ngap_tasks are incomplete tasks with ZERO knowledge links (research\nmissing) — the actionable list; capped at 25/plan with gap_count\ncarrying the true total. A task is \"stale\" if its most-recent\nepisode link is older than STALE_DAYS (default 5). A task is\n\"conflict\" if it has at least one link with link_type='contradicts'.\n",
+        "tags": [
+          "Knowledge - Temporal Graph"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Org + per-plan coverage with gap/stale/conflict task lists"
+          },
+          "500": {
+            "description": "Failed to compute coverage"
+          }
+        }
       }
     },
     "/plans/{id}/knowledge-loop/start": {

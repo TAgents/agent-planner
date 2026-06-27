@@ -831,6 +831,14 @@ router.get('/coverage-map', authenticate, async (req, res) => {
  *       carrying the true total. A task is "stale" if its most-recent
  *       episode link is older than STALE_DAYS (default 5). A task is
  *       "conflict" if it has at least one link with link_type='contradicts'.
+ *     tags: [Knowledge - Temporal Graph]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Org + per-plan coverage with gap/stale/conflict task lists
+ *       500:
+ *         description: Failed to compute coverage
  */
 router.get('/coverage', authenticate, async (req, res) => {
   try {
