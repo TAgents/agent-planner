@@ -793,11 +793,14 @@ router.get('/coverage-map', authenticate, async (req, res) => {
  *
  *         - org_summary: { total_tasks, tasks_with_facts, ratio }
  *         - plans: [{ plan_id, plan_title, total_tasks, tasks_with_facts,
- *                     ratio, stale_tasks: [...], conflict_tasks: [...] }]
+ *                     ratio, gap_tasks: [...], gap_count, stale_tasks: [...],
+ *                     conflict_tasks: [...] }]
  *
- *       A task is "stale" if its most-recent episode link is older than
- *       STALE_DAYS (default 5). A task is "conflict" if it has at least
- *       one link with link_type='contradicts'.
+ *       gap_tasks are incomplete tasks with ZERO knowledge links (research
+ *       missing) — the actionable list; capped at 25/plan with gap_count
+ *       carrying the true total. A task is "stale" if its most-recent
+ *       episode link is older than STALE_DAYS (default 5). A task is
+ *       "conflict" if it has at least one link with link_type='contradicts'.
  */
 router.get('/coverage', authenticate, async (req, res) => {
   try {
@@ -842,10 +845,21 @@ router.get('/coverage', authenticate, async (req, res) => {
       let withFacts = 0;
       const staleTasks = [];
       const conflictTasks = [];
+      // Tasks with zero knowledge links — the actionable "research missing here"
+      // list. Capped per plan to bound payload; gap_count carries the true total.
+      const GAP_CAP = 25;
+      const gapTasks = [];
+      let gapCount = 0;
 
       for (const t of tasks) {
         const taskLinks = byNode.get(t.id) || [];
-        if (taskLinks.length === 0) continue;
+        if (taskLinks.length === 0) {
+          gapCount += 1;
+          if (gapTasks.length < GAP_CAP) {
+            gapTasks.push({ task_id: t.id, task_title: t.title, task_mode: t.taskMode || null });
+          }
+          continue;
+        }
         withFacts += 1;
 
         const newest = Math.max(...taskLinks.map((l) => new Date(l.createdAt).getTime()));
@@ -866,6 +880,8 @@ router.get('/coverage', authenticate, async (req, res) => {
         total_tasks: tasks.length,
         tasks_with_facts: withFacts,
         ratio: tasks.length > 0 ? withFacts / tasks.length : 0,
+        gap_tasks: gapTasks,
+        gap_count: gapCount,
         stale_tasks: staleTasks,
         conflict_tasks: conflictTasks,
       });
