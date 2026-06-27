@@ -6,6 +6,7 @@
  * Agents see the same /knowledge/* paths; Graphiti is invisible.
  */
 const express = require('express');
+const { randomUUID } = require('crypto');
 const router = express.Router();
 const { authenticate } = require('../../middleware/auth.middleware.v2');
 const logger = require('../../utils/logger');
@@ -263,7 +264,13 @@ router.post('/episodes', authenticate, async (req, res) => {
     // without round-tripping through Graphiti metadata (which get_episodes
     // doesn't surface). Prefer node_id if explicitly given; otherwise link
     // to the plan's root node when plan_id is provided.
-    if (episodeId && (node_id || plan_id)) {
+    //
+    // Graphiti's add_memory ingests asynchronously and returns no synchronous
+    // uuid, so episodeId is usually null here. We still create the link using a
+    // 'pending:' correlation id — coverage only needs one link row per node;
+    // a reconciliation job backfills the real uuid later. (Gating the link on a
+    // non-null episodeId was the root cause of the 0-of-840 coverage bug.)
+    if (node_id || plan_id) {
       try {
         let targetNodeId = node_id;
         if (!targetNodeId && plan_id) {
@@ -271,7 +278,7 @@ router.post('/episodes', authenticate, async (req, res) => {
           targetNodeId = root?.id || null;
         }
         if (targetNodeId) {
-          await dal.episodeLinksDal.link(episodeId, targetNodeId, 'informs');
+          await dal.episodeLinksDal.link(episodeId || `pending:${randomUUID()}`, targetNodeId, 'informs');
         }
       } catch (err) {
         await logger.warn('episode_node_link create failed:', err.message);

@@ -14,6 +14,7 @@
  * domains/goal/services/goalState.service.js.
  */
 
+const { randomUUID } = require('crypto');
 const dal = require('../db/dal.cjs');
 const reasoning = require('./reasoning');
 const graphitiBridge = require('./graphitiBridge');
@@ -265,7 +266,7 @@ async function updateTask(user, nodeId, {
   if (add_learning) {
     if (graphitiBridge.isAvailable()) {
       try {
-        await graphitiBridge.addEpisode({
+        const epResult = await graphitiBridge.addEpisode({
           content: add_learning,
           name: `Task: ${node.title}`,
           source: 'text',
@@ -273,6 +274,19 @@ async function updateTask(user, nodeId, {
           group_id: graphitiBridge.getGroupId(user),
         });
         result.applied.learning_recorded = true;
+        // Link the episode to this node so it counts toward knowledge
+        // coverage. Graphiti's add_memory ingests asynchronously and returns
+        // no synchronous uuid, so fall back to a 'pending:' correlation id —
+        // coverage only needs one link row per node; a reconciliation job can
+        // backfill the real Graphiti uuid later. Without this link the task is
+        // invisible to /knowledge/coverage (the 0-of-840 bug).
+        try {
+          const episodeId = epResult?.uuid || epResult?.episode_id || `pending:${randomUUID()}`;
+          await dal.episodeLinksDal.link(episodeId, node.id, 'informs');
+          result.applied.knowledge_linked = true;
+        } catch (linkErr) {
+          result.failures.push({ step: 'link_learning', error: linkErr.message });
+        }
       } catch (err) {
         result.failures.push({ step: 'add_learning', error: err.message });
       }
