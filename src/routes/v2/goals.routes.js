@@ -23,7 +23,7 @@ const reasoning = require('../../services/reasoning');
 const goalStateService = require('../../domains/goal/services/goalState.service');
 const { cascadePlanAchievers } = require('../../domains/goal/services/goalLinks.service');
 const { classifyGoalHealth } = require('../../utils/goalHealth');
-const { canonicalizeCriteria, autoAchieveStatus, criteriaAttainment } = require('../../utils/goalCriteria');
+const { canonicalizeCriteria, autoAchieveStatus, criteriaAttainment, coerceCriterionCurrent } = require('../../utils/goalCriteria');
 const { coherenceFields } = require('../../services/coherenceVocab');
 
 const VALID_LINK_TYPES = ['plan', 'task', 'agent'];
@@ -755,7 +755,9 @@ router.post('/:id/criteria/progress', authenticate, async (req, res) => {
       });
     }
 
-    criteria[idx] = { ...criteria[idx], current };
+    // Coerce to the type the criterion's direction implies — MCP transports
+    // stringify untyped params (boolean true → "true"), which drifts the stored type.
+    criteria[idx] = { ...criteria[idx], current: coerceCriterionCurrent(criteria[idx], current) };
 
     // Close the loop: when every measurable criterion is met, the goal achieves
     // itself — no human flip required.

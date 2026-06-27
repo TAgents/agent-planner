@@ -4,6 +4,7 @@ const {
   isCriterionMet,
   criteriaAttainment,
   autoAchieveStatus,
+  coerceCriterionCurrent,
   canonicalizeCriteria,
 } = require('../../../src/utils/goalCriteria');
 
@@ -180,5 +181,27 @@ describe('autoAchieveStatus', () => {
 
   it('promotes a draft goal too once fully attained', () => {
     expect(autoAchieveStatus(allMet, 'draft')).toBe('achieved');
+  });
+});
+
+describe('coerceCriterionCurrent', () => {
+  it('coerces a stringified boolean back to a real boolean', () => {
+    const c = { direction: 'boolean' };
+    expect(coerceCriterionCurrent(c, 'true')).toBe(true);
+    expect(coerceCriterionCurrent(c, 'false')).toBe(false);
+    expect(coerceCriterionCurrent(c, true)).toBe(true);
+    expect(coerceCriterionCurrent(c, 'done')).toBe(true);
+    expect(coerceCriterionCurrent(c, 'not_started')).toBe(false);
+  });
+
+  it('coerces a numeric string to a number for increase/decrease', () => {
+    expect(coerceCriterionCurrent({ direction: 'decrease' }, '72')).toBe(72);
+    expect(coerceCriterionCurrent({ direction: 'increase' }, 10)).toBe(10);
+  });
+
+  it('leaves non-numeric values and unknown directions untouched', () => {
+    expect(coerceCriterionCurrent({ direction: 'increase' }, 'n/a')).toBe('n/a');
+    expect(coerceCriterionCurrent({}, 'whatever')).toBe('whatever');
+    expect(coerceCriterionCurrent({ direction: 'boolean' }, null)).toBeNull();
   });
 });

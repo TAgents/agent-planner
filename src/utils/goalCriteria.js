@@ -88,6 +88,37 @@ function criteriaAttainment(raw) {
   };
 }
 
+const TRUTHY_BOOLEAN_MARKERS = ['true', 'yes', 'done', '1', 'complete', 'completed'];
+const FALSEY_BOOLEAN_MARKERS = ['false', 'no', '0', 'pending', 'not_started', ''];
+
+/**
+ * Coerce a recorded `current` value to the type implied by the criterion's
+ * direction. MCP transports stringify untyped params (a boolean `true` arrives
+ * as "true"), which left stored criteria with drifting types. Normalize on
+ * write: boolean criteria store an actual boolean; increase/decrease store a
+ * number when the value parses (non-numeric labels pass through unchanged).
+ * @param {object} criterion
+ * @param {*} raw
+ * @returns {*}
+ */
+function coerceCriterionCurrent(criterion, raw) {
+  if (raw === null || raw === undefined) return raw;
+  const dir = criterion && criterion.direction;
+  if (dir === 'boolean') {
+    if (typeof raw === 'boolean') return raw;
+    const s = String(raw).trim().toLowerCase();
+    if (TRUTHY_BOOLEAN_MARKERS.includes(s)) return true;
+    if (FALSEY_BOOLEAN_MARKERS.includes(s)) return false;
+    return Boolean(raw);
+  }
+  if (dir === 'increase' || dir === 'decrease') {
+    if (typeof raw === 'number') return raw;
+    const n = Number(raw);
+    return Number.isNaN(n) ? raw : n;
+  }
+  return raw;
+}
+
 const TERMINAL_GOAL_STATUSES = ['achieved', 'abandoned', 'archived'];
 
 /**
@@ -128,5 +159,6 @@ module.exports = {
   isCriterionMet,
   criteriaAttainment,
   autoAchieveStatus,
+  coerceCriterionCurrent,
   canonicalizeCriteria,
 };
