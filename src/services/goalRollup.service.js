@@ -25,6 +25,7 @@ const dal = require('../db/dal.cjs');
 async function rollupFromRow(row) {
   const totalNodes = row.total_nodes;
   const completedNodes = row.completed_nodes;
+  const inProgressNodes = row.in_progress_nodes || 0;
   const blockedNodes = row.blocked_nodes;
   const planReadyNodes = row.plan_ready_nodes;
   const agentRequestNodes = row.agent_request_nodes;
@@ -81,6 +82,7 @@ async function rollupFromRow(row) {
     percent_blocked: percentBlocked,
     total_nodes: totalNodes,
     completed_nodes: completedNodes,
+    in_progress_nodes: inProgressNodes,
     blocked_nodes: blockedNodes,
     linked_plan_count: linkedPlanCount,
     attainment_pct: attainment.attainment_pct,

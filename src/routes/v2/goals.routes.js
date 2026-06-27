@@ -180,6 +180,7 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
       linked_plan_progress: {
         total_nodes: r.total_nodes,
         completed_nodes: r.completed_nodes,
+        in_progress_nodes: r.in_progress_nodes,
         blocked_nodes: r.blocked_nodes,
         percent_completed: r.execution_pct,
         percent_blocked: r.percent_blocked,

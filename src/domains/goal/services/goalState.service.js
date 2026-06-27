@@ -354,20 +354,34 @@ async function getGoalState(goal, user) {
   const progress = unwrap(settled[1], 'progress', {});
   const gaps = unwrap(settled[2], 'knowledge_gaps', { gaps: [] });
 
-  // Canonical health from the shared rollup — the SAME computation Mission and
-  // the dashboard use, so the detail header matches the list. Bounded to this
-  // one goal. null when the goal isn't an active rollup row.
-  let healthFromRollup = null;
+  // Canonical rollup — the SAME computation Mission and the dashboard use, so
+  // the detail header's health AND execution numbers match the list. Bounded to
+  // this one goal. null when the goal isn't an active rollup row.
+  let canonicalRollup = null;
   try {
     const rollup = await goalRollupService.computeGoalRollup({
       userId: user.id,
       organizationIds: (user.organizations || []).map(o => o.id),
       goalId: goal.id,
     });
-    healthFromRollup = rollup?.health || null;
+    if (rollup) {
+      canonicalRollup = {
+        health: rollup.health,
+        execution_pct: rollup.execution_pct,
+        total_nodes: rollup.total_nodes,
+        completed_nodes: rollup.completed_nodes,
+        in_progress_nodes: rollup.in_progress_nodes,
+        blocked_nodes: rollup.blocked_nodes,
+        percent_blocked: rollup.percent_blocked,
+        linked_plan_count: rollup.linked_plan_count,
+        attainment_pct: rollup.attainment_pct,
+        pending_decision_count: rollup.pending_decision_count,
+      };
+    }
   } catch (err) {
-    failures.push({ source: 'health', message: err?.message });
+    failures.push({ source: 'rollup', message: err?.message });
   }
+  const healthFromRollup = canonicalRollup?.health || null;
 
   // Attainment (success criteria actually met) is DISTINCT from execution
   // (tasks completed) — a goal can be 100% task-done yet 0% attained. Surface
@@ -419,11 +433,12 @@ async function getGoalState(goal, user) {
     },
     progress,
     bottlenecks,
-    // Canonical health from the shared rollup (same source as Mission/dashboard)
-    // so the detail header can't disagree with the list. null for goals not in
-    // the active-goal rollup set (e.g. achieved/paused) — the UI shows lifecycle
-    // status there instead.
+    // Canonical health + execution numbers from the shared rollup (same source
+    // as Mission/dashboard) so the detail header can't disagree with the list.
+    // null for goals not in the active-goal rollup set (e.g. achieved/paused) —
+    // the UI shows lifecycle status / achiever-path progress there instead.
     health: healthFromRollup,
+    rollup: canonicalRollup,
     knowledge_gaps: Array.isArray(gaps.gaps) ? gaps.gaps : [],
     meta: { partial: failures.length > 0, failures },
   };
