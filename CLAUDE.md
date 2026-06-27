@@ -43,8 +43,7 @@ Swagger UI: `http://localhost:3000/api-docs` once the server is running.
 ### Docker Compose profiles (run from this directory)
 
 ```bash
-docker compose --profile core up -d                       # postgres + api only
-docker compose --profile core --profile knowledge up -d   # + falkordb + graphiti
+docker compose --profile core up -d                       # core stack: postgres, api, frontend, neo4j, graphiti
 docker compose -f docker-compose.local.yml up --build     # full stack (postgres 5433, api 3000, ui 3001, mcp 3100). Needs OPENAI_API_KEY.
 docker compose -f docker-compose.dev.yml up               # same services, bind-mounts ../agent-planner-ui, ./, ../agent-planner-mcp for hot reload
 docker compose -f docker-compose.prod.yml ...             # production compose

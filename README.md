@@ -1,7 +1,7 @@
 # AgentPlanner API
 
 [![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-16+-green.svg)](https://nodejs.org)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-blue.svg)](https://www.postgresql.org)
 
 The backend API for [AgentPlanner](https://agentplanner.io) — a collaborative planning platform where humans and AI agents work together on hierarchical plans.
@@ -22,13 +22,14 @@ The backend API for [AgentPlanner](https://agentplanner.io) — a collaborative 
 - **Task claim/lease** — TTL-based locking for multi-agent coordination
 - **Decision queue** — structured agent-to-human handoffs with approve/redirect workflow
 - **Organizations** — multi-tenant isolation with role-based access
+- **Workspaces & Blueprints** — organization-scoped containers for goals and plans, plus reusable plan templates that fork into a workspace
 
 ## Self-Hosting
 
 ### Prerequisites
 
 - Docker and Docker Compose
-- Node.js 16+ (for running without Docker)
+- Node.js 18+ (for running without Docker)
 - An OpenAI API key (required for the knowledge graph / Graphiti)
 
 ### Quick Start with Docker Compose
@@ -45,23 +46,21 @@ cd agent-planner
 cp .env.example .env
 # Edit .env — set JWT_SECRET, OPENAI_API_KEY, and change default passwords
 
-# Start PostgreSQL + API only (no frontend, no graphiti)
+# Start the core stack (postgres, api, frontend, neo4j, graphiti)
 docker compose --profile core up -d
 
 # Run database migrations
-docker compose exec api npm run db:init
+docker compose exec api npm run db:migrate
 ```
 
 The API will be available at `http://localhost:3000`.
 
-### Optional: Knowledge Graph (Graphiti + FalkorDB)
+### Optional: Knowledge Graph (Graphiti + Neo4j)
 
-```bash
-# Start with knowledge graph support
-docker compose --profile core --profile knowledge up -d
-```
-
-Set `GRAPHITI_INTERNAL_URL=http://graphiti:8000` in your `.env` to enable it.
+The `core` profile already brings up Graphiti (backed by Neo4j Community). To enable
+knowledge-graph features, set `OPENAI_API_KEY` and `GRAPHITI_INTERNAL_URL=http://graphiti:8000`
+in your `.env`. If Graphiti is unavailable, knowledge endpoints degrade gracefully and
+return empty results.
 
 ### Environment Variables
 
@@ -84,9 +83,9 @@ See `.env.example` for the full list including database config.
 npm install
 
 # Requires a running PostgreSQL 17 instance with pgvector
-npm run db:init   # Apply migrations + create first user
-npm run dev       # Development with hot reload
-npm start         # Production
+npm run db:migrate   # Apply migration files (or: npm run db:push for dev)
+npm run dev          # Development with hot reload
+npm start            # Production
 ```
 
 ### Available Scripts
@@ -95,7 +94,6 @@ npm start         # Production
 npm run dev          # Development server (nodemon)
 npm start            # Production server
 npm test             # Run all tests (unit + integration)
-npm run db:init      # Apply DB migrations
 npm run db:push      # Push Drizzle schema to database (dev)
 npm run db:migrate   # Run migration files (production)
 npm run db:studio    # Open Drizzle Studio (DB browser)
@@ -181,9 +179,8 @@ agent-planner/
 │   │   └── messageBus.js     # PostgreSQL LISTEN/NOTIFY event bus
 │   ├── db/
 │   │   ├── schema/*.mjs      # Drizzle ORM table definitions
-│   │   ├── dal/*.mjs         # Data Access Layer (18 modules)
-│   │   ├── dal.cjs           # CJS/ESM bridge
-│   │   └── sql/*.sql         # Migration files
+│   │   ├── dal/*.mjs         # Data Access Layer (23 modules)
+│   │   └── dal.cjs           # CJS/ESM bridge
 │   ├── middleware/           # Auth, rate limiting
 │   ├── adapters/             # Notification adapters (Slack, Webhook)
 │   └── websocket/            # Real-time collaboration
@@ -211,11 +208,17 @@ Authorization: ApiKey <api_token>
 
 API tokens are created in the AgentPlanner UI under Settings → API Tokens. Tokens are stored as SHA-256 hashes.
 
+## Public API (`/v1`)
+
+The versioned `/v1` API is the public contract for external integrations and the MCP server — Swagger UI at `/api-docs`. The internal unversioned routes are the UI's contract and are documented separately at `/api-docs/internal`.
+
 ## Database Schema
 
 PostgreSQL 17 with pgvector via Drizzle ORM. Key tables:
 
 - `users`, `organizations`, `plan_collaborators` — accounts and access
+- `workspaces` — organization-scoped containers that own goals and plans
+- `blueprints` — dehydrated, reusable plan shapes that fork into a workspace
 - `plans`, `plan_nodes` — hierarchical plan structure (includes BDI fields: `coherence_status`, `quality_score`)
 - `node_dependencies` — dependency graph edges
 - `node_claims` — TTL-based task lease/lock for multi-agent coordination
@@ -225,7 +228,7 @@ PostgreSQL 17 with pgvector via Drizzle ORM. Key tables:
 - `decision_requests` — structured agent-to-human handoffs
 - `api_tokens` — programmatic access tokens
 
-Knowledge is stored in Graphiti (external temporal knowledge graph via FalkorDB), not in PostgreSQL.
+Knowledge is stored in Graphiti (external temporal knowledge graph backed by Neo4j Community), not in PostgreSQL.
 
 Migrations live in `migrations/` with numeric prefixes. Schema definitions in `src/db/schema/*.mjs` (Drizzle ORM).
 
