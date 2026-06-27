@@ -49,4 +49,20 @@ function isMeasurableCriterion(c) {
   return false;
 }
 
-module.exports = { normalizeCriteria, isMeasurableCriterion };
+/**
+ * Canonicalize criteria into an array of objects each guaranteed an `id` and a
+ * `statement`. Plain strings become { id, statement }; objects keep their own
+ * id or get one assigned by index ('c{i}'). Used when WRITING criteria back
+ * (e.g. recording progress) so stored criteria converge on the structured shape
+ * and become individually addressable.
+ * @param {*} raw - the stored `goal.successCriteria` value
+ * @returns {Array<{id: string, statement?: string}>}
+ */
+function canonicalizeCriteria(raw) {
+  return normalizeCriteria(raw).map((c, i) => {
+    if (typeof c === 'string') return { id: `c${i}`, statement: c };
+    return { id: c.id || `c${i}`, ...c };
+  });
+}
+
+module.exports = { normalizeCriteria, isMeasurableCriterion, canonicalizeCriteria };

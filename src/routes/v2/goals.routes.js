@@ -22,6 +22,7 @@ const graphitiBridge = require('../../services/graphitiBridge');
 const reasoning = require('../../services/reasoning');
 const goalStateService = require('../../domains/goal/services/goalState.service');
 const { classifyGoalHealth } = require('../../utils/goalHealth');
+const { canonicalizeCriteria } = require('../../utils/goalCriteria');
 const { coherenceFields } = require('../../services/coherenceVocab');
 
 const VALID_LINK_TYPES = ['plan', 'task', 'agent'];
@@ -697,6 +698,73 @@ router.delete('/:id/achievers/:depId', authenticate, async (req, res) => {
   } catch (err) {
     await logger.error('Delete achieves edge error:', err);
     res.status(500).json({ error: 'Failed to delete achieves edge' });
+  }
+});
+
+/**
+ * @swagger
+ * /goals/{id}/criteria/progress:
+ *   post:
+ *     summary: Record the current value of a success criterion
+ *     description: Sets {current} on one structured criterion (identified by criterion_id or 0-based index). Writing back canonicalizes the goal's criteria into the structured {id, statement, ...} shape. This is the write that makes goal attainment measurable.
+ *     tags: [Goals]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               criterion_id: { type: string, description: "Stable id (e.g. 'c0'); or use index" }
+ *               index: { type: integer, description: "0-based position; alternative to criterion_id" }
+ *               current: { description: "Latest observed value (number or string). Required." }
+ *     responses:
+ *       200:
+ *         description: Updated criterion + the full canonicalized criteria array
+ *       404:
+ *         description: No criterion matched
+ */
+router.post('/:id/criteria/progress', authenticate, async (req, res) => {
+  try {
+    const { criterion_id, index, current } = req.body || {};
+    if (current === undefined) {
+      return res.status(400).json({ error: 'current is required' });
+    }
+    if (!criterion_id && !Number.isInteger(index)) {
+      return res.status(400).json({ error: 'criterion_id or index is required' });
+    }
+
+    const goal = await requireGoalAccess(req, res);
+    if (!goal) return;
+
+    const criteria = canonicalizeCriteria(goal.successCriteria);
+    if (criteria.length === 0) {
+      return res.status(404).json({ error: 'Goal has no success criteria to update' });
+    }
+
+    const idx = criterion_id
+      ? criteria.findIndex(c => c.id === criterion_id)
+      : index;
+    if (idx < 0 || idx >= criteria.length) {
+      return res.status(404).json({
+        error: criterion_id ? `No criterion with id '${criterion_id}'` : `No criterion at index ${index}`,
+        available_ids: criteria.map(c => c.id),
+      });
+    }
+
+    criteria[idx] = { ...criteria[idx], current };
+    await goalsDal.update(req.params.id, { successCriteria: criteria });
+
+    res.json({ goal_id: req.params.id, criterion: criteria[idx], criteria });
+  } catch (err) {
+    await logger.error('Record criterion progress error:', err);
+    res.status(500).json({ error: 'Failed to record criterion progress' });
   }
 });
 

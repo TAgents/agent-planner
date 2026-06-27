@@ -9857,6 +9857,61 @@
         }
       }
     },
+    "/goals/{id}/criteria/progress": {
+      "post": {
+        "summary": "Record the current value of a success criterion",
+        "description": "Sets {current} on one structured criterion (identified by criterion_id or 0-based index). Writing back canonicalizes the goal's criteria into the structured {id, statement, ...} shape. This is the write that makes goal attainment measurable.",
+        "tags": [
+          "Goals"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "criterion_id": {
+                    "type": "string",
+                    "description": "Stable id (e.g. 'c0'); or use index"
+                  },
+                  "index": {
+                    "type": "integer",
+                    "description": "0-based position; alternative to criterion_id"
+                  },
+                  "current": {
+                    "description": "Latest observed value (number or string). Required."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated criterion + the full canonicalized criteria array"
+          },
+          "404": {
+            "description": "No criterion matched"
+          }
+        }
+      }
+    },
     "/goals/{goalId}/briefing": {
       "get": {
         "summary": "Get a comprehensive goal briefing",

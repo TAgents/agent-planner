@@ -1,4 +1,4 @@
-const { normalizeCriteria, isMeasurableCriterion } = require('../../../src/utils/goalCriteria');
+const { normalizeCriteria, isMeasurableCriterion, canonicalizeCriteria } = require('../../../src/utils/goalCriteria');
 
 describe('normalizeCriteria', () => {
   it('returns a string[] unchanged', () => {
@@ -63,5 +63,33 @@ describe('isMeasurableCriterion', () => {
   it('is false for null / non-objects', () => {
     expect(isMeasurableCriterion(null)).toBe(false);
     expect(isMeasurableCriterion(42)).toBe(false);
+  });
+});
+
+describe('canonicalizeCriteria', () => {
+  it('turns plain strings into { id, statement } with index-based ids', () => {
+    expect(canonicalizeCriteria(['first', 'second'])).toEqual([
+      { id: 'c0', statement: 'first' },
+      { id: 'c1', statement: 'second' },
+    ]);
+  });
+
+  it('preserves an existing id and all fields on objects', () => {
+    const input = [{ id: 'latency', statement: 's', metric: 'p99', target: 100, direction: 'decrease' }];
+    expect(canonicalizeCriteria(input)).toEqual(input);
+  });
+
+  it('assigns ids by index to objects missing one, keeping fields', () => {
+    const out = canonicalizeCriteria([{ statement: 's', metric: 'm', target: 1, direction: 'increase' }]);
+    expect(out[0]).toEqual({ id: 'c0', statement: 's', metric: 'm', target: 1, direction: 'increase' });
+  });
+
+  it('unwraps the legacy { criteria: [...] } shape before canonicalizing', () => {
+    expect(canonicalizeCriteria({ criteria: ['a'] })).toEqual([{ id: 'c0', statement: 'a' }]);
+  });
+
+  it('returns [] for empty/unknown shapes', () => {
+    expect(canonicalizeCriteria(null)).toEqual([]);
+    expect(canonicalizeCriteria({})).toEqual([]);
   });
 });
