@@ -170,6 +170,7 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
       type: r.type,
       committed: r.committed,
       status: r.status,
+      workspace_id: r.workspace_id,
       health: r.health,
       owner_name: r.owner_name,
       bottleneck_summary: r.bottleneck_summary,

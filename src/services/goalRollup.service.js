@@ -75,6 +75,7 @@ async function rollupFromRow(row) {
     type: row.type,
     committed: Boolean(row.committed),
     status: row.status,
+    workspace_id: row.workspace_id || null,
     owner_name: row.owner_name || null,
     // ── Canonical cross-view numbers ──
     health,
