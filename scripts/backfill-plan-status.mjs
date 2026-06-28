@@ -14,7 +14,8 @@
  *   DATABASE_URL=postgres://... node scripts/backfill-plan-status.mjs
  */
 import process from 'node:process';
-import { db, sql, closeConnection } from '../src/db/connection.mjs';
+import { db, closeConnection } from '../src/db/connection.mjs';
+import { sql } from 'drizzle-orm';
 
 const dryRun = process.argv.includes('--dry-run');
 
