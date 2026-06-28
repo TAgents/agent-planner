@@ -73,7 +73,7 @@ HTTP request
 **Cross-cutting services** (`src/services/`):
 - `contextEngine.js` — 4-layer progressive context (task → neighborhood → knowledge → extended) with `token_budget` (~4 chars/token)
 - `compaction.js` — extracts decision/reasoning logs into structured summaries (used by RPI chains)
-- `reasoning.js` — status propagation, bottleneck detection, topological sort, RPI chain detection
+- `reasoning.js` — status propagation, bottleneck detection, topological sort, RPI chain detection. Also `maintainPlanStatus(planId)`: auto-flips a plan `active⇄completed` when its canonical rollup hits/leaves 100% work-node completion (draft/archived left alone), run from the `node.status.changed` subscriber. Backfill: `scripts/backfill-plan-status.mjs`
 - `graphitiBridge.js` — MCP Streamable HTTP (JSON-RPC + SSE) to internal Graphiti container; auto-reconnects on session expiry; graceful degradation when Graphiti is unreachable
 - `messageBus.js` — PostgreSQL LISTEN/NOTIFY event bus. Init once with `messageBus.init(DATABASE_URL)`, then `subscribe`/`publish`. Notification adapters subscribe to it.
 - `coherenceEngine.js`, `planQualityEvaluator.js` — knowledge contradiction + plan quality scoring
