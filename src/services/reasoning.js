@@ -6,6 +6,7 @@
  */
 
 const dal = require('../db/dal.cjs');
+const planRollup = require('./planRollup.service');
 
 // ─── Status Propagation ───
 // When a task is completed, auto-unblock downstream tasks whose
@@ -115,6 +116,40 @@ async function propagateStatus(nodeId, newStatus) {
   }
 
   return effects;
+}
+
+// ─── Plan status auto-maintenance ───
+// A plan's lifecycle status tracks its work: once every task/milestone is
+// completed the plan is "done"; if work is added or a task reopens it goes back
+// to "active". Only the active⇄completed transition is automatic — draft and
+// archived are human-controlled and left untouched.
+
+/**
+ * Reconcile a plan's `status` with its canonical rollup. Idempotent: returns the
+ * transition it made, or null if no change was warranted.
+ *
+ * @param {string} planId
+ * @returns {Promise<{plan_id:string, from:string, to:string}|null>}
+ */
+async function maintainPlanStatus(planId) {
+  if (!planId) return null;
+  const plan = await dal.plansDal.findById(planId);
+  if (!plan) return null;
+  // Only active⇄completed is automatic.
+  if (plan.status !== 'active' && plan.status !== 'completed') return null;
+
+  const rollup = await planRollup.computePlanRollup(planId);
+  const isComplete = rollup.total_work > 0 && rollup.progress_pct === 100;
+
+  if (isComplete && plan.status === 'active') {
+    await dal.plansDal.update(planId, { status: 'completed' });
+    return { plan_id: planId, from: 'active', to: 'completed' };
+  }
+  if (!isComplete && plan.status === 'completed') {
+    await dal.plansDal.update(planId, { status: 'active' });
+    return { plan_id: planId, from: 'completed', to: 'active' };
+  }
+  return null;
 }
 
 // ─── Bottleneck Detection ───
@@ -400,8 +435,12 @@ function initStatusPropagation(messageBus) {
 
   messageBus.subscribe('node.status.changed', async (event) => {
     try {
-      const { nodeId, newStatus } = event;
+      const { nodeId, newStatus, planId } = event;
       await propagateStatus(nodeId, newStatus);
+      // After node-level propagation settles, reconcile the plan's lifecycle
+      // status with its completion (active⇄completed).
+      const pid = planId || (await dal.nodesDal.findById(nodeId))?.planId;
+      await maintainPlanStatus(pid);
     } catch (err) {
       console.error('Status propagation error:', err.message);
     }
@@ -410,6 +449,7 @@ function initStatusPropagation(messageBus) {
 
 module.exports = {
   propagateStatus,
+  maintainPlanStatus,
   detectBottlenecks,
   detectRpiChains,
   topologicalSort,
