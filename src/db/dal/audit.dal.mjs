@@ -23,4 +23,14 @@ export const auditDal = {
       .orderBy(desc(auditLogs.createdAt))
       .limit(limit);
   },
+
+  /**
+   * Most recent audit-log entries system-wide. Backs the admin
+   * activity feed (superadmin oversight only).
+   */
+  async listRecent({ limit = 50 } = {}) {
+    return db.select().from(auditLogs)
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(limit);
+  },
 };

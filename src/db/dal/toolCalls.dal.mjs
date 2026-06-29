@@ -74,6 +74,18 @@ export const toolCallsDal = {
   },
 
   /**
+   * Most recent calls across ALL orgs. Backs the admin activity
+   * feed (superadmin oversight only — bypasses org scoping).
+   */
+  async listRecentAll({ limit = 50 } = {}) {
+    return db
+      .select()
+      .from(toolCalls)
+      .orderBy(desc(toolCalls.createdAt))
+      .limit(limit);
+  },
+
+  /**
    * Delete telemetry rows older than `days` days. Used by the
    * retention background job to keep the table from growing unbounded.
    *
