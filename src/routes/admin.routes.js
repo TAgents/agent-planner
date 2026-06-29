@@ -399,6 +399,11 @@ router.get('/organizations/:orgId', authenticate, requireAdmin, async (req, res)
  *             type: string
  *         description: Filter by one or more visibilities (private|organization|public|unlisted)
  *       - in: query
+ *         name: organization_id
+ *         schema:
+ *           type: string
+ *         description: Filter to a single organization's plans
+ *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
@@ -422,6 +427,7 @@ router.get('/plans', authenticate, requireAdmin, async (req, res) => {
     const like = `%${q}%`;
     const statusArr = [].concat(req.query.status || []);
     const visArr = [].concat(req.query.visibility || []);
+    const orgId = req.query.organization_id || null;
     const sql = await dal.rawSql();
 
     const rows = await sql`
@@ -438,6 +444,7 @@ router.get('/plans', authenticate, requireAdmin, async (req, res) => {
       WHERE (${q} = '' OR p.title ILIKE ${like})
         AND (cardinality(${statusArr}::text[]) = 0 OR p.status = ANY(${statusArr}::text[]))
         AND (cardinality(${visArr}::text[]) = 0 OR p.visibility = ANY(${visArr}::text[]))
+        AND (${orgId}::uuid IS NULL OR p.organization_id = ${orgId}::uuid)
       ORDER BY p.updated_at DESC
       LIMIT ${limit} OFFSET ${offset}
     `;
@@ -448,6 +455,7 @@ router.get('/plans', authenticate, requireAdmin, async (req, res) => {
       WHERE (${q} = '' OR p.title ILIKE ${like})
         AND (cardinality(${statusArr}::text[]) = 0 OR p.status = ANY(${statusArr}::text[]))
         AND (cardinality(${visArr}::text[]) = 0 OR p.visibility = ANY(${visArr}::text[]))
+        AND (${orgId}::uuid IS NULL OR p.organization_id = ${orgId}::uuid)
     `;
 
     const plans = rows.map((r) => ({

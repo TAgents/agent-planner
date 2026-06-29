@@ -1028,6 +1028,14 @@
           },
           {
             "in": "query",
+            "name": "organization_id",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter to a single organization's plans"
+          },
+          {
+            "in": "query",
             "name": "limit",
             "schema": {
               "type": "integer",
