@@ -1064,6 +1064,163 @@
             "description": "Organization not found"
           }
         }
+      },
+      "patch": {
+        "summary": "Rename an organization (name/description)",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated organization"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Organization not found"
+          }
+        }
+      }
+    },
+    "/admin/organizations/{orgId}/members": {
+      "post": {
+        "summary": "Add a user to an organization",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Member added"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Organization or user not found"
+          },
+          "409": {
+            "description": "User is already a member"
+          }
+        }
+      }
+    },
+    "/admin/organizations/{orgId}/members/{userId}": {
+      "put": {
+        "summary": "Change an organization member's role",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role updated"
+          },
+          "400": {
+            "description": "Invalid role or would remove the last owner"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Member not found"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove a user from an organization",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Member removed"
+          },
+          "400": {
+            "description": "Would remove the last owner"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Member not found"
+          }
+        }
       }
     },
     "/admin/plans": {

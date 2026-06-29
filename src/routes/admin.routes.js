@@ -504,6 +504,241 @@ router.get('/organizations/:orgId', authenticate, requireAdmin, async (req, res)
   }
 });
 
+const ORG_ROLES = ['owner', 'admin', 'member'];
+
+/**
+ * @swagger
+ * /admin/organizations/{orgId}:
+ *   patch:
+ *     summary: Rename an organization (name/description)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: orgId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Updated organization
+ *       404:
+ *         description: Organization not found
+ *       403:
+ *         description: Admin access required
+ */
+router.patch('/organizations/:orgId', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { name, description } = req.body;
+    if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
+      return res.status(400).json({ error: 'name must be a non-empty string' });
+    }
+    const sql = await dal.rawSql();
+    const [updated] = await sql`
+      UPDATE organizations
+      SET name = COALESCE(${name ?? null}, name),
+          description = COALESCE(${description ?? null}, description),
+          updated_at = now()
+      WHERE id = ${orgId}
+      RETURNING id, name, slug, description, is_personal
+    `;
+    if (!updated) return res.status(404).json({ error: 'Organization not found' });
+    await dal.auditDal.log('admin.org.update', 'organization', orgId, {
+      userId: req.user.id,
+      details: { name, description },
+    });
+    res.json(updated);
+  } catch (error) {
+    console.error('Admin org update error:', error);
+    res.status(500).json({ error: 'Failed to update organization' });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/organizations/{orgId}/members:
+ *   post:
+ *     summary: Add a user to an organization
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: orgId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       201:
+ *         description: Member added
+ *       404:
+ *         description: Organization or user not found
+ *       409:
+ *         description: User is already a member
+ *       403:
+ *         description: Admin access required
+ */
+router.post('/organizations/:orgId/members', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const { userId, role = 'member' } = req.body;
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+    if (!ORG_ROLES.includes(role)) {
+      return res.status(400).json({ error: `role must be one of ${ORG_ROLES.join(', ')}` });
+    }
+    const sql = await dal.rawSql();
+    const [org] = await sql`SELECT id FROM organizations WHERE id = ${orgId}`;
+    if (!org) return res.status(404).json({ error: 'Organization not found' });
+    const [user] = await sql`SELECT id FROM users WHERE id = ${userId}`;
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    let member;
+    try {
+      [member] = await sql`
+        INSERT INTO organization_members (organization_id, user_id, role)
+        VALUES (${orgId}, ${userId}, ${role})
+        RETURNING id, organization_id, user_id, role, joined_at
+      `;
+    } catch (e) {
+      if (e.code === '23505') return res.status(409).json({ error: 'User is already a member' });
+      throw e;
+    }
+    await dal.auditDal.log('admin.org.member.add', 'organization', orgId, {
+      userId: req.user.id,
+      details: { targetUserId: userId, role },
+    });
+    res.status(201).json(member);
+  } catch (error) {
+    console.error('Admin org add-member error:', error);
+    res.status(500).json({ error: 'Failed to add member' });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/organizations/{orgId}/members/{userId}:
+ *   put:
+ *     summary: Change an organization member's role
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: orgId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Role updated
+ *       400:
+ *         description: Invalid role or would remove the last owner
+ *       404:
+ *         description: Member not found
+ *       403:
+ *         description: Admin access required
+ *   delete:
+ *     summary: Remove a user from an organization
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: orgId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       204:
+ *         description: Member removed
+ *       400:
+ *         description: Would remove the last owner
+ *       404:
+ *         description: Member not found
+ *       403:
+ *         description: Admin access required
+ */
+router.put('/organizations/:orgId/members/:userId', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { orgId, userId } = req.params;
+    const { role } = req.body;
+    if (!ORG_ROLES.includes(role)) {
+      return res.status(400).json({ error: `role must be one of ${ORG_ROLES.join(', ')}` });
+    }
+    const sql = await dal.rawSql();
+    const [member] = await sql`
+      SELECT role FROM organization_members WHERE organization_id = ${orgId} AND user_id = ${userId}
+    `;
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+
+    // Last-owner protection: don't let the only owner be demoted.
+    if (member.role === 'owner' && role !== 'owner') {
+      const [{ owners }] = await sql`
+        SELECT count(*)::int AS owners FROM organization_members
+        WHERE organization_id = ${orgId} AND role = 'owner'
+      `;
+      if (owners <= 1) return res.status(400).json({ error: 'Cannot demote the last owner' });
+    }
+
+    const [updated] = await sql`
+      UPDATE organization_members SET role = ${role}
+      WHERE organization_id = ${orgId} AND user_id = ${userId}
+      RETURNING id, organization_id, user_id, role
+    `;
+    await dal.auditDal.log('admin.org.member.role', 'organization', orgId, {
+      userId: req.user.id,
+      details: { targetUserId: userId, role },
+    });
+    res.json(updated);
+  } catch (error) {
+    console.error('Admin org member-role error:', error);
+    res.status(500).json({ error: 'Failed to update member role' });
+  }
+});
+
+router.delete('/organizations/:orgId/members/:userId', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { orgId, userId } = req.params;
+    const sql = await dal.rawSql();
+    const [member] = await sql`
+      SELECT role FROM organization_members WHERE organization_id = ${orgId} AND user_id = ${userId}
+    `;
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+
+    if (member.role === 'owner') {
+      const [{ owners }] = await sql`
+        SELECT count(*)::int AS owners FROM organization_members
+        WHERE organization_id = ${orgId} AND role = 'owner'
+      `;
+      if (owners <= 1) return res.status(400).json({ error: 'Cannot remove the last owner' });
+    }
+
+    await sql`
+      DELETE FROM organization_members WHERE organization_id = ${orgId} AND user_id = ${userId}
+    `;
+    await dal.auditDal.log('admin.org.member.remove', 'organization', orgId, {
+      userId: req.user.id,
+      details: { targetUserId: userId },
+    });
+    res.status(204).send();
+  } catch (error) {
+    console.error('Admin org remove-member error:', error);
+    res.status(500).json({ error: 'Failed to remove member' });
+  }
+});
+
 /**
  * @swagger
  * /admin/plans:

@@ -79,8 +79,59 @@ const mockToolStatsByStatus = [
   { response_status: 500, count: 5 },
 ];
 
+// Sentinel ids for org-mutation tests, driving the dispatcher's branches.
+const mockMut = {
+  ORG_OK: uuidv4(),
+  ORG_MISSING: uuidv4(),
+  ORG_SOLO_OWNER: uuidv4(),
+  USER_OK: uuidv4(),
+  USER_MISSING: uuidv4(),
+  USER_DUPLICATE: uuidv4(),
+  MEMBER_OWNER: uuidv4(),
+  MEMBER_PLAIN: uuidv4(),
+  MEMBER_MISSING: uuidv4(),
+};
+
 function mockOrgSql(strings, ...values) {
   const text = strings.join(' ');
+
+  // --- Org mutations (write paths) ---
+  if (/UPDATE organizations\b/i.test(text)) {
+    const orgId = values[2]; // name, description, orgId
+    return Promise.resolve(
+      orgId === mockMut.ORG_MISSING ? [] : [{ id: orgId, name: values[0] || 'Renamed', slug: 'slug', description: values[1] ?? null, is_personal: false }],
+    );
+  }
+  if (/SELECT id FROM organizations WHERE id/i.test(text)) {
+    return Promise.resolve(values[0] === mockMut.ORG_MISSING ? [] : [{ id: values[0] }]);
+  }
+  if (/SELECT id FROM users WHERE id/i.test(text)) {
+    return Promise.resolve(values[0] === mockMut.USER_MISSING ? [] : [{ id: values[0] }]);
+  }
+  if (/INSERT INTO organization_members/i.test(text)) {
+    const [orgId, userId, role] = values;
+    if (userId === mockMut.USER_DUPLICATE) {
+      const e = new Error('duplicate key');
+      e.code = '23505';
+      throw e;
+    }
+    return Promise.resolve([{ id: 'm1', organization_id: orgId, user_id: userId, role, joined_at: new Date().toISOString() }]);
+  }
+  if (/SELECT role FROM organization_members WHERE organization_id/i.test(text)) {
+    const userId = values[1];
+    if (userId === mockMut.MEMBER_MISSING) return Promise.resolve([]);
+    return Promise.resolve([{ role: userId === mockMut.MEMBER_OWNER ? 'owner' : 'member' }]);
+  }
+  if (/AS owners FROM organization_members/i.test(text)) {
+    return Promise.resolve([{ owners: values[0] === mockMut.ORG_SOLO_OWNER ? 1 : 2 }]);
+  }
+  if (/UPDATE organization_members SET role/i.test(text)) {
+    const [role, orgId, userId] = values;
+    return Promise.resolve([{ id: 'm1', organization_id: orgId, user_id: userId, role }]);
+  }
+  if (/DELETE FROM organization_members/i.test(text)) {
+    return Promise.resolve([]);
+  }
   // Detail: organization row (by id) — empty array drives the 404 path.
   if (/FROM organizations o/i.test(text) && /WHERE o\.id/i.test(text)) {
     return Promise.resolve(values[0] === mockMissingOrgId ? [] : [mockOrgDetailRow]);
@@ -132,6 +183,7 @@ jest.mock('../../src/db/dal.cjs', () => ({
   },
   auditDal: {
     listRecent: jest.fn().mockResolvedValue({ entries: mockAuditRows, total: mockAuditRows.length }),
+    log: jest.fn().mockResolvedValue({}),
   },
   toolCallsDal: {
     listRecentAll: jest.fn().mockResolvedValue({ entries: mockToolCallRows, total: mockToolCallRows.length }),
@@ -502,5 +554,83 @@ describe('GET /admin/activity/tools/stats', () => {
     expect(res.body.by_tool[0].tool_name).toBe('queue_decision');
     expect(res.body.by_tool[0].error_rate).toBeCloseTo(3 / 40);
     expect(res.body.by_status).toEqual(mockToolStatsByStatus);
+  });
+});
+
+describe('Org management mutations', () => {
+  const app = makeApp();
+  const adminAuth = `Bearer ${signJwt(mockAdminId)}`;
+  const nonAdminAuth = `Bearer ${signJwt(mockNonAdminId)}`;
+
+  describe('PATCH /admin/organizations/:orgId', () => {
+    it('returns 403 for a non-admin user', () =>
+      request(app).patch(`/admin/organizations/${mockMut.ORG_OK}`).set('Authorization', nonAdminAuth).send({ name: 'X' }).expect(403));
+
+    it('renames an org (200)', async () => {
+      const res = await request(app)
+        .patch(`/admin/organizations/${mockMut.ORG_OK}`)
+        .set('Authorization', adminAuth)
+        .send({ name: 'New Name' })
+        .expect(200);
+      expect(res.body.name).toBe('New Name');
+    });
+
+    it('returns 404 for an unknown org', () =>
+      request(app).patch(`/admin/organizations/${mockMut.ORG_MISSING}`).set('Authorization', adminAuth).send({ name: 'X' }).expect(404));
+
+    it('returns 400 for an empty name', () =>
+      request(app).patch(`/admin/organizations/${mockMut.ORG_OK}`).set('Authorization', adminAuth).send({ name: '   ' }).expect(400));
+  });
+
+  describe('POST /admin/organizations/:orgId/members', () => {
+    it('returns 403 for a non-admin user', () =>
+      request(app).post(`/admin/organizations/${mockMut.ORG_OK}/members`).set('Authorization', nonAdminAuth).send({ userId: mockMut.USER_OK }).expect(403));
+
+    it('adds a member (201)', async () => {
+      const res = await request(app)
+        .post(`/admin/organizations/${mockMut.ORG_OK}/members`)
+        .set('Authorization', adminAuth)
+        .send({ userId: mockMut.USER_OK, role: 'member' })
+        .expect(201);
+      expect(res.body.user_id).toBe(mockMut.USER_OK);
+      expect(res.body.role).toBe('member');
+    });
+
+    it('returns 400 for an invalid role', () =>
+      request(app).post(`/admin/organizations/${mockMut.ORG_OK}/members`).set('Authorization', adminAuth).send({ userId: mockMut.USER_OK, role: 'superuser' }).expect(400));
+
+    it('returns 404 for an unknown user', () =>
+      request(app).post(`/admin/organizations/${mockMut.ORG_OK}/members`).set('Authorization', adminAuth).send({ userId: mockMut.USER_MISSING }).expect(404));
+
+    it('returns 409 for a duplicate member', () =>
+      request(app).post(`/admin/organizations/${mockMut.ORG_OK}/members`).set('Authorization', adminAuth).send({ userId: mockMut.USER_DUPLICATE }).expect(409));
+  });
+
+  describe('PUT /admin/organizations/:orgId/members/:userId', () => {
+    it('changes a member role (200)', async () => {
+      const res = await request(app)
+        .put(`/admin/organizations/${mockMut.ORG_OK}/members/${mockMut.MEMBER_PLAIN}`)
+        .set('Authorization', adminAuth)
+        .send({ role: 'admin' })
+        .expect(200);
+      expect(res.body.role).toBe('admin');
+    });
+
+    it('blocks demoting the last owner (400)', () =>
+      request(app).put(`/admin/organizations/${mockMut.ORG_SOLO_OWNER}/members/${mockMut.MEMBER_OWNER}`).set('Authorization', adminAuth).send({ role: 'member' }).expect(400));
+
+    it('returns 404 for an unknown member', () =>
+      request(app).put(`/admin/organizations/${mockMut.ORG_OK}/members/${mockMut.MEMBER_MISSING}`).set('Authorization', adminAuth).send({ role: 'admin' }).expect(404));
+  });
+
+  describe('DELETE /admin/organizations/:orgId/members/:userId', () => {
+    it('removes a member (204)', () =>
+      request(app).delete(`/admin/organizations/${mockMut.ORG_OK}/members/${mockMut.MEMBER_PLAIN}`).set('Authorization', adminAuth).expect(204));
+
+    it('blocks removing the last owner (400)', () =>
+      request(app).delete(`/admin/organizations/${mockMut.ORG_SOLO_OWNER}/members/${mockMut.MEMBER_OWNER}`).set('Authorization', adminAuth).expect(400));
+
+    it('returns 404 for an unknown member', () =>
+      request(app).delete(`/admin/organizations/${mockMut.ORG_OK}/members/${mockMut.MEMBER_MISSING}`).set('Authorization', adminAuth).expect(404));
   });
 });
