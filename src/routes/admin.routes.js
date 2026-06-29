@@ -1001,4 +1001,88 @@ router.get('/health', authenticate, requireAdmin, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /admin/plans/{planId}/nodes:
+ *   get:
+ *     summary: Flat list of a plan's nodes (task tree) for the inspector
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: planId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Plan nodes (excludes root + archived)
+ *       403:
+ *         description: Admin access required
+ */
+router.get('/plans/:planId/nodes', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { planId } = req.params;
+    const sql = await dal.rawSql();
+    const nodes = await sql`
+      SELECT id, parent_id, node_type, title, status, order_index, task_mode
+      FROM plan_nodes
+      WHERE plan_id = ${planId} AND node_type <> 'root' AND status <> 'archived'
+      ORDER BY order_index ASC, created_at ASC
+    `;
+    res.json({ nodes });
+  } catch (error) {
+    console.error('Admin plan nodes error:', error);
+    res.status(500).json({ error: 'Failed to fetch plan nodes' });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/goals/{goalId}:
+ *   get:
+ *     summary: Goal detail with the plans connected to it
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: goalId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Goal + connected plans
+ *       404:
+ *         description: Goal not found
+ *       403:
+ *         description: Admin access required
+ */
+router.get('/goals/:goalId', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { goalId } = req.params;
+    const sql = await dal.rawSql();
+    const [goal] = await sql`
+      SELECT id, title, description, type, status, promoted_at, created_at, updated_at
+      FROM goals WHERE id = ${goalId}
+    `;
+    if (!goal) return res.status(404).json({ error: 'Goal not found' });
+
+    const plans = await sql`
+      SELECT p.id, p.title, p.status, p.visibility, p.updated_at
+      FROM goal_links gl
+      JOIN plans p ON p.id = gl.linked_id
+      WHERE gl.goal_id = ${goalId} AND gl.linked_type = 'plan'
+      ORDER BY p.updated_at DESC
+    `;
+
+    res.json({ goal: { ...goal, committed: goal.promoted_at != null }, plans });
+  } catch (error) {
+    console.error('Admin goal detail error:', error);
+    res.status(500).json({ error: 'Failed to fetch goal' });
+  }
+});
+
 module.exports = router;

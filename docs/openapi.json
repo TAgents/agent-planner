@@ -1355,6 +1355,71 @@
         }
       }
     },
+    "/admin/plans/{planId}/nodes": {
+      "get": {
+        "summary": "Flat list of a plan's nodes (task tree) for the inspector",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Plan nodes (excludes root + archived)"
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
+    "/admin/goals/{goalId}": {
+      "get": {
+        "summary": "Goal detail with the plans connected to it",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "goalId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Goal + connected plans"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Goal not found"
+          }
+        }
+      }
+    },
     "/auth/register": {
       "post": {
         "summary": "Register a new user",

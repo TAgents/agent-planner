@@ -68,6 +68,18 @@ const mockPlanGoals = [{ id: uuidv4(), title: 'Goal A', status: 'active' }];
 const mockPlanCollabs = [{ id: uuidv4(), email: 'collab@x.test', name: 'Collab', role: 'editor', created_at: new Date().toISOString() }];
 const mockNodeBreakdown = [{ status: 'completed', count: 3 }, { status: 'not_started', count: 2 }];
 
+// Plan task-tree fixtures (GET /admin/plans/:planId/nodes).
+const mockPlanNodesList = [
+  { id: uuidv4(), parent_id: null, node_type: 'phase', title: 'Phase 1', status: 'completed', order_index: 0, task_mode: 'free' },
+  { id: uuidv4(), parent_id: uuidv4(), node_type: 'task', title: 'Task A', status: 'in_progress', order_index: 0, task_mode: 'implement' },
+];
+
+// Goal-detail fixtures (GET /admin/goals/:goalId).
+const mockGoalId = uuidv4();
+const mockMissingGoalId = uuidv4();
+const mockGoalRow = { id: mockGoalId, title: 'Ship it', description: 'A goal', type: 'outcome', status: 'active', promoted_at: new Date().toISOString(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+const mockGoalPlans = [{ id: uuidv4(), title: 'Plan X', status: 'active', visibility: 'private', updated_at: new Date().toISOString() }];
+
 // Tool-call stats fixtures (GET /admin/activity/tools/stats).
 const mockToolStatsTotals = { total: 100, errors: 5, p95_ms: 250 };
 const mockToolStatsByTool = [
@@ -159,6 +171,12 @@ function mockOrgSql(strings, ...values) {
   if (/FROM tool_calls/i.test(text) && /GROUP BY tool_name/i.test(text)) return Promise.resolve(mockToolStatsByTool);
   if (/FROM tool_calls/i.test(text) && /GROUP BY response_status/i.test(text)) return Promise.resolve(mockToolStatsByStatus);
   if (/FROM tool_calls/i.test(text)) return Promise.resolve([mockToolStatsTotals]);
+  // Plan task tree (nodes endpoint) — ORDER BY order_index distinguishes it
+  // from the breakdown (GROUP BY status) and the list's count subqueries.
+  if (/FROM plan_nodes/i.test(text) && /ORDER BY order_index/i.test(text)) return Promise.resolve(mockPlanNodesList);
+  // Goal detail + its connected plans (JOIN plans before the generic goal_links rule).
+  if (/FROM goals WHERE id/i.test(text)) return Promise.resolve(values[0] === mockMissingGoalId ? [] : [mockGoalRow]);
+  if (/FROM goal_links gl/i.test(text) && /JOIN plans/i.test(text)) return Promise.resolve(mockGoalPlans);
   // Plan-detail sub-queries.
   if (/FROM goal_links gl/i.test(text)) return Promise.resolve(mockPlanGoals);
   if (/FROM plan_collaborators pc/i.test(text)) return Promise.resolve(mockPlanCollabs);
@@ -632,5 +650,66 @@ describe('Org management mutations', () => {
 
     it('returns 404 for an unknown member', () =>
       request(app).delete(`/admin/organizations/${mockMut.ORG_OK}/members/${mockMut.MEMBER_MISSING}`).set('Authorization', adminAuth).expect(404));
+  });
+});
+
+describe('GET /admin/plans/:planId/nodes', () => {
+  const app = makeApp();
+
+  it('returns 401 without authentication', async () => {
+    await request(app).get(`/admin/plans/${mockPlanDetailId}/nodes`).expect(401);
+  });
+
+  it('returns 403 for a non-admin user', async () => {
+    await request(app)
+      .get(`/admin/plans/${mockPlanDetailId}/nodes`)
+      .set('Authorization', `Bearer ${signJwt(mockNonAdminId)}`)
+      .expect(403);
+  });
+
+  it('returns the plan node list for an admin', async () => {
+    const res = await request(app)
+      .get(`/admin/plans/${mockPlanDetailId}/nodes`)
+      .set('Authorization', `Bearer ${signJwt(mockAdminId)}`)
+      .expect(200);
+
+    expect(res.body.nodes).toHaveLength(mockPlanNodesList.length);
+    expect(res.body.nodes[0]).toHaveProperty('parent_id');
+    expect(res.body.nodes[0]).toHaveProperty('node_type');
+    expect(res.body.nodes[0].title).toBe('Phase 1');
+  });
+});
+
+describe('GET /admin/goals/:goalId', () => {
+  const app = makeApp();
+
+  it('returns 401 without authentication', async () => {
+    await request(app).get(`/admin/goals/${mockGoalId}`).expect(401);
+  });
+
+  it('returns 403 for a non-admin user', async () => {
+    await request(app)
+      .get(`/admin/goals/${mockGoalId}`)
+      .set('Authorization', `Bearer ${signJwt(mockNonAdminId)}`)
+      .expect(403);
+  });
+
+  it('returns the goal with its connected plans', async () => {
+    const res = await request(app)
+      .get(`/admin/goals/${mockGoalId}`)
+      .set('Authorization', `Bearer ${signJwt(mockAdminId)}`)
+      .expect(200);
+
+    expect(res.body.goal.id).toBe(mockGoalId);
+    expect(res.body.goal.committed).toBe(true);
+    expect(res.body.plans).toHaveLength(1);
+    expect(res.body.plans[0].title).toBe('Plan X');
+  });
+
+  it('returns 404 for an unknown goal', async () => {
+    await request(app)
+      .get(`/admin/goals/${mockMissingGoalId}`)
+      .set('Authorization', `Bearer ${signJwt(mockAdminId)}`)
+      .expect(404);
   });
 });
