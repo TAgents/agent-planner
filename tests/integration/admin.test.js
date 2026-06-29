@@ -53,6 +53,21 @@ const mockOrgWorkspaces = [
   { id: uuidv4(), title: 'Default', slug: 'default', is_default: true, archived_at: null, created_at: new Date().toISOString(), owner_id: uuidv4(), plan_count: 5 },
 ];
 
+// Plans-list fixtures (flat rows as returned by the SELECT; handler nests them).
+// Row 2 has a null org to exercise the organization:null branch.
+const mockPlanRows = [
+  { id: uuidv4(), title: 'Alpha Plan', status: 'active', visibility: 'private', updated_at: new Date().toISOString(), owner_id: uuidv4(), owner_email: 'a@x.test', owner_name: 'A', org_id: uuidv4(), org_name: 'Org A', ws_id: uuidv4(), ws_title: 'Default', node_count: 10, completed_count: 4 },
+  { id: uuidv4(), title: 'Beta Plan', status: 'draft', visibility: 'public', updated_at: new Date().toISOString(), owner_id: uuidv4(), owner_email: 'b@x.test', owner_name: 'B', org_id: null, org_name: null, ws_id: uuidv4(), ws_title: 'WS', node_count: 0, completed_count: 0 },
+];
+
+// Plan-detail fixtures (org row + linked goals + collaborators + node breakdown).
+const mockPlanDetailId = uuidv4();
+const mockMissingPlanId = uuidv4();
+const mockPlanDetailRow = { id: mockPlanDetailId, title: 'Detail Plan', description: 'A plan to inspect', status: 'active', visibility: 'private', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), owner_id: uuidv4(), owner_email: 'o@x.test', owner_name: 'O', org_id: uuidv4(), org_name: 'Org', ws_id: uuidv4(), ws_title: 'Default' };
+const mockPlanGoals = [{ id: uuidv4(), title: 'Goal A', status: 'active' }];
+const mockPlanCollabs = [{ id: uuidv4(), email: 'collab@x.test', name: 'Collab', role: 'editor', created_at: new Date().toISOString() }];
+const mockNodeBreakdown = [{ status: 'completed', count: 3 }, { status: 'not_started', count: 2 }];
+
 function mockOrgSql(strings, ...values) {
   const text = strings.join(' ');
   // Detail: organization row (by id) — empty array drives the 404 path.
@@ -67,6 +82,21 @@ function mockOrgSql(strings, ...values) {
   if (/FROM workspaces w/i.test(text) && /WHERE w\.organization_id/i.test(text)) {
     return Promise.resolve(mockOrgWorkspaces);
   }
+  // Plan detail: single plan by id — empty array drives the 404 path.
+  if (/FROM plans p/i.test(text) && /WHERE p\.id/i.test(text)) {
+    return Promise.resolve(values[0] === mockMissingPlanId ? [] : [mockPlanDetailRow]);
+  }
+  // Plans list (q value narrows the result) vs. plans count.
+  if (/FROM plans p/i.test(text) && /ORDER BY p\.updated_at/i.test(text)) {
+    return Promise.resolve(values[0] ? [mockPlanRows[0]] : mockPlanRows);
+  }
+  if (/FROM plans p/i.test(text)) {
+    return Promise.resolve([{ count: values[0] ? 1 : mockPlanRows.length }]);
+  }
+  // Plan-detail sub-queries.
+  if (/FROM goal_links gl/i.test(text)) return Promise.resolve(mockPlanGoals);
+  if (/FROM plan_collaborators pc/i.test(text)) return Promise.resolve(mockPlanCollabs);
+  if (/FROM plan_nodes/i.test(text) && /GROUP BY status/i.test(text)) return Promise.resolve(mockNodeBreakdown);
   // List: count row vs. rows; ILIKE variant is the q= filtered query.
   const filtered = /ILIKE/i.test(text);
   if (/count\(\*\)/i.test(text)) {
@@ -233,6 +263,98 @@ describe('GET /admin/organizations/:orgId', () => {
   it('returns 404 for an unknown orgId', async () => {
     await request(app)
       .get(`/admin/organizations/${mockMissingOrgId}`)
+      .set('Authorization', `Bearer ${signJwt(mockAdminId)}`)
+      .expect(404);
+  });
+});
+
+describe('GET /admin/plans', () => {
+  const app = makeApp();
+
+  it('returns 401 without authentication', async () => {
+    await request(app).get('/admin/plans').expect(401);
+  });
+
+  it('returns 403 for a non-admin user', async () => {
+    await request(app)
+      .get('/admin/plans')
+      .set('Authorization', `Bearer ${signJwt(mockNonAdminId)}`)
+      .expect(403);
+  });
+
+  it('returns the plan list with nested owner/org/workspace + node rollup + total', async () => {
+    const res = await request(app)
+      .get('/admin/plans')
+      .set('Authorization', `Bearer ${signJwt(mockAdminId)}`)
+      .expect(200);
+
+    expect(res.body.plans).toHaveLength(mockPlanRows.length);
+    expect(res.body.total).toBe(mockPlanRows.length);
+    const p = res.body.plans[0];
+    expect(p.owner).toEqual({ id: mockPlanRows[0].owner_id, email: 'a@x.test', name: 'A' });
+    expect(p.organization).toEqual({ id: mockPlanRows[0].org_id, name: 'Org A' });
+    expect(p.workspace).toEqual({ id: mockPlanRows[0].ws_id, title: 'Default' });
+    expect(p.node_count).toBe(10);
+    expect(p.completed_count).toBe(4);
+    // Row 2 has no org → organization is null.
+    expect(res.body.plans[1].organization).toBeNull();
+  });
+
+  it('narrows the result set when q= is provided', async () => {
+    const res = await request(app)
+      .get('/admin/plans?q=alpha')
+      .set('Authorization', `Bearer ${signJwt(mockAdminId)}`)
+      .expect(200);
+
+    expect(res.body.plans).toHaveLength(1);
+    expect(res.body.total).toBe(1);
+  });
+
+  it('echoes pagination params (limit/offset)', async () => {
+    const res = await request(app)
+      .get('/admin/plans?limit=10&offset=20')
+      .set('Authorization', `Bearer ${signJwt(mockAdminId)}`)
+      .expect(200);
+
+    expect(res.body.limit).toBe(10);
+    expect(res.body.offset).toBe(20);
+  });
+});
+
+describe('GET /admin/plans/:planId', () => {
+  const app = makeApp();
+
+  it('returns 401 without authentication', async () => {
+    await request(app).get(`/admin/plans/${mockPlanDetailId}`).expect(401);
+  });
+
+  it('returns 403 for a non-admin user', async () => {
+    await request(app)
+      .get(`/admin/plans/${mockPlanDetailId}`)
+      .set('Authorization', `Bearer ${signJwt(mockNonAdminId)}`)
+      .expect(403);
+  });
+
+  it('returns plan detail with goals, collaborators, and node breakdown', async () => {
+    const res = await request(app)
+      .get(`/admin/plans/${mockPlanDetailId}`)
+      .set('Authorization', `Bearer ${signJwt(mockAdminId)}`)
+      .expect(200);
+
+    expect(res.body.plan.id).toBe(mockPlanDetailId);
+    expect(res.body.plan).toHaveProperty('description');
+    expect(res.body.plan.owner).toEqual({ id: mockPlanDetailRow.owner_id, email: 'o@x.test', name: 'O' });
+    expect(res.body.plan.organization).toEqual({ id: mockPlanDetailRow.org_id, name: 'Org' });
+    expect(res.body.plan.workspace).toEqual({ id: mockPlanDetailRow.ws_id, title: 'Default' });
+    expect(res.body.goals).toHaveLength(1);
+    expect(res.body.goals[0].title).toBe('Goal A');
+    expect(res.body.collaborators[0].role).toBe('editor');
+    expect(res.body.node_breakdown).toEqual(mockNodeBreakdown);
+  });
+
+  it('returns 404 for an unknown planId', async () => {
+    await request(app)
+      .get(`/admin/plans/${mockMissingPlanId}`)
       .set('Authorization', `Bearer ${signJwt(mockAdminId)}`)
       .expect(404);
   });

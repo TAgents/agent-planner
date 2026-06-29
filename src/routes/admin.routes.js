@@ -370,4 +370,194 @@ router.get('/organizations/:orgId', authenticate, requireAdmin, async (req, res)
   }
 });
 
+/**
+ * @swagger
+ * /admin/plans:
+ *   get:
+ *     summary: List all plans system-wide with owner/org/workspace + node rollup
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         schema:
+ *           type: string
+ *         description: Optional case-insensitive filter on plan title
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: string
+ *         description: Filter by one or more plan statuses (draft|active|completed|archived)
+ *       - in: query
+ *         name: visibility
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: string
+ *         description: Filter by one or more visibilities (private|organization|public|unlisted)
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *     responses:
+ *       200:
+ *         description: List of plans
+ *       403:
+ *         description: Admin access required
+ */
+router.get('/plans', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const offset = parseInt(req.query.offset) || 0;
+    const q = (req.query.q || '').trim();
+    const like = `%${q}%`;
+    const statusArr = [].concat(req.query.status || []);
+    const visArr = [].concat(req.query.visibility || []);
+    const sql = await dal.rawSql();
+
+    const rows = await sql`
+      SELECT p.id, p.title, p.status, p.visibility, p.updated_at,
+        u.id AS owner_id, u.email AS owner_email, u.name AS owner_name,
+        o.id AS org_id, o.name AS org_name,
+        w.id AS ws_id, w.title AS ws_title,
+        (SELECT count(*)::int FROM plan_nodes n WHERE n.plan_id = p.id AND n.node_type <> 'root') AS node_count,
+        (SELECT count(*)::int FROM plan_nodes n WHERE n.plan_id = p.id AND n.status = 'completed') AS completed_count
+      FROM plans p
+      JOIN users u ON u.id = p.owner_id
+      LEFT JOIN organizations o ON o.id = p.organization_id
+      LEFT JOIN workspaces w ON w.id = p.workspace_id
+      WHERE (${q} = '' OR p.title ILIKE ${like})
+        AND (cardinality(${statusArr}::text[]) = 0 OR p.status = ANY(${statusArr}::text[]))
+        AND (cardinality(${visArr}::text[]) = 0 OR p.visibility = ANY(${visArr}::text[]))
+      ORDER BY p.updated_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    const [{ count }] = await sql`
+      SELECT count(*)::int AS count
+      FROM plans p
+      WHERE (${q} = '' OR p.title ILIKE ${like})
+        AND (cardinality(${statusArr}::text[]) = 0 OR p.status = ANY(${statusArr}::text[]))
+        AND (cardinality(${visArr}::text[]) = 0 OR p.visibility = ANY(${visArr}::text[]))
+    `;
+
+    const plans = rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      status: r.status,
+      visibility: r.visibility,
+      updated_at: r.updated_at,
+      node_count: r.node_count,
+      completed_count: r.completed_count,
+      owner: { id: r.owner_id, email: r.owner_email, name: r.owner_name },
+      organization: r.org_id ? { id: r.org_id, name: r.org_name } : null,
+      workspace: r.ws_id ? { id: r.ws_id, title: r.ws_title } : null,
+    }));
+
+    res.json({ plans, total: count, limit, offset });
+  } catch (error) {
+    console.error('Admin plans error:', error);
+    res.status(500).json({ error: 'Failed to fetch plans' });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/plans/{planId}:
+ *   get:
+ *     summary: Plan detail — meta, owner, org/workspace, linked goals, collaborators, node breakdown
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: planId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Plan detail
+ *       404:
+ *         description: Plan not found
+ *       403:
+ *         description: Admin access required
+ */
+router.get('/plans/:planId', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { planId } = req.params;
+    const sql = await dal.rawSql();
+
+    const [plan] = await sql`
+      SELECT p.id, p.title, p.description, p.status, p.visibility, p.created_at, p.updated_at,
+        u.id AS owner_id, u.email AS owner_email, u.name AS owner_name,
+        o.id AS org_id, o.name AS org_name,
+        w.id AS ws_id, w.title AS ws_title
+      FROM plans p
+      JOIN users u ON u.id = p.owner_id
+      LEFT JOIN organizations o ON o.id = p.organization_id
+      LEFT JOIN workspaces w ON w.id = p.workspace_id
+      WHERE p.id = ${planId}
+    `;
+
+    if (!plan) {
+      return res.status(404).json({ error: 'Plan not found' });
+    }
+
+    const goals = await sql`
+      SELECT g.id, g.title, g.status
+      FROM goal_links gl
+      JOIN goals g ON g.id = gl.goal_id
+      WHERE gl.linked_type = 'plan' AND gl.linked_id = ${planId}
+      ORDER BY g.title ASC
+    `;
+
+    const collaborators = await sql`
+      SELECT u.id, u.email, u.name, pc.role, pc.created_at
+      FROM plan_collaborators pc
+      JOIN users u ON u.id = pc.user_id
+      WHERE pc.plan_id = ${planId}
+      ORDER BY pc.created_at ASC
+    `;
+
+    const nodeBreakdown = await sql`
+      SELECT status, count(*)::int AS count
+      FROM plan_nodes
+      WHERE plan_id = ${planId} AND node_type <> 'root'
+      GROUP BY status
+      ORDER BY status
+    `;
+
+    res.json({
+      plan: {
+        id: plan.id,
+        title: plan.title,
+        description: plan.description,
+        status: plan.status,
+        visibility: plan.visibility,
+        created_at: plan.created_at,
+        updated_at: plan.updated_at,
+        owner: { id: plan.owner_id, email: plan.owner_email, name: plan.owner_name },
+        organization: plan.org_id ? { id: plan.org_id, name: plan.org_name } : null,
+        workspace: plan.ws_id ? { id: plan.ws_id, title: plan.ws_title } : null,
+      },
+      goals,
+      collaborators,
+      node_breakdown: nodeBreakdown,
+    });
+  } catch (error) {
+    console.error('Admin plan detail error:', error);
+    res.status(500).json({ error: 'Failed to fetch plan' });
+  }
+});
+
 module.exports = router;
