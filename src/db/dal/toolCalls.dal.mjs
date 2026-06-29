@@ -1,4 +1,4 @@
-import { eq, lt, desc } from 'drizzle-orm';
+import { eq, lt, desc, and, gte, lte, sql } from 'drizzle-orm';
 import { db } from '../connection.mjs';
 import { toolCalls } from '../schema/toolCalls.mjs';
 
@@ -74,15 +74,40 @@ export const toolCallsDal = {
   },
 
   /**
-   * Most recent calls across ALL orgs. Backs the admin activity
-   * feed (superadmin oversight only — bypasses org scoping).
+   * Most recent calls across ALL orgs, with optional filters + pagination.
+   * Backs the admin activity feed (superadmin oversight only — bypasses org
+   * scoping). Returns { entries, total } where total ignores limit/offset.
+   *
+   * @param {object} opts
+   * @param {number} [opts.limit=50]
+   * @param {number} [opts.offset=0]
+   * @param {string} [opts.toolName]  exact match on tool_name
+   * @param {number} [opts.responseStatus]  exact match on response_status
+   * @param {string|Date} [opts.since]  createdAt >= since
+   * @param {string|Date} [opts.until]  createdAt <= until
    */
-  async listRecentAll({ limit = 50 } = {}) {
-    return db
+  async listRecentAll({ limit = 50, offset = 0, toolName, responseStatus, errorsOnly = false, since, until } = {}) {
+    const conds = [];
+    if (toolName) conds.push(eq(toolCalls.toolName, toolName));
+    if (responseStatus != null) conds.push(eq(toolCalls.responseStatus, Number(responseStatus)));
+    if (errorsOnly) conds.push(gte(toolCalls.responseStatus, 400));
+    if (since) conds.push(gte(toolCalls.createdAt, new Date(since)));
+    if (until) conds.push(lte(toolCalls.createdAt, new Date(until)));
+    const where = conds.length ? and(...conds) : undefined;
+
+    const entries = await db
       .select()
       .from(toolCalls)
+      .where(where)
       .orderBy(desc(toolCalls.createdAt))
-      .limit(limit);
+      .limit(limit)
+      .offset(offset);
+
+    const [{ count }] = await db.select({ count: sql`count(*)::int` })
+      .from(toolCalls)
+      .where(where);
+
+    return { entries, total: count };
   },
 
   /**

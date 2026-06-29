@@ -891,11 +891,93 @@
               "type": "integer",
               "default": 50
             }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "schema": {
+              "type": "string"
+            },
+            "description": "(audit) exact match on the action column"
+          },
+          {
+            "in": "query",
+            "name": "toolName",
+            "schema": {
+              "type": "string"
+            },
+            "description": "(tools) exact match on the tool name"
+          },
+          {
+            "in": "query",
+            "name": "responseStatus",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "(tools) exact match on the HTTP-equivalent response status"
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only entries created at/after this timestamp"
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only entries created at/before this timestamp"
           }
         ],
         "responses": {
           "200": {
-            "description": "List of recent activity entries"
+            "description": "List of recent activity entries (with total for pagination)"
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
+    "/admin/activity/tools/stats": {
+      "get": {
+        "summary": "MCP/REST tool-call aggregates (error rate, p95 duration, by tool/status)",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only aggregate calls created at/after this timestamp"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tool-call statistics"
           },
           "403": {
             "description": "Admin access required"

@@ -205,9 +205,41 @@ router.put('/users/:userId/admin', authenticate, requireAdmin, async (req, res) 
  *         schema:
  *           type: integer
  *           default: 50
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *       - in: query
+ *         name: action
+ *         schema:
+ *           type: string
+ *         description: (audit) exact match on the action column
+ *       - in: query
+ *         name: toolName
+ *         schema:
+ *           type: string
+ *         description: (tools) exact match on the tool name
+ *       - in: query
+ *         name: responseStatus
+ *         schema:
+ *           type: integer
+ *         description: (tools) exact match on the HTTP-equivalent response status
+ *       - in: query
+ *         name: since
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Only entries created at/after this timestamp
+ *       - in: query
+ *         name: until
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Only entries created at/before this timestamp
  *     responses:
  *       200:
- *         description: List of recent activity entries
+ *         description: List of recent activity entries (with total for pagination)
  *       403:
  *         description: Admin access required
  */
@@ -215,15 +247,115 @@ router.get('/activity', authenticate, requireAdmin, async (req, res) => {
   try {
     const type = req.query.type === 'tools' ? 'tools' : 'audit';
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const offset = parseInt(req.query.offset) || 0;
+    const since = req.query.since || undefined;
+    const until = req.query.until || undefined;
+    const hasStatus = req.query.responseStatus !== undefined && req.query.responseStatus !== '';
 
-    const entries = type === 'tools'
-      ? await dal.toolCallsDal.listRecentAll({ limit })
-      : await dal.auditDal.listRecent({ limit });
+    const { entries, total } = type === 'tools'
+      ? await dal.toolCallsDal.listRecentAll({
+          limit,
+          offset,
+          toolName: req.query.toolName || undefined,
+          responseStatus: hasStatus ? parseInt(req.query.responseStatus) : undefined,
+          errorsOnly: req.query.errorsOnly === 'true',
+          since,
+          until,
+        })
+      : await dal.auditDal.listRecent({
+          limit,
+          offset,
+          action: req.query.action || undefined,
+          since,
+          until,
+        });
 
-    res.json({ type, entries, limit, generated_at: new Date().toISOString() });
+    res.json({ type, entries, total, limit, offset, generated_at: new Date().toISOString() });
   } catch (error) {
     console.error('Admin activity error:', error);
     res.status(500).json({ error: 'Failed to fetch activity' });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/activity/tools/stats:
+ *   get:
+ *     summary: MCP/REST tool-call aggregates (error rate, p95 duration, by tool/status)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: since
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Only aggregate calls created at/after this timestamp
+ *     responses:
+ *       200:
+ *         description: Tool-call statistics
+ *       403:
+ *         description: Admin access required
+ */
+router.get('/activity/tools/stats', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const since = req.query.since || null;
+    const sql = await dal.rawSql();
+
+    const [totals] = await sql`
+      SELECT
+        count(*)::int AS total,
+        (count(*) FILTER (WHERE response_status >= 400))::int AS errors,
+        percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95_ms
+      FROM tool_calls
+      WHERE (${since}::timestamptz IS NULL OR created_at >= ${since}::timestamptz)
+    `;
+
+    const byTool = await sql`
+      SELECT tool_name,
+        count(*)::int AS count,
+        (count(*) FILTER (WHERE response_status >= 400))::int AS errors,
+        percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95_ms
+      FROM tool_calls
+      WHERE (${since}::timestamptz IS NULL OR created_at >= ${since}::timestamptz)
+      GROUP BY tool_name
+      ORDER BY count DESC, tool_name ASC
+      LIMIT 100
+    `;
+
+    const byStatus = await sql`
+      SELECT response_status, count(*)::int AS count
+      FROM tool_calls
+      WHERE (${since}::timestamptz IS NULL OR created_at >= ${since}::timestamptz)
+      GROUP BY response_status
+      ORDER BY count DESC
+    `;
+
+    const round = (v) => (v == null ? null : Math.round(Number(v)));
+    const rate = (errors, total) => (total > 0 ? errors / total : 0);
+
+    res.json({
+      since,
+      totals: {
+        total: totals.total,
+        errors: totals.errors,
+        error_rate: rate(totals.errors, totals.total),
+        p95_ms: round(totals.p95_ms),
+      },
+      by_tool: byTool.map((t) => ({
+        tool_name: t.tool_name,
+        count: t.count,
+        errors: t.errors,
+        error_rate: rate(t.errors, t.count),
+        p95_ms: round(t.p95_ms),
+      })),
+      by_status: byStatus,
+      generated_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Admin tool-call stats error:', error);
+    res.status(500).json({ error: 'Failed to fetch tool-call stats' });
   }
 });
 
