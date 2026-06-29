@@ -143,6 +143,10 @@ jest.mock('../../src/utils/logger', () => ({
   api: jest.fn(), error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn(), auth: jest.fn(),
 }));
 
+jest.mock('../../src/services/graphitiBridge', () => ({
+  getStatus: jest.fn().mockResolvedValue({ available: true }),
+}));
+
 // ── App under test ───────────────────────────────────────────────────────────
 
 const adminRoutes = require('../../src/routes/admin.routes');
@@ -400,6 +404,73 @@ describe('GET /admin/plans/:planId', () => {
       .get(`/admin/plans/${mockMissingPlanId}`)
       .set('Authorization', `Bearer ${signJwt(mockAdminId)}`)
       .expect(404);
+  });
+});
+
+describe('GET /admin/health', () => {
+  const app = makeApp();
+  // eslint-disable-next-line global-require
+  const graphitiBridge = require('../../src/services/graphitiBridge');
+  const ORIGINAL_KEY = process.env.OPENAI_API_KEY;
+
+  afterEach(() => {
+    if (ORIGINAL_KEY === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = ORIGINAL_KEY;
+    graphitiBridge.getStatus.mockResolvedValue({ available: true });
+  });
+
+  it('returns 401 without authentication', async () => {
+    await request(app).get('/admin/health').expect(401);
+  });
+
+  it('returns 403 for a non-admin user', async () => {
+    await request(app)
+      .get('/admin/health')
+      .set('Authorization', `Bearer ${signJwt(mockNonAdminId)}`)
+      .expect(403);
+  });
+
+  it('returns ok with all subsystem checks green', async () => {
+    process.env.OPENAI_API_KEY = 'sk-test';
+    graphitiBridge.getStatus.mockResolvedValue({ available: true });
+
+    const res = await request(app)
+      .get('/admin/health')
+      .set('Authorization', `Bearer ${signJwt(mockAdminId)}`)
+      .expect(200);
+
+    expect(res.body.status).toBe('ok');
+    expect(res.body.checks.database.ok).toBe(true);
+    expect(res.body.checks.graphiti.ok).toBe(true);
+    expect(res.body.checks.openai_key.configured).toBe(true);
+    expect(res.body.version).toBeTruthy();
+  });
+
+  it('reports degraded + surfaces the silent-fail when OPENAI_API_KEY is missing', async () => {
+    delete process.env.OPENAI_API_KEY;
+    graphitiBridge.getStatus.mockResolvedValue({ available: true });
+
+    const res = await request(app)
+      .get('/admin/health')
+      .set('Authorization', `Bearer ${signJwt(mockAdminId)}`)
+      .expect(200);
+
+    expect(res.body.status).toBe('degraded');
+    expect(res.body.checks.openai_key.configured).toBe(false);
+    expect(res.body.checks.openai_key.detail).toMatch(/no-op/i);
+  });
+
+  it('reports degraded when Graphiti is unreachable', async () => {
+    process.env.OPENAI_API_KEY = 'sk-test';
+    graphitiBridge.getStatus.mockResolvedValue({ available: false });
+
+    const res = await request(app)
+      .get('/admin/health')
+      .set('Authorization', `Bearer ${signJwt(mockAdminId)}`)
+      .expect(200);
+
+    expect(res.body.status).toBe('degraded');
+    expect(res.body.checks.graphiti.ok).toBe(false);
   });
 });
 

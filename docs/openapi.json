@@ -1177,6 +1177,27 @@
         }
       }
     },
+    "/admin/health": {
+      "get": {
+        "summary": "Subsystem health snapshot (DB, Graphiti, OpenAI key, version)",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Health snapshot (status 'ok' or 'degraded')"
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
     "/auth/register": {
       "post": {
         "summary": "Register a new user",

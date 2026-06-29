@@ -6,6 +6,8 @@ const express = require('express');
 const router = express.Router();
 const { authenticate, requireAdmin } = require('../middleware/auth.middleware.v2');
 const dal = require('../db/dal.cjs');
+const graphitiBridge = require('../services/graphitiBridge');
+const pkg = require('../../package.json');
 
 /**
  * @swagger
@@ -697,6 +699,70 @@ router.get('/plans/:planId', authenticate, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('Admin plan detail error:', error);
     res.status(500).json({ error: 'Failed to fetch plan' });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/health:
+ *   get:
+ *     summary: Subsystem health snapshot (DB, Graphiti, OpenAI key, version)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Health snapshot (status 'ok' or 'degraded')
+ *       403:
+ *         description: Admin access required
+ */
+router.get('/health', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const checks = {};
+
+    // Database — direct ping.
+    try {
+      const sql = await dal.rawSql();
+      await sql`SELECT 1`;
+      checks.database = { ok: true, detail: 'SELECT 1 ok' };
+    } catch (e) {
+      checks.database = { ok: false, detail: e.message };
+    }
+
+    // Graphiti knowledge graph — reachability via the bridge's health probe.
+    try {
+      const g = await graphitiBridge.getStatus();
+      checks.graphiti = { ok: !!g.available, available: !!g.available };
+    } catch (e) {
+      checks.graphiti = { ok: false, available: false, detail: e.message };
+    }
+
+    // OpenAI key — knowledge writes (Graphiti embeddings) silently no-op
+    // without it, so surface its presence explicitly.
+    const keyConfigured = Boolean(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim());
+    checks.openai_key = {
+      ok: keyConfigured,
+      configured: keyConfigured,
+      detail: keyConfigured
+        ? 'OPENAI_API_KEY present'
+        : 'OPENAI_API_KEY missing — knowledge writes silently no-op',
+    };
+
+    const ok = checks.database.ok && checks.graphiti.ok && checks.openai_key.ok;
+
+    res.json({
+      status: ok ? 'ok' : 'degraded',
+      checks,
+      version: pkg.version,
+      commit: process.env.GIT_COMMIT || process.env.GIT_SHA || null,
+      // message-bus + websocket presence are intentionally omitted: messageBus
+      // exposes no status primitive, and ws presence is tracked in-process so a
+      // count is per-instance and misleading under multiple replicas.
+      generated_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Admin health error:', error);
+    res.status(500).json({ error: 'Failed to compute health' });
   }
 });
 
